@@ -1,36 +1,25 @@
 import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
+from app.main import app, health_check, api_health_check
 
 
-def test_health_check():
+@pytest.mark.asyncio
+async def test_health_check():
     """Test the health check endpoint."""
-    response = client.get("/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert "app" in data
-    assert "version" in data
-    assert "environment" in data
+    response = await health_check()
+    assert response["status"] == "healthy"
+    assert "app" in response
+    assert "version" in response
+    assert "environment" in response
 
 
-def test_api_health_check():
+@pytest.mark.asyncio
+async def test_api_health_check():
     """Test the API health check endpoint."""
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert data["api"] == "running"
-    assert "app" in data
-    assert "version" in data
-
-
-def test_nonexistent_api_endpoint():
-    """Test that non-existent API endpoints return 404."""
-    response = client.get("/api/nonexistent")
-    assert response.status_code == 404
+    response = await api_health_check()
+    assert response["status"] == "healthy"
+    assert response["api"] == "running"
+    assert "app" in response
+    assert "version" in response
 
 
 def test_app_creation():

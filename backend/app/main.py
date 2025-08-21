@@ -30,16 +30,6 @@ def create_app() -> FastAPI:
     static_path = Path(settings.static_dir)
     if static_path.exists():
         app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
-        
-        # Serve React app at root for any unmatched routes
-        @app.get("/{full_path:path}")
-        async def serve_react_app(full_path: str):
-            """Serve React app for client-side routing."""
-            index_file = static_path / "index.html"
-            if index_file.exists() and not full_path.startswith("api/"):
-                with open(index_file) as f:
-                    return JSONResponse(content=f.read(), media_type="text/html")
-            return JSONResponse({"error": "Not found"}, status_code=404)
     
     return app
 
@@ -67,6 +57,19 @@ async def api_health_check():
         "app": settings.app_name,
         "version": settings.app_version
     }
+
+
+# Catch-all route for React app - MUST be registered last
+static_path = Path(settings.static_dir)
+if static_path.exists():
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        """Serve React app for client-side routing."""
+        index_file = static_path / "index.html"
+        if index_file.exists() and not full_path.startswith("api/"):
+            with open(index_file) as f:
+                return JSONResponse(content=f.read(), media_type="text/html")
+        return JSONResponse({"error": "Not found"}, status_code=404)
 
 
 if __name__ == "__main__":
