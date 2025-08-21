@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import os
 from pathlib import Path
 
@@ -68,7 +68,7 @@ if static_path.exists():
         index_file = static_path / "index.html"
         if index_file.exists() and not full_path.startswith("api/"):
             with open(index_file) as f:
-                return JSONResponse(content=f.read(), media_type="text/html")
+                return HTMLResponse(content=f.read())
         return JSONResponse({"error": "Not found"}, status_code=404)
 
 
