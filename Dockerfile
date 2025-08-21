@@ -10,12 +10,11 @@ COPY frontend/tsconfig*.json ./
 COPY frontend/vite.config.ts ./
 
 # Install frontend dependencies
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy frontend source code
 COPY frontend/src ./src
 COPY frontend/index.html ./
-COPY frontend/public ./public
 
 # Build frontend (outputs to ../backend/app/static)
 RUN npm run build
