@@ -306,6 +306,9 @@ class InMemoryDataStore:
 **Technology Stack**: LangGraph, OpenAI/Claude APIs via environment configuration
 
 #### Plaid Integration Service
+
+TODO: We want to put this behind an MCP server, so that agents can leverage the Plaid APIs as a tool.
+
 **Responsibility**: Plaid API integration with periodic data synchronization and minimal transaction storage
 
 **Key Interfaces**:
