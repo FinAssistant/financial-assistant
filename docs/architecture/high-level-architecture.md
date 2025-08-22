@@ -2,7 +2,7 @@
 
 ## Technical Summary
 
-The AI Financial Assistant employs a **monolithic fullstack architecture** with clear separation between frontend and backend concerns. The Python FastAPI backend serves the React frontend while orchestrating AI conversations through LangGraph and secure financial data processing via Plaid. The frontend uses Redux Toolkit for predictable state management and AI-SDK for seamless conversational interfaces. This architecture prioritizes **security** for financial data, **user trust** through transparent AI interactions, and **development velocity** for POC validation.
+The AI Financial Assistant employs an **agentic AI architecture** with clear separation between frontend and backend concerns. The Python FastAPI backend serves the React frontend while orchestrating specialized AI agents through LangGraph. An Orchestrator Agent routes user requests to domain specialists (Onboarding, Spending) that access shared tools via MCP server for secure financial data processing and contextual memory. The frontend uses Redux Toolkit for predictable state management and AI-SDK for seamless conversational interfaces. This architecture prioritizes **security** for financial data, **user trust** through transparent AI interactions, and **development velocity** for POC validation.
 
 ## Platform and Infrastructure Choice
 
@@ -13,7 +13,9 @@ The AI Financial Assistant employs a **monolithic fullstack architecture** with 
 - **Compute**: Docker containers for consistent development/production environments
 - **Storage**: In-memory storage for POC (Redis-compatible for future scaling)
 - **AI Services**: Configurable LLM providers via environment variables
-- **Financial APIs**: Plaid for secure bank account integration
+- **Financial APIs**: Plaid integration via MCP server for multi-agent access
+- **Tool Server**: MCP server providing centralized Plaid APIs and Graphiti database access
+- **Graph Database**: Graphiti for contextual memory and relationship tracking
 
 ## Repository Structure
 
@@ -37,20 +39,27 @@ graph TD
     B --> C[Redux Store]
     C --> D[RTK Query API Layer]
     D --> E[FastAPI Backend]
-    E --> F[LangGraph AI Engine]
-    E --> G[Plaid Integration]
-    E --> H[In-Memory Storage]
+    E --> F[Orchestrator Agent]
+    F --> G[Onboarding Agent]
+    F --> H[Spending Agent]
+    G --> I[MCP Server]
+    H --> I
+    I --> J[Plaid APIs]
+    I --> K[Graphiti Database]
     
-    F --> I[LLM Provider]
-    G --> J[Bank APIs]
+    F --> L[LLM Provider]
+    G --> L
+    H --> L
     
-    B --> K[AI-SDK Chat Interface]
-    K --> E
+    B --> M[AI-SDK Chat Interface]
+    M --> E
     
     style B fill:#e1f5fe
     style E fill:#f3e5f5
     style F fill:#fff3e0
     style G fill:#e8f5e8
+    style H fill:#e8f5e8
+    style I fill:#fce4ec
 ```
 
 ## Architectural Patterns

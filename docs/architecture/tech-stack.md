@@ -21,9 +21,12 @@ This is the DEFINITIVE technology selection for the entire project. All developm
 | **Build Tool** | Vite | 5.0.x | Frontend build and dev server | Fast development experience, modern tooling |
 | **Bundler** | Vite (esbuild) | Built-in | JavaScript bundling and optimization | Superior performance for development iterations |
 | **CSS Framework** | Styled Components + Theme | 6.1.x | Styling architecture | Component-scoped styling with theming support |
-| **AI Framework** | LangGraph | 0.0.x | AI conversation orchestration | Configurable LLM integration, conversation state management |
+| **AI Framework** | LangGraph | 0.0.x | Multi-agent conversation orchestration | Specialized agent routing with shared conversation state |
 | **Frontend AI** | AI-SDK | 2.2.x | React AI conversation interface | Seamless streaming AI integration with React |
 | **Financial API** | Plaid | Latest | Bank account and transaction data | Industry standard for financial data aggregation |
 | **API Client** | RTK Query | Built-in RTK | Frontend API state management | Integrated caching and state management |
 | **Container** | Docker | 24.x | Development and deployment consistency | Consistent environments across development/production |
 | **Package Manager** | UV | Latest | Python dependency management | Modern, fast Python dependency resolution |
+| **Agent Orchestration** | LangGraph Multi-Agent | 0.0.x | Agentic AI conversation orchestration | Specialized agents with unified orchestration |
+| **Tool Protocol** | MCP Python SDK | Latest | Model Context Protocol server | Centralized tool access for multiple agents |
+| **Graph Database** | Graphiti | Latest | Contextual memory and relationship storage | Enhanced context retention across agent interactions |
