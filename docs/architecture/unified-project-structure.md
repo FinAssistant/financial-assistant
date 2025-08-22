@@ -91,6 +91,18 @@ ai-financial-assistant/
 │   │   └── test_analysis.py
 │   ├── pyproject.toml               # UV dependency management
 │   └── uv.lock                      # UV lock file
+├── mcp-server/                     # Model Context Protocol server
+│   ├── tools/                      # Tool implementations
+│   │   ├── __init__.py
+│   │   ├── plaid_tools.py         # Plaid API tools
+│   │   └── graphiti_tools.py      # Graphiti database tools
+│   ├── schemas/                    # MCP protocol schemas
+│   │   ├── __init__.py
+│   │   ├── tool_schemas.py        # Tool definition schemas
+│   │   └── response_schemas.py    # Response format schemas
+│   ├── server.py                   # MCP server main application
+│   ├── config.py                   # MCP server configuration
+│   └── requirements.txt            # MCP server dependencies
 ├── scripts/                         # Development scripts
 │   ├── dev-setup.sh                # Development environment setup
 │   ├── start-dev.sh                # Start development servers

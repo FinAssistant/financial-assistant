@@ -27,6 +27,7 @@ The AI Financial Assistant employs an **agentic AI architecture** with clear sep
 ai-financial-assistant/
 ├── frontend/           # React application
 ├── backend/           # FastAPI application  
+├── mcp-server/        # Model Context Protocol server
 ├── scripts/          # Development and deployment scripts
 └── docs/             # Documentation
 ```
