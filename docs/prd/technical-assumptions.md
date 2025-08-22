@@ -27,7 +27,13 @@
     
 *   **Backend**: Python with FastAPI (recommended over alternatives for API docs, async support, and Python ecosystem compatibility)
     
-*   **AI Framework**: LangGraph with configurable LLM providers via .env
+*   **AI Framework**: LangGraph with agentic orchestration architecture and configurable LLM providers via .env
+    
+*   **Agent Architecture**: Orchestrator Agent routing to specialized agents (Onboarding, Spending) via LangGraph subgraphs
+    
+*   **Tool Integration**: MCP (Model Context Protocol) server for centralized tool access across agents
+    
+*   **Graph Database**: Graphiti for contextual memory and relationship tracking
     
 *   **Data Storage**: In-memory storage for POC (no database setup required)
     
