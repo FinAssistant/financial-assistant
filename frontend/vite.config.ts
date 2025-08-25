@@ -4,7 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/static/',
+  base: '/',
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
@@ -14,12 +14,12 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
+      '/auth': {
+        target: 'http://0.0.0.0:8000',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: 'http://0.0.0.0:8000',
         changeOrigin: true,
       },
     },
