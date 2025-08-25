@@ -50,14 +50,14 @@ const renderWithProviders = (
 
   return render(
     <Provider store={store}>
-      <MemoryRouterfuture={{
+      <MemoryRouter future={{
         v7_startTransition: true,
         v7_relativeSplatPath: true,
       }} initialEntries={[initialRoute]}>
-      <ThemeProvider theme={theme}>
-        {component}
-      </ThemeProvider>
-    </MemoryRouter>
+        <ThemeProvider theme={theme}>
+          {component}
+        </ThemeProvider>
+      </MemoryRouter>
     </Provider >
   )
 }

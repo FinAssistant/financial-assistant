@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { Provider } from 'react-redux'
 import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider } from 'styled-components'
@@ -84,7 +83,7 @@ describe('Header', () => {
     renderHeader()
     const homeLink = screen.getByText('Home')
     const aboutLink = screen.getByText('About')
-    
+
     expect(homeLink.closest('a')).toHaveAttribute('href', '/')
     expect(aboutLink.closest('a')).toHaveAttribute('href', '/about')
   })

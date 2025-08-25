@@ -3,7 +3,7 @@ import '@testing-library/jest-dom'
 // Mock redux-persist
 jest.mock('redux-persist', () => ({
   persistStore: jest.fn(() => ({})),
-  persistReducer: jest.fn((config, reducer) => reducer),
+  persistReducer: jest.fn((_, reducer) => reducer),
 }))
 
 // Mock redux-persist/integration/react
