@@ -1,16 +1,64 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { Provider } from 'react-redux'
 import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider } from 'styled-components'
+import { configureStore } from '@reduxjs/toolkit'
+import { persistStore } from 'redux-persist'
+import { PersistGate } from 'redux-persist/integration/react'
 import Header from '../Header'
+import { baseApi } from '../../store/api/baseApi'
+import authReducer from '../../store/slices/authSlice'
 import { theme } from '../../styles/theme'
 
-const renderHeader = () => {
+// Mock the API
+const mockLogout = jest.fn()
+
+jest.mock('../../store/api/authApi', () => ({
+  ...jest.requireActual('../../store/api/authApi'),
+  useLogoutAuthLogoutPostMutation: () => [mockLogout, { isLoading: false }],
+}))
+
+// Create a test store
+const createTestStore = (initialState: { auth?: Partial<{ user: null | { id: string; email: string; name?: string; profile_complete: boolean }, token: null | string, isAuthenticated: boolean, loading: boolean }> } = {}) => {
+  return configureStore({
+    reducer: {
+      auth: authReducer,
+      [baseApi.reducerPath]: baseApi.reducer,
+    },
+    preloadedState: {
+      auth: {
+        user: null,
+        token: null,
+        isAuthenticated: false,
+        loading: false,
+        ...initialState.auth,
+      },
+    },
+    middleware: (getDefaultMiddleware) =>
+      getDefaultMiddleware({
+        serializableCheck: false,
+      }).concat(baseApi.middleware),
+  })
+}
+
+const renderHeader = (initialState = {}) => {
+  const store = createTestStore(initialState)
+  const persistor = persistStore(store)
+
   return render(
-    <BrowserRouter>
-      <ThemeProvider theme={theme}>
-        <Header />
-      </ThemeProvider>
-    </BrowserRouter>
+    <Provider store={store}>
+      <PersistGate loading={<div>Loading...</div>} persistor={persistor}>
+        <BrowserRouter future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}>
+          <ThemeProvider theme={theme}>
+            <Header />
+          </ThemeProvider>
+        </BrowserRouter>
+      </PersistGate>
+    </Provider>
   )
 }
 

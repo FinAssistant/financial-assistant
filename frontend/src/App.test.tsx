@@ -8,7 +8,10 @@ import { theme } from './styles/theme'
 
 const AppWrapper = ({ children }: { children: React.ReactNode }) => (
   <Provider store={store}>
-    <BrowserRouter>
+    <BrowserRouter future={{
+      v7_startTransition: true,
+      v7_relativeSplatPath: true,
+    }}>
       <ThemeProvider theme={theme}>
         {children}
       </ThemeProvider>
@@ -31,7 +34,7 @@ describe('App', () => {
         <App />
       </AppWrapper>
     )
-    
+
     expect(screen.getByText('AI Financial Assistant')).toBeInTheDocument()
   })
 
@@ -41,7 +44,7 @@ describe('App', () => {
         <App />
       </AppWrapper>
     )
-    
+
     expect(screen.getByText('Home')).toBeInTheDocument()
     expect(screen.getByText('About')).toBeInTheDocument()
   })

@@ -47,15 +47,18 @@ const renderWithProviders = (
   initialRoute = '/'
 ) => {
   const store = createTestStore(initialState)
-  
+
   return render(
     <Provider store={store}>
-      <MemoryRouter initialEntries={[initialRoute]}>
-        <ThemeProvider theme={theme}>
-          {component}
-        </ThemeProvider>
-      </MemoryRouter>
-    </Provider>
+      <MemoryRouterfuture={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }} initialEntries={[initialRoute]}>
+      <ThemeProvider theme={theme}>
+        {component}
+      </ThemeProvider>
+    </MemoryRouter>
+    </Provider >
   )
 }
 

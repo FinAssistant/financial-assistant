@@ -9,38 +9,38 @@ import AuthGuard from './components/layout/AuthGuard'
 
 function App() {
   return (
-    <PersistGate loading={<div>Loading...</div>} persistor={persistor}>
+    <PersistGate loading={<div>Loading state...</div>} persistor={persistor}>
       <Routes>
         {/* Public routes */}
-        <Route 
-          path="/login" 
+        <Route
+          path="/login"
           element={
             <AuthGuard requireAuth={false}>
               <LoginPage />
             </AuthGuard>
-          } 
+          }
         />
-        
+
         {/* Public home page */}
-        <Route 
-          path="/" 
+        <Route
+          path="/"
           element={
             <Layout>
               <HomePage />
             </Layout>
-          } 
+          }
         />
-        
+
         {/* Protected routes */}
-        <Route 
-          path="/about" 
+        <Route
+          path="/about"
           element={
             <AuthGuard requireAuth={true}>
               <Layout>
                 <AboutPage />
               </Layout>
             </AuthGuard>
-          } 
+          }
         />
       </Routes>
     </PersistGate>

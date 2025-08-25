@@ -49,20 +49,20 @@ const LoginPage: React.FC = () => {
 
   const validatePassword = (password: string): { isValid: boolean; errors: string[] } => {
     const errors: string[] = []
-    
+
     if (password.length < 8) errors.push('At least 8 characters')
     if (!/[a-z]/.test(password)) errors.push('One lowercase letter')
     if (!/[A-Z]/.test(password)) errors.push('One uppercase letter')
     if (!/\d/.test(password)) errors.push('One number')
     if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push('One special character')
-    
+
     return { isValid: errors.length === 0, errors }
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
-    
+
     // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }))
@@ -71,39 +71,39 @@ const LoginPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // Reset errors
     setErrors({})
-    
+
     // Validation
     const newErrors: { [key: string]: string } = {}
-    
+
     if (!formData.email) {
       newErrors.email = 'Email is required'
     } else if (!validateEmail(formData.email)) {
       newErrors.email = 'Invalid email format'
     }
-    
+
     if (!formData.password) {
       newErrors.password = 'Password is required'
     }
-    
+
     if (!isLogin) {
       if (!formData.name.trim()) {
         newErrors.name = 'Name is required'
       }
-      
+
       const passwordValidation = validatePassword(formData.password)
       if (!passwordValidation.isValid) {
         newErrors.password = `Password must have: ${passwordValidation.errors.join(', ')}`
       }
     }
-    
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
-    
+
     try {
       if (isLogin) {
         await login({
@@ -140,7 +140,7 @@ const LoginPage: React.FC = () => {
     <Container>
       <FormContainer>
         <Title>{isLogin ? 'Sign In' : 'Create Account'}</Title>
-        
+
         <Form onSubmit={handleSubmit}>
           {!isLogin && (
             <InputGroup>
@@ -157,7 +157,7 @@ const LoginPage: React.FC = () => {
               {errors.name && <ErrorMessage>{errors.name}</ErrorMessage>}
             </InputGroup>
           )}
-          
+
           <InputGroup>
             <Label htmlFor="email">Email Address</Label>
             <Input
@@ -171,7 +171,7 @@ const LoginPage: React.FC = () => {
             />
             {errors.email && <ErrorMessage>{errors.email}</ErrorMessage>}
           </InputGroup>
-          
+
           <InputGroup>
             <Label htmlFor="password">Password</Label>
             <Input
@@ -184,7 +184,7 @@ const LoginPage: React.FC = () => {
               $hasError={!!errors.password}
             />
             {errors.password && <ErrorMessage>{errors.password}</ErrorMessage>}
-            
+
             {!isLogin && (
               <PasswordRequirements>
                 <p>Password must contain:</p>
@@ -198,15 +198,15 @@ const LoginPage: React.FC = () => {
               </PasswordRequirements>
             )}
           </InputGroup>
-          
+
           {currentError && (
             <ErrorMessage>
               {'data' in currentError && currentError.data && typeof currentError.data === 'object' && 'detail' in currentError.data
-                ? (currentError.data as { detail: string }).detail 
+                ? (currentError.data as { detail: string }).detail
                 : 'An error occurred. Please try again.'}
             </ErrorMessage>
           )}
-          
+
           <Button type="submit" disabled={currentLoading}>
             {currentLoading ? (
               <LoadingSpinner />
@@ -215,7 +215,7 @@ const LoginPage: React.FC = () => {
             )}
           </Button>
         </Form>
-        
+
         <ToggleText>
           {isLogin ? "Don't have an account? " : "Already have an account? "}
           <ToggleLink onClick={toggleMode}>
