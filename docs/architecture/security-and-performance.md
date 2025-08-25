@@ -45,7 +45,7 @@ class MessageRequest(BaseModel):
 ### Authentication Security
 **Token Storage**: Encrypted JWT tokens with short expiration
 **Session Management**: Secure session handling with proper logout
-**Password Policy**: Google OAuth eliminates password management
+**Password Policy**: Enforce secure password requirements (min 8 chars, mixed case, numbers, symbols)
 
 ### Financial Data Security
 **Plaid Token Encryption**: Access tokens encrypted at rest
