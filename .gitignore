@@ -42,8 +42,6 @@ coverage/
 
 # Package managers
 uv.lock
-package-lock.json
-yarn.lock
 
 # Docker
 .dockerignore

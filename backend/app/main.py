@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from app.core.config import settings
+from app.routers import auth
 
 
 def create_app() -> FastAPI:
@@ -30,6 +31,9 @@ def create_app() -> FastAPI:
     static_path = Path(settings.static_dir)
     if static_path.exists():
         app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+    
+    # Include API routers
+    app.include_router(auth.router)
     
     return app
 
