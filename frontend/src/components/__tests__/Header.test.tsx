@@ -1,14 +1,6 @@
-import { render, screen } from '@testing-library/react'
-import { Provider } from 'react-redux'
-import { BrowserRouter } from 'react-router-dom'
-import { ThemeProvider } from 'styled-components'
-import { configureStore } from '@reduxjs/toolkit'
-import { persistStore } from 'redux-persist'
-import { PersistGate } from 'redux-persist/integration/react'
+import { screen } from '@testing-library/react'
 import Header from '../Header'
-import { baseApi } from '../../store/api/baseApi'
-import authReducer from '../../store/slices/authSlice'
-import { theme } from '../../styles/theme'
+import { renderWithProviders } from '../../tests/setupTests'
 
 // Mock the API
 const mockLogout = jest.fn()
@@ -18,73 +10,57 @@ jest.mock('../../store/api/authApi', () => ({
   useLogoutAuthLogoutPostMutation: () => [mockLogout, { isLoading: false }],
 }))
 
-// Create a test store
-const createTestStore = (initialState: { auth?: Partial<{ user: null | { id: string; email: string; name?: string; profile_complete: boolean }, token: null | string, isAuthenticated: boolean, loading: boolean }> } = {}) => {
-  return configureStore({
-    reducer: {
-      auth: authReducer,
-      [baseApi.reducerPath]: baseApi.reducer,
-    },
-    preloadedState: {
-      auth: {
-        user: null,
-        token: null,
-        isAuthenticated: false,
-        loading: false,
-        ...initialState.auth,
-      },
-    },
-    middleware: (getDefaultMiddleware) =>
-      getDefaultMiddleware({
-        serializableCheck: false,
-      }).concat(baseApi.middleware),
-  })
-}
-
-const renderHeader = (initialState = {}) => {
-  const store = createTestStore(initialState)
-  const persistor = persistStore(store)
-
-  return render(
-    <Provider store={store}>
-      <PersistGate loading={<div>Loading...</div>} persistor={persistor}>
-        <BrowserRouter future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}>
-          <ThemeProvider theme={theme}>
-            <Header />
-          </ThemeProvider>
-        </BrowserRouter>
-      </PersistGate>
-    </Provider>
-  )
-}
 
 describe('Header', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockLogout.mockReturnValue({ unwrap: jest.fn().mockResolvedValue({}) })
+  })
+
   test('renders app name as logo', () => {
-    renderHeader()
+    renderWithProviders(<Header />)
     expect(screen.getByText('AI Financial Assistant')).toBeInTheDocument()
   })
 
   test('renders navigation links', () => {
-    renderHeader()
+    renderWithProviders(<Header />)
     expect(screen.getByText('Home')).toBeInTheDocument()
     expect(screen.getByText('About')).toBeInTheDocument()
   })
 
   test('logo links to home page', () => {
-    renderHeader()
+    renderWithProviders(<Header />)
     const logo = screen.getByText('AI Financial Assistant')
     expect(logo.closest('a')).toHaveAttribute('href', '/')
   })
 
   test('navigation links have correct hrefs', () => {
-    renderHeader()
+    renderWithProviders(<Header />)
     const homeLink = screen.getByText('Home')
     const aboutLink = screen.getByText('About')
 
     expect(homeLink.closest('a')).toHaveAttribute('href', '/')
     expect(aboutLink.closest('a')).toHaveAttribute('href', '/about')
+  })
+
+  test('shows sign in button when not authenticated', () => {
+    renderWithProviders(<Header />)
+    expect(screen.getByText('Sign In')).toBeInTheDocument()
+    expect(screen.getByText('Sign In').closest('a')).toHaveAttribute('href', '/login')
+  })
+
+  test('shows user info and logout button when authenticated', () => {
+    renderWithProviders(<Header />, {
+      auth: {
+        user: { id: '1', email: 'test@example.com', name: 'Test User', profile_complete: true },
+        token: 'fake-token',
+        isAuthenticated: true,
+        loading: false,
+      },
+    })
+
+    expect(screen.getByText('Hello, Test User')).toBeInTheDocument()
+    expect(screen.getByText('Logout')).toBeInTheDocument()
+    expect(screen.queryByText('Sign In')).not.toBeInTheDocument()
   })
 })

@@ -1,14 +1,7 @@
-import React from 'react'
-import { render, screen } from '@testing-library/react'
-import { Provider } from 'react-redux'
-import { MemoryRouter } from 'react-router-dom'
-import { ThemeProvider } from 'styled-components'
-import { configureStore } from '@reduxjs/toolkit'
+import { screen } from '@testing-library/react'
 
 import AuthGuard from '../layout/AuthGuard'
-import { baseApi } from '../../store/api/baseApi'
-import authReducer from '../../store/slices/authSlice'
-import { theme } from '../../styles/theme'
+import { renderWithProviders } from '../../tests/setupTests'
 
 // Mock Navigate component
 const mockNavigate = jest.fn()
@@ -20,47 +13,6 @@ jest.mock('react-router-dom', () => ({
   },
 }))
 
-// Create a test store
-const createTestStore = (initialState: { auth?: Partial<{ user: null | { id: string; email: string; profile_complete: boolean }, token: null | string, isAuthenticated: boolean, loading: boolean }> } = {}) => {
-  return configureStore({
-    reducer: {
-      auth: authReducer,
-      [baseApi.reducerPath]: baseApi.reducer,
-    },
-    preloadedState: {
-      auth: {
-        user: null,
-        token: null,
-        isAuthenticated: false,
-        loading: false,
-        ...initialState.auth,
-      },
-    },
-    middleware: (getDefaultMiddleware) =>
-      getDefaultMiddleware().concat(baseApi.middleware),
-  })
-}
-
-const renderWithProviders = (
-  component: React.ReactElement,
-  initialState = {},
-  initialRoute = '/'
-) => {
-  const store = createTestStore(initialState)
-
-  return render(
-    <Provider store={store}>
-      <MemoryRouter future={{
-        v7_startTransition: true,
-        v7_relativeSplatPath: true,
-      }} initialEntries={[initialRoute]}>
-        <ThemeProvider theme={theme}>
-          {component}
-        </ThemeProvider>
-      </MemoryRouter>
-    </Provider >
-  )
-}
 
 const TestComponent = () => <div>Protected Content</div>
 
@@ -195,34 +147,22 @@ describe('AuthGuard', () => {
     })
 
     it('redirects authenticated users to intended page from location state', () => {
-      const TestComponentWithLocationState = () => (
+      renderWithProviders(
         <AuthGuard requireAuth={false}>
           <TestComponent />
-        </AuthGuard>
-      )
-
-      render(
-        <Provider store={createTestStore({
+        </AuthGuard>,
+        {
           auth: {
             user: { id: '1', email: 'test@example.com', profile_complete: false },
             token: 'fake-token',
             isAuthenticated: true,
             loading: false,
           },
-        })}>
-          <MemoryRouter
-            initialEntries={[
-              {
-                pathname: '/login',
-                state: { from: { pathname: '/protected-page' } }
-              }
-            ]}
-          >
-            <ThemeProvider theme={theme}>
-              <TestComponentWithLocationState />
-            </ThemeProvider>
-          </MemoryRouter>
-        </Provider>
+        },
+        {
+          pathname: '/login',
+          state: { from: { pathname: '/protected-page' } }
+        }
       )
 
       expect(screen.getByText('Navigating to /protected-page')).toBeInTheDocument()
