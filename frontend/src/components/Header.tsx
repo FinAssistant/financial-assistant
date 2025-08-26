@@ -1,5 +1,8 @@
 import styled from 'styled-components'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useSelector, useDispatch } from 'react-redux'
+import { selectIsAuthenticated, selectCurrentUser, logout } from '../store/slices/authSlice'
+import { useLogoutAuthLogoutPostMutation } from '../store/api/authApi'
 
 const HeaderContainer = styled.header`
   background-color: ${({ theme }) => theme.colors.background.secondary};
@@ -42,7 +45,75 @@ const NavLink = styled(Link)`
   }
 `
 
+const AuthSection = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.md};
+`
+
+const UserInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.sm};
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+`
+
+const LogoutButton = styled.button`
+  background: none;
+  border: 1px solid ${({ theme }) => theme.colors.border.light};
+  color: ${({ theme }) => theme.colors.text.secondary};
+  padding: ${({ theme }) => theme.spacing.xs} ${({ theme }) => theme.spacing.sm};
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: ${({ theme }) => theme.colors.background.secondary};
+    border-color: ${({ theme }) => theme.colors.primary.main};
+    color: ${({ theme }) => theme.colors.primary.main};
+  }
+`
+
+const LoginButton = styled(Link)`
+  background: ${({ theme }) => theme.colors.primary.main};
+  color: white;
+  padding: ${({ theme }) => theme.spacing.xs} ${({ theme }) => theme.spacing.md};
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  font-weight: 500;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: ${({ theme }) => theme.colors.primary.dark};
+    text-decoration: none;
+  }
+`
+
 function Header() {
+  const dispatch = useDispatch()
+  const navigate = useNavigate()
+  const isAuthenticated = useSelector(selectIsAuthenticated)
+  const currentUser = useSelector(selectCurrentUser)
+  const [logoutMutation] = useLogoutAuthLogoutPostMutation()
+
+  const handleLogout = async () => {
+    try {
+      // Call the logout endpoint
+      await logoutMutation().unwrap()
+    } catch (error) {
+      // Even if the API call fails, we still want to clear local state
+      console.warn('Logout API call failed, clearing local state anyway:', error)
+    } finally {
+      // Clear local auth state
+      dispatch(logout())
+      // Navigate to home
+      navigate('/')
+    }
+  }
+
   return (
     <HeaderContainer>
       <Nav>
@@ -51,6 +122,22 @@ function Header() {
           <NavLink to="/">Home</NavLink>
           <NavLink to="/about">About</NavLink>
         </NavLinks>
+        <AuthSection>
+          {isAuthenticated ? (
+            <>
+              <UserInfo>
+                <span>Hello, {currentUser?.name || currentUser?.email}</span>
+              </UserInfo>
+              <LogoutButton onClick={handleLogout}>
+                Logout
+              </LogoutButton>
+            </>
+          ) : (
+            <LoginButton to="/login">
+              Sign In
+            </LoginButton>
+          )}
+        </AuthSection>
       </Nav>
     </HeaderContainer>
   )

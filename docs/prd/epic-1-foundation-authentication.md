@@ -21,23 +21,27 @@ As a developer,I want a properly configured monorepo with Python backend and Rea
 6.  README with setup instructions
     
 
-## Story 1.2: Google OAuth Authentication
+## Story 1.2: Basic Authentication System
 
-As a user,I want to sign in with my Google account,so that I can securely access the financial assistant without creating another password.
+As a user,I want to register and sign in with email and password,so that I can securely access the financial assistant with a simple account.
 
 **Acceptance Criteria:**
 
-1.  Google OAuth integration in FastAPI backend
+1.  User registration endpoint with email/password validation
     
-2.  React login component with Google sign-in button
+2.  User login endpoint with credential verification
     
-3.  JWT token generation and validation
+3.  Password hashing with secure salt (bcrypt)
     
-4.  Protected routes requiring authentication
+4.  JWT token generation and validation
     
-5.  User session management (login/logout)
+5.  Protected routes requiring authentication
     
-6.  Basic user profile storage (in-memory for POC)
+6.  User session management (login/logout)
+    
+7.  Basic user profile storage (in-memory for POC)
+    
+8.  Password strength requirements enforcement
     
 
 ## Story 1.3: Basic UI Foundation and Navigation

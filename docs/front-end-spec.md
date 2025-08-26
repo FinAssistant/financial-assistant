@@ -39,7 +39,7 @@ This document defines the user experience goals, information architecture, user 
 
 ```mermaid
 graph TD
-    A[Landing/Login] --> B[Authentication]
+    A[Landing/Login] --> B[Login/Register Form]
     B --> C[AI Onboarding Wizard]
     C --> C1[Welcome & Goal Setting]
     C --> C2[Values & Preferences]
@@ -84,7 +84,7 @@ graph TD
 #### Flow Diagram
 ```mermaid
 graph TD
-    A[Landing Page] --> B[Google Sign-In]
+    A[Landing Page] --> B[Login/Register Form]
     B --> C[Welcome to AI Wizard]
     C --> D[Goal Setting Conversation]
     D --> E[Values & Preferences Capture]

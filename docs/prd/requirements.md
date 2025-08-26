@@ -20,7 +20,7 @@
 
 **NFR1**: The system shall encrypt all financial data at rest and in transit using industry-standard encryption
 
-**NFR2**: The system shall implement multi-factor authentication and OAuth for secure user access
+**NFR2**: The system shall implement secure username/password authentication with JWT tokens for user access
 
 **NFR3**: The system shall comply with applicable financial regulations (SOC2, PCI-DSS, GDPR where relevant)
 

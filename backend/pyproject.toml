@@ -2,7 +2,7 @@
 name = "ai-financial-assistant-backend"
 version = "0.1.0"
 description = "FastAPI backend for AI Financial Assistant"
-authors = ["Development Team"]
+authors = [{name = "Development Team", email = "dev@example.com"}]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.104.*",
@@ -14,6 +14,10 @@ dependencies = [
     "pytest-asyncio>=0.21.0",
     "httpx==0.24.*",
     "pytest-cov>=4.0.0",
+    "bcrypt>=4.0.0",
+    "pyjwt>=2.8.0",
+    "python-multipart>=0.0.6",
+    "email-validator>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -43,3 +47,6 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

@@ -15,9 +15,9 @@ servers:
     description: Development server
 
 paths:
-  /auth/google:
+  /auth/register:
     post:
-      summary: Google OAuth authentication
+      summary: User registration
       requestBody:
         required: true
         content:
@@ -25,11 +25,42 @@ paths:
             schema:
               type: object
               properties:
-                credential:
+                email:
+                  type: string
+                password:
+                  type: string
+                name:
+                  type: string
+      responses:
+        201:
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+  
+  /auth/login:
+    post:
+      summary: User login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
                   type: string
       responses:
         200:
-          description: Authentication successful
+          description: Login successful
           content:
             application/json:
               schema:

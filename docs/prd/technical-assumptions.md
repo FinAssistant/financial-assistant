@@ -37,7 +37,7 @@
     
 *   **Data Storage**: In-memory storage for POC (no database setup required)
     
-*   **Authentication**: Google OAuth for user authentication
+*   **Authentication**: Basic username/password authentication with JWT tokens
     
 
 **Configuration & Environment:**
