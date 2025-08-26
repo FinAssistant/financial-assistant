@@ -60,7 +60,36 @@ As a user,I want a clean, professional interface with navigation,so that I can e
     
 5.  Mobile-responsive design foundations
 
-## Story 1.4: MCP Server Foundation
+## Story 1.4: Basic AI Conversation Interface
+
+As a user,
+I want a basic chat interface to communicate with the AI assistant,
+so that I can start conversations and the foundation exists for future advanced AI agent features.
+
+**Acceptance Criteria:**
+
+1.  Basic chat UI component with message input and conversation display
+    
+2.  Simple LangGraph Orchestrator Agent that accepts messages and provides basic responses
+    
+3.  AI-SDK integration for streaming conversation responses from backend to frontend
+    
+4.  Conversation state management in Redux store
+    
+5.  Existing authentication and navigation systems continue to work unchanged
+    
+6.  New chat interface follows existing Styled Components and responsive design patterns
+    
+7.  Integration with Redux store maintains current auth state behavior
+    
+8.  Chat interface is covered by component tests
+    
+9.  Conversation API is covered by backend tests
+    
+10. No regression in existing authentication or navigation functionality verified
+    
+
+## Story 1.5: MCP Server Foundation
 
 As a developer,
 I want a Model Context Protocol (MCP) server implementation,
@@ -83,7 +112,7 @@ so that multiple AI agents can access shared tools and data sources through a st
 7.  Development documentation for MCP server architecture
     
 
-## Story 1.5: Plaid API Integration via MCP Server
+## Story 1.6: Plaid API Integration via MCP Server
 
 As a system,
 I want Plaid financial APIs accessible through the MCP server,
@@ -106,7 +135,7 @@ so that all AI agents can access bank account and transaction data through a con
 7.  Migration of existing Plaid integration patterns to MCP
     
 
-## Story 1.6: Graphiti Database Integration via MCP Server
+## Story 1.7: Graphiti Database Integration via MCP Server
 
 As a system,
 I want Graphiti graph database accessible through the MCP server,
