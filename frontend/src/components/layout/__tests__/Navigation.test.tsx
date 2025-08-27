@@ -13,8 +13,8 @@ describe('Navigation', () => {
     jest.clearAllMocks()
   })
 
-  it('renders nothing when user is not authenticated', () => {
-    const { container } = renderWithProviders(<Navigation />, {
+  it('renders navigation for non-authenticated users with limited items', () => {
+    renderWithProviders(<Navigation />, {
       auth: {
         isAuthenticated: false,
         user: null,
@@ -23,7 +23,13 @@ describe('Navigation', () => {
       },
     })
 
-    expect(container.firstChild).toBeNull()
+    // Should show Home and About for non-authenticated users
+    expect(screen.getByRole('link', { name: /Home/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /About/ })).toBeInTheDocument()
+    
+    // Should NOT show authenticated-only items
+    expect(screen.queryByRole('link', { name: /Accounts/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Transactions/ })).not.toBeInTheDocument()
   })
 
   it('renders navigation menu when user is authenticated', () => {
@@ -36,7 +42,10 @@ describe('Navigation', () => {
       },
     })
 
+    // Check key navigation items are present
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Accounts')).toBeInTheDocument()
+    expect(screen.getByText('Transactions')).toBeInTheDocument()
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
@@ -69,7 +78,7 @@ describe('Navigation', () => {
 
   it('handles logout correctly', async () => {
     const user = userEvent.setup()
-    const { store } = renderWithProviders(<Navigation />, {
+    renderWithProviders(<Navigation />, {
       auth: {
         isAuthenticated: true,
         user: { id: '1', email: 'test@example.com', name: 'Test User', profile_complete: true },
@@ -147,8 +156,15 @@ describe('Navigation', () => {
     })
 
     expect(screen.getByRole('navigation')).toBeInTheDocument()
-    expect(screen.getByRole('list')).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')).toHaveLength(3) // Dashboard, Profile, Settings
+    expect(screen.getAllByRole('list')).toHaveLength(5) // 5 sections with lists
+    expect(screen.getAllByRole('listitem')).toHaveLength(10) // All navigation items for authenticated users
+    
+    // Check section titles (using headings)
+    expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Information' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Financial Management' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Analytics' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Account' })).toBeInTheDocument()
   })
 
   it('closes mobile menu when navigation link is clicked', async () => {

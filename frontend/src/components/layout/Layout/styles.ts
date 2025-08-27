@@ -13,7 +13,8 @@ export const MainContent = styled.main`
   flex-direction: column;
   
   @media (min-width: ${({ theme }) => theme.breakpoints.lg}) {
-    flex-direction: row;
+    flex-direction: column;
+    margin-left: 280px; /* Account for sidebar width */
   }
 `
 

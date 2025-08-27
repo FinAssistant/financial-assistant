@@ -69,11 +69,13 @@ export const NavigationContainer = styled.nav<NavigationContainerProps>`
   
   /* Desktop styles */
   @media (min-width: ${({ theme }) => theme.breakpoints.lg}) {
-    position: static;
+    position: fixed;
     transform: none;
     width: 280px;
-    height: auto;
-    min-height: calc(100vh - 80px); /* Adjust for header height */
+    height: calc(100vh - 62px); /* Account for header height */
+    top: 62px; /* Start below header */
+    left: 0;
+    z-index: 50; /* Lower than header (z-index: 100) */
     transition: none;
   }
 `
@@ -122,6 +124,25 @@ export const NavigationList = styled.ul`
   display: flex;
   flex-direction: column;
   gap: ${({ theme }) => theme.spacing.xs};
+`
+
+export const NavigationSection = styled.div`
+  margin-bottom: ${({ theme }) => theme.spacing.lg};
+
+  &:not(:last-child) {
+    border-bottom: 1px solid ${({ theme }) => theme.colors.border.light};
+    padding-bottom: ${({ theme }) => theme.spacing.md};
+  }
+`
+
+export const NavigationSectionTitle = styled.h3`
+  font-size: ${({ theme }) => theme.fontSizes.xs};
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 ${({ theme }) => theme.spacing.sm} 0;
+  padding: 0 ${({ theme }) => theme.spacing.md};
 `
 
 export const NavigationLink = styled.a<NavigationLinkProps>`

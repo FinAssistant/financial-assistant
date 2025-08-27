@@ -18,10 +18,6 @@ const Header: React.FC = () => {
     <HeaderContainer>
       <Nav>
         <Logo to="/">AI Financial Assistant</Logo>
-        <NavLinks>
-          <NavLink to="/">Home</NavLink>
-          <NavLink to="/about">About</NavLink>
-        </NavLinks>
         <AuthSection>
           {!isAuthenticated && (
             <LoginButton to="/login">

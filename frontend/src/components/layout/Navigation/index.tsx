@@ -7,7 +7,14 @@ import {
   Settings, 
   Menu, 
   X,
-  LogOut 
+  LogOut,
+  DollarSign,
+  TrendingUp,
+  PieChart,
+  CreditCard,
+  Target,
+  BarChart3,
+  Info
 } from 'lucide-react'
 import { selectIsAuthenticated, selectCurrentUser, logout } from '../../../store/slices/authSlice'
 import { NavigationItem } from '../../../types/navigation'
@@ -17,6 +24,8 @@ import {
   MobileOverlay,
   NavigationList,
   NavigationLink,
+  NavigationSection,
+  NavigationSectionTitle,
   UserSection,
   UserInfo,
   LogoutButton,
@@ -24,27 +33,106 @@ import {
   BreadcrumbLink
 } from './styles'
 
-const navigationItems: NavigationItem[] = [
+interface NavigationSection {
+  title: string
+  items: NavigationItem[]
+}
+
+const getNavigationSections = (isAuthenticated: boolean): NavigationSection[] => [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    path: '/',
-    icon: Home,
-    requiresAuth: true
+    title: 'Overview',
+    items: [
+      {
+        id: 'home-dashboard',
+        label: isAuthenticated ? 'Dashboard' : 'Home',
+        path: '/',
+        icon: isAuthenticated ? BarChart3 : Home,
+        requiresAuth: false // This item shows for both states
+      }
+    ]
   },
   {
-    id: 'profile',
-    label: 'Profile',
-    path: '/profile',
-    icon: User,
-    requiresAuth: true
+    title: 'Information',
+    items: [
+      {
+        id: 'about',
+        label: 'About',
+        path: '/about',
+        icon: Info,
+        requiresAuth: false
+      }
+    ]
   },
   {
-    id: 'settings',
-    label: 'Settings',
-    path: '/settings',
-    icon: Settings,
-    requiresAuth: true
+    title: 'Financial Management',
+    items: [
+      {
+        id: 'accounts',
+        label: 'Accounts',
+        path: '/accounts',
+        icon: CreditCard,
+        requiresAuth: true
+      },
+      {
+        id: 'transactions',
+        label: 'Transactions',
+        path: '/transactions',
+        icon: DollarSign,
+        requiresAuth: true
+      },
+      {
+        id: 'investments',
+        label: 'Investments',
+        path: '/investments',
+        icon: TrendingUp,
+        requiresAuth: true
+      },
+      {
+        id: 'budgets',
+        label: 'Budgets',
+        path: '/budgets',
+        icon: Target,
+        requiresAuth: true
+      }
+    ]
+  },
+  {
+    title: 'Analytics',
+    items: [
+      {
+        id: 'reports',
+        label: 'Reports',
+        path: '/reports',
+        icon: BarChart3,
+        requiresAuth: true
+      },
+      {
+        id: 'analytics',
+        label: 'Analytics',
+        path: '/analytics',
+        icon: PieChart,
+        requiresAuth: true
+      }
+    ]
+  },
+  {
+    title: 'Account',
+    items: [
+      {
+        id: 'profile',
+        label: 'Profile',
+        path: '/profile',
+        icon: User,
+        requiresAuth: true
+      },
+      {
+        id: 'settings',
+        label: 'Settings',
+        path: '/settings',
+        icon: Settings,
+        requiresAuth: true
+      }
+    ]
   }
 ]
 
@@ -76,11 +164,17 @@ const Navigation: React.FC = () => {
     setIsMobileMenuOpen(false)
   }
 
-  if (!isAuthenticated) {
-    return null
-  }
+  // Get navigation sections based on authentication status
+  const navigationSections = getNavigationSections(isAuthenticated)
+  
+  // Filter sections based on authentication requirements
+  const visibleSections = navigationSections.map(section => ({
+    ...section,
+    items: section.items.filter(item => !item.requiresAuth || isAuthenticated)
+  })).filter(section => section.items.length > 0)
 
-  const visibleItems = navigationItems.filter(item => !item.requiresAuth || isAuthenticated)
+  // Flatten navigation items for breadcrumb generation
+  const allNavigationItems = navigationSections.flatMap(section => section.items)
 
   // Generate breadcrumbs based on current path
   const generateBreadcrumbs = () => {
@@ -90,7 +184,7 @@ const Navigation: React.FC = () => {
     let currentPath = ''
     pathSegments.forEach(segment => {
       currentPath += `/${segment}`
-      const matchedItem = navigationItems.find(item => item.path === currentPath)
+      const matchedItem = allNavigationItems.find(item => item.path === currentPath)
       if (matchedItem) {
         breadcrumbs.push({ label: matchedItem.label, path: currentPath })
       }
@@ -125,27 +219,32 @@ const Navigation: React.FC = () => {
           </UserSection>
         )}
 
-        {/* Navigation Links */}
-        <NavigationList>
-          {visibleItems.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
-            
-            return (
-              <li key={item.id}>
-                <NavigationLink
-                  as={Link}
-                  to={item.path}
-                  $isActive={isActive}
-                  onClick={closeMobileMenu}
-                >
-                  <Icon size={24} />
-                  <span>{item.label}</span>
-                </NavigationLink>
-              </li>
-            )
-          })}
-        </NavigationList>
+        {/* Navigation Links by Section */}
+        {visibleSections.map((section) => (
+          <NavigationSection key={section.title}>
+            <NavigationSectionTitle>{section.title}</NavigationSectionTitle>
+            <NavigationList>
+              {section.items.map((item) => {
+                  const Icon = item.icon
+                  const isActive = location.pathname === item.path
+                  
+                  return (
+                    <li key={item.id}>
+                      <NavigationLink
+                        as={Link}
+                        to={item.path}
+                        $isActive={isActive}
+                        onClick={closeMobileMenu}
+                      >
+                        <Icon size={20} />
+                        <span>{item.label}</span>
+                      </NavigationLink>
+                    </li>
+                  )
+                })}
+              </NavigationList>
+            </NavigationSection>
+        ))}
 
         {/* Breadcrumb Navigation */}
         {breadcrumbs.length > 0 && (
