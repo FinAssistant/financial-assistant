@@ -250,6 +250,20 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [exitingToasts, setExitingToasts] = useState<Set<string>>(new Set())
 
+  const removeToast = useCallback((id: string) => {
+    setExitingToasts(prev => new Set(prev).add(id))
+    
+    // Remove from DOM after animation
+    setTimeout(() => {
+      setToasts(prev => prev.filter(toast => toast.id !== id))
+      setExitingToasts(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }, 300)
+  }, [])
+
   const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).substring(2, 9)
     const newToast: Toast = {
@@ -268,21 +282,7 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
     }
 
     return id
-  }, [])
-
-  const removeToast = useCallback((id: string) => {
-    setExitingToasts(prev => new Set(prev).add(id))
-    
-    // Remove from DOM after animation
-    setTimeout(() => {
-      setToasts(prev => prev.filter(toast => toast.id !== id))
-      setExitingToasts(prev => {
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
-    }, 300)
-  }, [])
+  }, [removeToast])
 
   const removeAllToasts = useCallback(() => {
     setToasts([])
@@ -355,19 +355,23 @@ const ToastRenderer: React.FC<ToastRendererProps> = ({ toasts, exitingToasts, on
   )
 }
 
-// Convenience functions
+// Convenience functions - these are placeholder implementations
+// In a real implementation, these would be connected to the ToastProvider
 export const toast = {
   info: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
-    // This will be implemented by the hook consumer
+    console.warn('toast.info() called with:', message, options)
     throw new Error('toast.info() must be called within a ToastProvider')
   },
   success: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    console.warn('toast.success() called with:', message, options)
     throw new Error('toast.success() must be called within a ToastProvider')
   },
   warning: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    console.warn('toast.warning() called with:', message, options)
     throw new Error('toast.warning() must be called within a ToastProvider')
   },
   error: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    console.warn('toast.error() called with:', message, options)
     throw new Error('toast.error() must be called within a ToastProvider')
   }
 }

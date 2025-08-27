@@ -7,10 +7,11 @@ const spin = keyframes`
   100% { transform: rotate(360deg); }
 `
 
-const pulse = keyframes`
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-`
+// Commented out unused animation
+// const pulse = keyframes`
+//   0%, 100% { opacity: 1; }
+//   50% { opacity: 0.5; }
+// `
 
 const bounce = keyframes`
   0%, 80%, 100% { transform: translateY(0); }

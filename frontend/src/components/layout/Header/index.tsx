@@ -5,8 +5,6 @@ import {
   HeaderContainer, 
   Nav, 
   Logo, 
-  NavLinks, 
-  NavLink,
   AuthSection,
   LoginButton 
 } from './styles'
