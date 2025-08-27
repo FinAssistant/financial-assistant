@@ -91,7 +91,7 @@ const ButtonGroup = styled.div`
 
 const ActionButton = styled(Link).withConfig({
   shouldForwardProp: (prop) => !['variant'].includes(prop as string),
-})<{ variant?: 'primary' | 'secondary' }>`
+}) <{ variant?: 'primary' | 'secondary' }>`
   display: inline-flex;
   align-items: center;
   gap: ${({ theme }) => theme.spacing.sm};
@@ -262,30 +262,27 @@ const NotImplementedPage: React.FC<NotImplementedPageProps> = ({
           <Construction size={48} />
         </MainIcon>
       </IconContainer>
-      
+
       <Title>{title}</Title>
       <Subtitle>{message}</Subtitle>
-      
+
       {showPath && currentPath !== '/' && (
         <PathInfo>
           Requested path: {currentPath}
         </PathInfo>
       )}
-      
+
       <ButtonGroup>
         <ActionButton to="/" variant="primary">
           <Home size={18} />
           Go Home
         </ActionButton>
-        <ActionButton as="button" variant="secondary" onClick={(e) => {
-          e.preventDefault()
-          window.history.back()
-        }}>
+        <ActionButton as="button" variant="secondary" to="/">
           <ArrowLeft size={18} />
           Go Back
         </ActionButton>
       </ButtonGroup>
-      
+
       {displayFeatures.length > 0 && (
         <FeatureInfo>
           <FeatureTitle>
