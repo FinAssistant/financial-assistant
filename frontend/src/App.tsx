@@ -5,6 +5,8 @@ import Layout from './components/layout/Layout'
 import HomePage from './pages/HomePage'
 import AboutPage from './pages/AboutPage'
 import LoginPage from './pages/LoginPage'
+import DashboardPage from './pages/DashboardPage'
+import NotImplementedPage from './pages/NotImplementedPage'
 import AuthGuard from './components/layout/AuthGuard'
 import { useSelector } from 'react-redux'
 import { selectIsAuthenticated } from './store/slices/authSlice'
@@ -29,9 +31,13 @@ function App() {
         <Route
           path="/"
           element={
-            <Layout>
-              {isAuthenticated ? <div>Coming Soon</div> : <HomePage />}
-            </Layout>
+            isAuthenticated ? (
+              <Layout>
+                <DashboardPage />
+              </Layout>
+            ) : (
+              <HomePage />
+            )
           }
         />
 
@@ -39,15 +45,118 @@ function App() {
         <Route
           path="/about"
           element={
+            <Layout>
+              <AboutPage />
+            </Layout>
+          }
+        />
+
+        {/* Financial Management Routes */}
+        <Route
+          path="/accounts"
+          element={
             <AuthGuard requireAuth={true}>
               <Layout>
-                <AboutPage />
+                <NotImplementedPage />
               </Layout>
             </AuthGuard>
           }
         />
-      </Routes>
-    </PersistGate>
+        
+        <Route
+          path="/transactions"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+        
+        <Route
+          path="/investments"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+        
+        <Route
+          path="/budgets"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+
+        {/* Analytics Routes */}
+        <Route
+          path="/reports"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+        
+        <Route
+          path="/analytics"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+
+        {/* Account Routes */}
+        <Route
+          path="/profile"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+        
+        <Route
+          path="/settings"
+          element={
+            <AuthGuard requireAuth={true}>
+              <Layout>
+                <NotImplementedPage />
+              </Layout>
+            </AuthGuard>
+          }
+        />
+
+        {/* Catch-all route for unmatched paths */}
+        <Route
+          path="*"
+          element={
+            <Layout>
+              <NotImplementedPage 
+                title="Page Not Found"
+                message="The page you're looking for doesn't exist or may have been moved."
+                features={[]}
+              />
+            </Layout>
+          }
+        />
+      </Routes >
+    </PersistGate >
   )
 }
 
