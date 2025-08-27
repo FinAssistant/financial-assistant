@@ -89,7 +89,9 @@ const ButtonGroup = styled.div`
   }
 `
 
-const ActionButton = styled(Link)<{ variant?: 'primary' | 'secondary' }>`
+const ActionButton = styled(Link).withConfig({
+  shouldForwardProp: (prop) => !['variant'].includes(prop as string),
+})<{ variant?: 'primary' | 'secondary' }>`
   display: inline-flex;
   align-items: center;
   gap: ${({ theme }) => theme.spacing.sm};
@@ -101,6 +103,8 @@ const ActionButton = styled(Link)<{ variant?: 'primary' | 'secondary' }>`
   font-family: ${({ theme }) => theme.fonts.primary};
   transition: all 0.2s ease;
   border: 2px solid;
+  background: transparent;
+  cursor: pointer;
   
   ${({ theme, variant = 'primary' }) => {
     if (variant === 'primary') {
@@ -273,7 +277,7 @@ const NotImplementedPage: React.FC<NotImplementedPageProps> = ({
           <Home size={18} />
           Go Home
         </ActionButton>
-        <ActionButton to="javascript:history.back()" variant="secondary" onClick={(e) => {
+        <ActionButton as="button" variant="secondary" onClick={(e) => {
           e.preventDefault()
           window.history.back()
         }}>
