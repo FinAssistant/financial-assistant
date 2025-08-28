@@ -37,7 +37,7 @@ describe('AuthGuard', () => {
         }
       )
 
-      expect(screen.getByText('Loading...')).toBeInTheDocument()
+      expect(screen.getByText('Checking authentication...')).toBeInTheDocument()
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
     })
 
@@ -184,7 +184,7 @@ describe('AuthGuard', () => {
         }
       )
 
-      expect(screen.getByText('Loading...')).toBeInTheDocument()
+      expect(screen.getByText('Checking authentication...')).toBeInTheDocument()
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
     })
   })

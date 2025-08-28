@@ -1,7 +1,9 @@
 import styled from 'styled-components'
+import { Link } from 'react-router-dom'
 
 const PageContainer = styled.div`
   text-align: center;
+  margin: 0 ${({ theme }) => theme.spacing['2xl']};
   padding: ${({ theme }) => theme.spacing['2xl']} 0;
 `
 
@@ -45,6 +47,37 @@ const FeatureDescription = styled.p`
   line-height: 1.6;
 `
 
+const CTASection = styled.div`
+  margin: ${({ theme }) => theme.spacing['2xl']} 0;
+`
+
+const LoginButton = styled(Link)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: ${({ theme }) => theme.colors.primary.main};
+  color: ${({ theme }) => theme.colors.text.inverse};
+  padding: ${({ theme }) => theme.spacing.md} ${({ theme }) => theme.spacing.xl};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  text-decoration: none;
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-weight: 600;
+  font-family: ${({ theme }) => theme.fonts.primary};
+  transition: all 0.2s ease;
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  
+  &:hover {
+    background: ${({ theme }) => theme.colors.primary.dark};
+    text-decoration: none;
+    transform: translateY(-2px);
+    box-shadow: ${({ theme }) => theme.shadows.lg};
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+`
+
 function HomePage() {
   return (
     <PageContainer>
@@ -52,7 +85,13 @@ function HomePage() {
       <Subtitle>
         Your intelligent companion for managing finances, tracking expenses, and making informed financial decisions.
       </Subtitle>
-      
+
+      <CTASection>
+        <LoginButton to="/login">
+          Get Started - Sign In
+        </LoginButton>
+      </CTASection>
+
       <FeatureGrid>
         <FeatureCard>
           <FeatureTitle>Smart Analytics</FeatureTitle>
@@ -60,14 +99,14 @@ function HomePage() {
             Get AI-powered insights into your spending patterns and financial habits.
           </FeatureDescription>
         </FeatureCard>
-        
+
         <FeatureCard>
           <FeatureTitle>Secure Banking</FeatureTitle>
           <FeatureDescription>
             Connect your bank accounts securely and view all your finances in one place.
           </FeatureDescription>
         </FeatureCard>
-        
+
         <FeatureCard>
           <FeatureTitle>Personalized Advice</FeatureTitle>
           <FeatureDescription>
