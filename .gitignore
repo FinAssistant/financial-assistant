@@ -48,3 +48,6 @@ uv.lock
 
 # AI/ML
 .ai/debug-log.md
+
+# Architecture conversations
+docs/architecture/data-model-design-conversation.md
