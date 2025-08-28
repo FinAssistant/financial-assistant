@@ -9,7 +9,12 @@ import { persistStore } from 'redux-persist'
 import { PersistGate } from 'redux-persist/integration/react'
 import { baseApi } from '../store/api/baseApi'
 import authReducer from '../store/slices/authSlice'
+import conversationReducer from '../store/slices/conversationSlice'
 import { theme } from '../styles/theme'
+import type { RootState } from '../store'
+
+// Mock scrollIntoView
+Element.prototype.scrollIntoView = jest.fn();
 
 // Mock redux-persist
 jest.mock('redux-persist', () => ({
@@ -41,10 +46,11 @@ global.fetch = jest.fn(() =>
 ) as jest.Mock
 
 // Common test store creation
-export const createTestStore = (initialState: { auth?: Partial<{ user: null | { id: string; email: string; name?: string; profile_complete: boolean }, token: null | string, isAuthenticated: boolean, loading: boolean }> } = {}) => {
+export const createTestStore = (initialState: Partial<RootState> = {}) => {
   return configureStore({
     reducer: {
       auth: authReducer,
+      conversation: conversationReducer,
       [baseApi.reducerPath]: baseApi.reducer,
     },
     preloadedState: {
@@ -54,6 +60,14 @@ export const createTestStore = (initialState: { auth?: Partial<{ user: null | { 
         isAuthenticated: false,
         loading: false,
         ...initialState.auth,
+      },
+      conversation: {
+        messages: [],
+        currentSessionId: null,
+        isStreaming: false,
+        streamingMessageId: null,
+        error: null,
+        ...initialState.conversation,
       },
     },
     middleware: (getDefaultMiddleware) =>
