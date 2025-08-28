@@ -111,7 +111,6 @@ class User:
 @dataclass
 class SpouseBasicInfo:
     """Minimal spouse information - financial details live in Graphiti relationships"""
-    exists: bool = False
     name: Optional[str] = None  # For personalization in conversations
     age_range: Optional[AgeRange] = None
     employment_status: Optional[str] = None  # Basic categorization for app logic
