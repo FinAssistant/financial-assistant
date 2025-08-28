@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from app.core.config import settings
-from app.routers import auth
+from app.routers import auth, conversation
 
 
 def create_app() -> FastAPI:
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     
     # Include API routers
     app.include_router(auth.router)
+    app.include_router(conversation.router)
     
     return app
 
