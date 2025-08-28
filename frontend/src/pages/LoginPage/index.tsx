@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux'
 import {
   useLoginAuthLoginPostMutation,
   useRegisterAuthRegisterPostMutation,
-} from '../../store/api/authApi'
+} from '../../store/api/apiSlice'
 import { selectIsAuthenticated, selectIsLoading } from '../../store/slices/authSlice'
 import {
   Container,

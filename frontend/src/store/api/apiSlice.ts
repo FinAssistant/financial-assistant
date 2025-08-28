@@ -1,5 +1,5 @@
 import { baseApi as api } from "./baseApi";
-export const addTagTypes = ["authentication"] as const;
+export const addTagTypes = ["authentication", "conversation"] as const;
 const injectedRtkApi = api
   .enhanceEndpoints({
     addTagTypes,
@@ -42,6 +42,35 @@ const injectedRtkApi = api
         query: () => ({ url: `/auth/me` }),
         providesTags: ["authentication"],
       }),
+      sendMessageConversationSendPost: build.mutation<
+        SendMessageConversationSendPostApiResponse,
+        SendMessageConversationSendPostApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/conversation/send`,
+          method: "POST",
+          body: queryArg.conversationRequest,
+        }),
+        invalidatesTags: ["conversation"],
+      }),
+      sendMessageNonStreamingConversationMessagePost: build.mutation<
+        SendMessageNonStreamingConversationMessagePostApiResponse,
+        SendMessageNonStreamingConversationMessagePostApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/conversation/message`,
+          method: "POST",
+          body: queryArg.conversationRequest,
+        }),
+        invalidatesTags: ["conversation"],
+      }),
+      healthCheckConversationHealthGet: build.query<
+        HealthCheckConversationHealthGetApiResponse,
+        HealthCheckConversationHealthGetApiArg
+      >({
+        query: () => ({ url: `/conversation/health` }),
+        providesTags: ["conversation"],
+      }),
       healthCheckHealthGet: build.query<
         HealthCheckHealthGetApiResponse,
         HealthCheckHealthGetApiArg
@@ -54,16 +83,10 @@ const injectedRtkApi = api
       >({
         query: () => ({ url: `/api/health` }),
       }),
-      serveReactAppFullPathGet: build.query<
-        ServeReactAppFullPathGetApiResponse,
-        ServeReactAppFullPathGetApiArg
-      >({
-        query: (queryArg) => ({ url: `/${queryArg.fullPath}` }),
-      }),
     }),
     overrideExisting: false,
   });
-export { injectedRtkApi as authApi };
+export { injectedRtkApi as apiSlice };
 export type RegisterAuthRegisterPostApiResponse =
   /** status 201 Successful Response */ AuthResponse;
 export type RegisterAuthRegisterPostApiArg = {
@@ -79,32 +102,33 @@ export type LogoutAuthLogoutPostApiResponse =
 export type LogoutAuthLogoutPostApiArg = void;
 export type GetCurrentUserInfoAuthMeGetApiResponse =
   /** status 200 Successful Response */ {
-    id: string;
-    email: string;
-    name?: string;
-    profile_complete: boolean;
-    created_at?: string;
+    [key: string]: any;
   };
 export type GetCurrentUserInfoAuthMeGetApiArg = void;
+export type SendMessageConversationSendPostApiResponse =
+  /** status 200 Successful Response */ void;
+export type SendMessageConversationSendPostApiArg = {
+  conversationRequest: ConversationRequest;
+};
+export type SendMessageNonStreamingConversationMessagePostApiResponse =
+  /** status 200 Successful Response */ ConversationResponse;
+export type SendMessageNonStreamingConversationMessagePostApiArg = {
+  conversationRequest: ConversationRequest;
+};
+export type HealthCheckConversationHealthGetApiResponse =
+  /** status 200 Successful Response */ ConversationHealthResponse;
+export type HealthCheckConversationHealthGetApiArg = void;
 export type HealthCheckHealthGetApiResponse =
-  /** status 200 Successful Response */ Record<string, unknown>;
+  /** status 200 Successful Response */ any;
 export type HealthCheckHealthGetApiArg = void;
 export type ApiHealthCheckApiHealthGetApiResponse =
-  /** status 200 Successful Response */ Record<string, unknown>;
+  /** status 200 Successful Response */ any;
 export type ApiHealthCheckApiHealthGetApiArg = void;
-export type ServeReactAppFullPathGetApiResponse =
-  /** status 200 Successful Response */ Record<string, unknown>;
-export type ServeReactAppFullPathGetApiArg = {
-  fullPath: string;
-};
 export type AuthResponse = {
   access_token: string;
   token_type?: string;
   user: {
-    id: string;
-    email: string;
-    name?: string;
-    profile_complete: boolean;
+    [key: string]: any;
   };
 };
 export type ValidationError = {
@@ -127,12 +151,35 @@ export type LoginRequest = {
 export type MessageResponse = {
   message: string;
 };
+export type ConversationRequest = {
+  /** User message */
+  message: string;
+  /** Optional conversation session ID */
+  session_id?: string | null;
+};
+export type ConversationResponse = {
+  id: string;
+  content: string;
+  role: string;
+  agent: string;
+  session_id: string;
+  user_id: string;
+  created_at: string;
+};
+export type ConversationHealthResponse = {
+  status: string;
+  graph_initialized: boolean;
+  test_response_received: boolean;
+  error?: string | null;
+};
 export const {
   useRegisterAuthRegisterPostMutation,
   useLoginAuthLoginPostMutation,
   useLogoutAuthLogoutPostMutation,
   useGetCurrentUserInfoAuthMeGetQuery,
+  useSendMessageConversationSendPostMutation,
+  useSendMessageNonStreamingConversationMessagePostMutation,
+  useHealthCheckConversationHealthGetQuery,
   useHealthCheckHealthGetQuery,
   useApiHealthCheckApiHealthGetQuery,
-  useServeReactAppFullPathGetQuery,
 } = injectedRtkApi;

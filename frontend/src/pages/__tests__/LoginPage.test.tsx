@@ -9,8 +9,8 @@ const mockLogin = jest.fn()
 const mockRegister = jest.fn()
 const mockNavigate = jest.fn()
 
-jest.mock('../../store/api/authApi', () => ({
-  ...jest.requireActual('../../store/api/authApi'),
+jest.mock('../../store/api/apiSlice', () => ({
+  ...jest.requireActual('../../store/api/apiSlice'),
   useLoginAuthLoginPostMutation: () => [mockLogin, { isLoading: false, error: null }],
   useRegisterAuthRegisterPostMutation: () => [mockRegister, { isLoading: false, error: null }],
 }))

@@ -2,7 +2,7 @@ import styled from 'styled-components'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector, useDispatch } from 'react-redux'
 import { selectIsAuthenticated, selectCurrentUser, logout } from '../store/slices/authSlice'
-import { useLogoutAuthLogoutPostMutation } from '../store/api/authApi'
+import { useLogoutAuthLogoutPostMutation } from '../store/api/apiSlice'
 
 const HeaderContainer = styled.header`
   background-color: ${({ theme }) => theme.colors.background.secondary};

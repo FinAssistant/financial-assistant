@@ -1,0 +1,11 @@
+const config = {
+  schemaFile: 'http://localhost:8000/openapi.json',
+  apiFile: './src/store/api/baseApi.ts',
+  apiImport: 'baseApi',
+  outputFile: './src/store/api/apiSlice.ts',
+  exportName: 'apiSlice',
+  hooks: true,
+  tag: true,
+}
+
+module.exports = config

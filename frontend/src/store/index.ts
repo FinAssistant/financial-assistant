@@ -1,8 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { persistStore, persistReducer } from 'redux-persist'
 import storage from 'redux-persist/lib/storage'
-import { baseApi } from './api/baseApi'
+import { apiSlice } from './api/apiSlice'
 import authReducer from './slices/authSlice'
+import conversationReducer from './slices/conversationSlice'
 
 const authPersistConfig = {
   key: 'auth',
@@ -15,7 +16,8 @@ const persistedAuthReducer = persistReducer(authPersistConfig, authReducer)
 export const store = configureStore({
   reducer: {
     auth: persistedAuthReducer,
-    [baseApi.reducerPath]: baseApi.reducer,
+    conversation: conversationReducer,
+    [apiSlice.reducerPath]: apiSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -28,7 +30,7 @@ export const store = configureStore({
           'persist/REGISTER',
         ],
       },
-    }).concat(baseApi.middleware),
+    }).concat(apiSlice.middleware),
   devTools: process.env.NODE_ENV !== 'production',
 })
 
