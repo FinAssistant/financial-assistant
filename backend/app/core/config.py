@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     
     # Environment
     environment: str = Field(default="development", description="Environment (development|production)")
+    
+    # AI/LangGraph settings
+    ai_model_name: str = Field(default="gpt-3.5-turbo", description="AI model to use")
+    ai_temperature: float = Field(default=0.7, description="AI response temperature")
+    ai_max_tokens: int = Field(default=500, description="Maximum tokens for AI responses")
+    langgraph_memory_type: str = Field(default="in_memory", description="LangGraph memory backend")
+    conversation_timeout: int = Field(default=300, description="Conversation timeout in seconds")
 
 
 # Global settings instance

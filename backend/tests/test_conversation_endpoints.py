@@ -1,0 +1,259 @@
+import pytest
+import json
+from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
+from httpx import AsyncClient
+from fastapi import Depends
+
+from app.main import create_app
+from app.services.auth_service import auth_service
+from app.routers.auth import get_current_user
+
+
+# Mock function for auth dependency
+def mock_get_current_user():
+    """Mock authentication dependency."""
+    return "test_user_123"
+
+
+@pytest.fixture
+def app():
+    """Create FastAPI test application with mocked auth."""
+    app = create_app()
+    # Override the auth dependency
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    return app
+
+
+@pytest.fixture
+def client(app):
+    """Create test client."""
+    return TestClient(app)
+
+
+@pytest.fixture
+def unauthenticated_app():
+    """Create FastAPI test application without mocked auth."""
+    return create_app()
+
+
+@pytest.fixture
+def unauthenticated_client(unauthenticated_app):
+    """Create test client without auth override."""
+    return TestClient(unauthenticated_app)
+
+
+class TestConversationEndpoints:
+    """Test cases for conversation API endpoints."""
+    
+    def test_send_message_success(self, client):
+        """Test successful message sending."""
+        response = client.post(
+            "/conversation/message",
+            json={"message": "Hello, I need help with budgeting"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "id" in data
+        assert "content" in data
+        assert "role" in data
+        assert "agent" in data
+        assert "session_id" in data
+        assert "user_id" in data
+        assert "created_at" in data
+        
+        assert data["role"] == "assistant"
+        assert data["agent"] == "orchestrator"
+        assert data["user_id"] == "test_user_123"
+        assert data["session_id"] == "session_test_user_123"
+        assert isinstance(data["content"], str)
+        assert len(data["content"]) > 0
+    
+    def test_send_message_with_custom_session_id(self, client):
+        """Test message sending with custom session ID."""
+        custom_session_id = "custom_session_456"
+        
+        response = client.post(
+            "/conversation/message",
+            json={
+                "message": "Test message", 
+                "session_id": custom_session_id
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["session_id"] == custom_session_id
+    
+    def test_send_message_empty_message(self, client):
+        """Test sending empty message."""
+        response = client.post(
+            "/conversation/message",
+            json={"message": ""}
+        )
+        
+        # Pydantic validation happens first, so we get 422 not 400
+        assert response.status_code == 422
+        error_details = response.json()["detail"]
+        # Check that validation error mentions message length
+        assert any("at least 1 character" in str(error) for error in error_details)
+    
+    def test_send_message_whitespace_only(self, client):
+        """Test sending message with only whitespace."""
+        response = client.post(
+            "/conversation/message",
+            json={"message": "   \n\t  "}
+        )
+        
+        # This passes Pydantic validation but fails our custom validation
+        assert response.status_code == 400
+        assert "Message cannot be empty" in response.json()["detail"]
+    
+    def test_send_message_unauthorized(self, unauthenticated_client):
+        """Test sending message without authentication."""
+        response = unauthenticated_client.post(
+            "/conversation/message",
+            json={"message": "Hello"}
+        )
+        
+        assert response.status_code == 403  # Missing authorization header
+    
+    def test_send_message_invalid_token(self, unauthenticated_client):
+        """Test sending message with invalid token."""
+        response = unauthenticated_client.post(
+            "/conversation/message",
+            json={"message": "Hello"},
+            headers={"Authorization": "Bearer invalid_token"}
+        )
+        
+        assert response.status_code == 401
+    
+    def test_streaming_endpoint_success(self, client):
+        """Test streaming conversation endpoint."""
+        response = client.post(
+            "/conversation/send",
+            json={"message": "Test streaming message"}
+        )
+        
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        
+        # Check that we get streaming data
+        content = response.content.decode()
+        assert "data:" in content
+        assert "chat.completion.chunk" in content
+        assert "[DONE]" in content
+    
+    def test_streaming_endpoint_empty_message(self, client):
+        """Test streaming endpoint with empty message."""
+        response = client.post(
+            "/conversation/send",
+            json={"message": ""}
+        )
+        
+        assert response.status_code == 422  # Pydantic validation error
+    
+    def test_health_check_success(self, client):
+        """Test conversation health check endpoint."""
+        response = client.get("/conversation/health")
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "status" in data
+        assert "graph_initialized" in data
+        assert "test_response_received" in data
+        assert "error" in data
+        
+        assert data["status"] == "healthy"
+        assert data["graph_initialized"] is True
+        assert data["test_response_received"] is True
+    
+    def test_health_check_unauthorized(self, unauthenticated_client):
+        """Test health check without authentication."""
+        response = unauthenticated_client.get("/conversation/health")
+        
+        assert response.status_code == 403  # Missing authorization header
+    
+    @patch('app.routers.conversation.orchestrator')
+    def test_send_message_orchestrator_error(self, mock_orchestrator, client):
+        """Test handling of orchestrator errors."""
+        # Mock orchestrator to return error
+        mock_orchestrator.process_message.return_value = {
+            "content": "Error occurred",
+            "error": "Test error",
+            "agent": "orchestrator"
+        }
+        
+        response = client.post(
+            "/conversation/message",
+            json={"message": "Test message"}
+        )
+        
+        assert response.status_code == 500
+        assert "AI processing error" in response.json()["detail"] or "Conversation processing failed" in response.json()["detail"]
+    
+    @patch('app.routers.conversation.orchestrator')
+    def test_health_check_orchestrator_exception(self, mock_orchestrator, client):
+        """Test health check when orchestrator raises exception."""
+        # Mock orchestrator to raise exception
+        mock_orchestrator.health_check.side_effect = Exception("Test exception")
+        
+        response = client.get("/conversation/health")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert data["error"] is not None
+    
+    def test_message_too_long(self, client):
+        """Test message that exceeds maximum length."""
+        long_message = "x" * 1001  # Exceeds 1000 char limit
+        
+        response = client.post(
+            "/conversation/message",
+            json={"message": long_message}
+        )
+        
+        assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.asyncio
+class TestConversationEndpointsAsync:
+    """Async test cases for conversation endpoints."""
+    
+    async def test_async_send_message(self):
+        """Test async message sending."""
+        app = create_app()
+        # Mock auth for async client too
+        app.dependency_overrides[get_current_user] = mock_get_current_user
+        
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            response = await client.post(
+                "/conversation/message",
+                json={"message": "Async test message"}
+            )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["role"] == "assistant"
+        assert data["agent"] == "orchestrator"
+    
+    async def test_async_streaming_send(self):
+        """Test async streaming endpoint."""
+        app = create_app()
+        # Mock auth for async client too
+        app.dependency_overrides[get_current_user] = mock_get_current_user
+        
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            response = await client.post(
+                "/conversation/send",
+                json={"message": "Async streaming test"}
+            )
+        
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "data:" in content
+        assert "[DONE]" in content
