@@ -1,6 +1,7 @@
 import React from 'react'
 import styled from 'styled-components'
-import { TrendingUp, DollarSign, CreditCard, Target, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { TrendingUp, DollarSign, CreditCard, Target, ArrowUpRight, ArrowDownRight, MessageCircle } from 'lucide-react'
+import ChatInterface from '../components/chat/ChatInterface'
 
 // Layout components
 const DashboardContainer = styled.div`
@@ -56,10 +57,10 @@ const StatCard = styled.div<{ trend?: 'up' | 'down' }>`
     left: 0;
     right: 0;
     height: 4px;
-    background: ${({ theme, trend }) => 
-      trend === 'up' ? theme.colors.profit.main : 
-      trend === 'down' ? theme.colors.loss.main : 
-      theme.colors.primary.main};
+    background: ${({ theme, trend }) =>
+    trend === 'up' ? theme.colors.profit.main :
+      trend === 'down' ? theme.colors.loss.main :
+        theme.colors.primary.main};
   }
 `
 
@@ -118,7 +119,7 @@ const StatTrend = styled.div<{ trend: 'up' | 'down' }>`
   gap: ${({ theme }) => theme.spacing.xs};
   font-size: ${({ theme }) => theme.fontSizes.sm};
   font-weight: 500;
-  color: ${({ theme, trend }) => 
+  color: ${({ theme, trend }) =>
     trend === 'up' ? theme.colors.profit.main : theme.colors.loss.main};
 `
 
@@ -233,8 +234,70 @@ const ActivityMeta = styled.div`
 const ActivityAmount = styled.div<{ type: 'income' | 'expense' }>`
   font-weight: 600;
   font-family: ${({ theme }) => theme.fonts.mono};
-  color: ${({ theme, type }) => 
+  color: ${({ theme, type }) =>
     type === 'income' ? theme.colors.profit.main : theme.colors.loss.main};
+`
+
+// AI Assistant section
+const ChatSection = styled.div`
+  margin-bottom: ${({ theme }) => theme.spacing['2xl']};
+`
+
+const ChatCard = styled.div`
+  background: ${({ theme }) => theme.colors.background.secondary};
+  border: 1px solid ${({ theme }) => theme.colors.border.light};
+  border-radius: ${({ theme }) => theme.radii.lg};
+  overflow: hidden;
+  height: 600px;
+  display: flex;
+  flex-direction: column;
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
+    height: 500px;
+  }
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.sm}) {
+    height: 400px;
+  }
+`
+
+const ChatHeader = styled.div`
+  padding: ${({ theme }) => theme.spacing.lg} ${({ theme }) => theme.spacing.xl};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.border.light};
+  background: ${({ theme }) => theme.colors.background.primary};
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.md};
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
+    padding: ${({ theme }) => theme.spacing.md} ${({ theme }) => theme.spacing.lg};
+  }
+`
+
+const ChatHeaderIcon = styled.div`
+  width: 32px;
+  height: 32px;
+  border-radius: ${({ theme }) => theme.radii.md};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: ${({ theme }) => theme.colors.primary.main}20;
+  color: ${({ theme }) => theme.colors.primary.main};
+`
+
+const ChatHeaderText = styled.div``
+
+const ChatHeaderTitle = styled.h3`
+  font-size: ${({ theme }) => theme.fontSizes.lg};
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.text.primary};
+  margin: 0 0 ${({ theme }) => theme.spacing.xs} 0;
+`
+
+const ChatHeaderSubtitle = styled.p`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.text.secondary};
+  margin: 0;
 `
 
 const DashboardPage: React.FC = () => {
@@ -303,6 +366,22 @@ const DashboardPage: React.FC = () => {
           </StatTrend>
         </StatCard>
       </StatsGrid>
+
+      {/* AI Assistant Chat */}
+      <ChatSection>
+        <ChatCard>
+          <ChatHeader>
+            <ChatHeaderIcon>
+              <MessageCircle size={18} />
+            </ChatHeaderIcon>
+            <ChatHeaderText>
+              <ChatHeaderTitle>AI Financial Assistant</ChatHeaderTitle>
+              <ChatHeaderSubtitle>Ask questions about your finances, get insights, and receive personalized advice</ChatHeaderSubtitle>
+            </ChatHeaderText>
+          </ChatHeader>
+          <ChatInterface showHeader={false} />
+        </ChatCard>
+      </ChatSection>
 
       {/* Charts */}
       <ChartsGrid>

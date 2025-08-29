@@ -4,6 +4,7 @@ import { AppDispatch } from '../../../store'
 import {
   selectCurrentSessionId,
   selectConversationError,
+  selectMessages,
   addMessage,
   setStreaming,
   setError,
@@ -22,15 +23,18 @@ import {
 interface ChatInterfaceProps {
   className?: string
   title?: string
+  showHeader?: boolean
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({
   className,
-  title = "AI Assistant"
+  title = "AI Assistant",
+  showHeader = true
 }) => {
   const dispatch = useDispatch<AppDispatch>()
   const currentSessionId = useSelector(selectCurrentSessionId)
   const conversationError = useSelector(selectConversationError)
+  const messages = useSelector(selectMessages)
 
   const [sendMessage, { isLoading: isSending }] = useSendMessageNonStreamingConversationMessagePostMutation()
 
@@ -41,6 +45,35 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       dispatch(setSessionId(newSessionId))
     }
   }, [currentSessionId, dispatch])
+
+  // Send welcome nudge when chat loads with no messages
+  useEffect(() => {
+    const sendWelcomeMessage = async () => {
+      if (currentSessionId && messages.length === 0 && !isSending) {
+        try {
+          dispatch(setStreaming({ isStreaming: true }))
+          
+          const response = await sendMessage({
+            conversationRequest: {
+              message: "__WELCOME_NUDGE__",
+              session_id: currentSessionId
+            }
+          }).unwrap()
+
+          dispatch(addMessage(response))
+        } catch (error) {
+          console.error('Failed to send welcome nudge:', error)
+          // Don't show error for welcome nudge failure, just silently fail
+        } finally {
+          dispatch(setStreaming({ isStreaming: false }))
+        }
+      }
+    }
+
+    // Small delay to ensure UI is ready
+    const timer = setTimeout(sendWelcomeMessage, 500)
+    return () => clearTimeout(timer)
+  }, [currentSessionId, messages.length, isSending, sendMessage, dispatch])
 
   const handleSendMessage = async (messageText: string) => {
     console.info('Sending message:', messageText)
@@ -91,13 +124,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }
 
   return (
-    <ChatContainer className={className}>
-      <ChatHeader>
-        <ChatTitle>{title}</ChatTitle>
-      </ChatHeader>
+    <ChatContainer 
+      className={className} 
+      role="region" 
+      aria-label="AI Assistant Chat Interface">
+      {showHeader && (
+        <ChatHeader role="banner">
+          <ChatTitle role="heading" aria-level={1}>{title}</ChatTitle>
+        </ChatHeader>
+      )}
 
       {conversationError && (
-        <ErrorMessage onClick={handleClearError}>
+        <ErrorMessage 
+          onClick={handleClearError}
+          role="alert"
+          aria-live="assertive"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              handleClearError()
+            }
+          }}>
           {conversationError}
           <span>Click to dismiss</span>
         </ErrorMessage>

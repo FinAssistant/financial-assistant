@@ -33,8 +33,21 @@ class LangGraphConfig:
         last_message = state["messages"][-1]
         
         if isinstance(last_message, HumanMessage):
-            # Simple echo/acknowledgment response
-            response_content = f"I understand you said: '{last_message.content}'. I'm here to help with your financial needs!"
+            # Handle welcome nudge from frontend
+            if last_message.content == "__WELCOME_NUDGE__":
+                response_content = (
+                    "👋 Welcome to your AI Financial Assistant! I'm here to help you manage your finances more effectively.\n\n"
+                    "I can assist you with:\n"
+                    "• Budgeting and expense tracking\n"
+                    "• Analyzing your spending patterns\n"
+                    "• Financial planning and goal setting\n"
+                    "• Investment insights and recommendations\n"
+                    "• Answering questions about your transactions\n\n"
+                    "What would you like to explore today?"
+                )
+            else:
+                # Simple echo/acknowledgment response for regular messages
+                response_content = f"I understand you said: '{last_message.content}'. I'm here to help with your financial needs!"
         else:
             # Default response for non-human messages
             response_content = "I'm ready to help you with your financial questions."

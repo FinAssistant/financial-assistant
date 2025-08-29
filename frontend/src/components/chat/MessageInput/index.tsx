@@ -85,10 +85,19 @@ const MessageInput: React.FC<MessageInputProps> = ({
             maxLength={maxLength}
             rows={1}
             data-testid="message-input"
+            role="textbox"
+            aria-label="Type your message to the AI assistant"
+            aria-describedby={maxLength ? "char-count" : undefined}
+            aria-multiline="true"
+            autoComplete="off"
           />
           <InputActions>
             {maxLength && (
-              <CharacterCount isOverLimit={isOverLimit}>
+              <CharacterCount 
+                isOverLimit={isOverLimit}
+                id="char-count"
+                aria-live="polite"
+                aria-label={`${remainingChars} characters remaining`}>
                 {remainingChars}
               </CharacterCount>
             )}
@@ -97,7 +106,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
               disabled={!canSend}
               size="sm"
               variant="primary"
-              data-testid="send-button">
+              data-testid="send-button"
+              aria-label={canSend ? "Send message to AI assistant" : "Cannot send empty message"}>
               Send
             </SendButton>
           </InputActions>

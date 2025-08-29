@@ -5,6 +5,10 @@ export const MessageInputContainer = styled.div`
   border-top: 1px solid ${({ theme }) => theme.colors.border.light};
   background: ${({ theme }) => theme.colors.background.primary};
   padding: ${({ theme }) => theme.spacing.md};
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
+    padding: ${({ theme }) => theme.spacing.sm};
+  }
 `
 
 export const InputWrapper = styled.div`
@@ -72,6 +76,11 @@ export const InputActions = styled.div`
   justify-content: space-between;
   align-items: center;
   gap: ${({ theme }) => theme.spacing.sm};
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.sm}) {
+    flex-wrap: wrap;
+    gap: ${({ theme }) => theme.spacing.xs};
+  }
 `
 
 export const CharacterCount = styled.span.withConfig({
@@ -89,6 +98,11 @@ export const CharacterCount = styled.span.withConfig({
 
 export const SendButton = styled(Button)`
   min-width: 60px;
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.sm}) {
+    min-width: 50px;
+    font-size: ${({ theme }) => theme.fontSizes.sm};
+  }
   
   &:disabled {
     opacity: 0.5;
