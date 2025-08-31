@@ -11,7 +11,7 @@ The AI Financial Assistant employs an **agentic AI architecture** with clear sep
 
 **Key Services**:
 - **Compute**: Docker containers for consistent development/production environments
-- **Storage**: In-memory storage for POC (Redis-compatible for future scaling)
+- **Storage**: SQLite for persistent data storage, Graphiti for contextual memory
 - **AI Services**: Configurable LLM providers via environment variables
 - **Financial APIs**: Plaid integration via MCP server for multi-agent access
 - **Tool Server**: MCP server providing centralized Plaid APIs and Graphiti database access
