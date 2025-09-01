@@ -76,6 +76,30 @@ class AccountType(Enum):
     LOAN = "loan"
     MORTGAGE = "mortgage"
 
+class SpendingPersonalityType(Enum):
+    """Spending personality types for behavioral analysis and personalized recommendations"""
+    SAVER = "saver"                     # Conservative spender, focused on accumulation
+    SPENDER = "spender"                 # Enjoys spending, values experiences and goods
+    PLANNER = "planner"                 # Methodical approach, budgets carefully
+    IMPULSE = "impulse"                 # Spontaneous spending patterns
+    CONVENIENCE_FOCUSED = "convenience" # Values convenience over cost optimization
+
+class SpendingTrigger(Enum):
+    """Common spending triggers for behavioral pattern recognition"""
+    STRESS = "stress"
+    SOCIAL_PRESSURE = "social_pressure"
+    EMOTIONAL = "emotional"
+    SEASONAL = "seasonal"
+    ROUTINE = "routine"
+    CELEBRATION = "celebration"
+
+class BudgetAlertType(Enum):
+    """Types of budget alerts for different spending thresholds"""
+    WARNING_75_PERCENT = "warning_75"   # 75% of budget used
+    ALERT_90_PERCENT = "alert_90"       # 90% of budget used  
+    EXCEEDED_100_PERCENT = "exceeded_100" # Budget exceeded
+    ANOMALY_DETECTED = "anomaly"        # Unusual spending pattern
+
 # ===== CORE USER MODEL =====
 
 @dataclass  
@@ -203,6 +227,48 @@ class Transaction:
     date: str  # ISO date string
     pending: bool = False
     auto_categorized: bool = False
+    user_feedback_category: Optional[str] = None  # User-corrected category for learning
+    spending_trigger: Optional[SpendingTrigger] = None  # Identified behavioral trigger
+    is_anomaly: bool = False  # Flagged as unusual spending
+    confidence_score: Optional[float] = None  # AI categorization confidence (0-1)
+
+@dataclass
+class BudgetCategory:
+    """Budget tracking for specific spending categories"""
+    id: str
+    user_id: str
+    category_name: str
+    monthly_limit: Decimal
+    current_spent: Decimal = Decimal('0.00')
+    last_updated: datetime = field(default_factory=datetime.now)
+    alert_thresholds: List[BudgetAlertType] = field(default_factory=list)
+    personality_adjusted: bool = False  # Whether limits were adjusted based on personality profile
+
+@dataclass
+class SpendingPersonalityProfile:
+    """User's spending personality profile derived from behavioral analysis"""
+    user_id: str
+    primary_type: SpendingPersonalityType
+    secondary_type: Optional[SpendingPersonalityType] = None
+    confidence_score: float = 0.0  # Confidence in personality assessment (0-1)
+    spending_triggers: List[SpendingTrigger] = field(default_factory=list)
+    risk_tolerance: Optional[str] = None  # High, Medium, Low
+    communication_style: str = "balanced"  # gentle, direct, encouraging, analytical
+    last_analyzed: datetime = field(default_factory=datetime.now)
+    behavioral_insights: Dict[str, Any] = field(default_factory=dict)  # Additional insights as JSON
+
+@dataclass 
+class OptimizationOpportunity:
+    """Identified cost-saving or efficiency opportunities"""
+    user_id: str
+    opportunity_type: str  # "subscription_duplicate", "service_underused", "better_alternative"
+    description: str
+    potential_monthly_savings: Decimal
+    confidence_score: float  # How confident we are in this recommendation (0-1)
+    personality_fit: float  # How well this fits user's personality (0-1)
+    implementation_difficulty: str  # "easy", "medium", "complex"
+    identified_at: datetime = field(default_factory=datetime.now)
+    user_action_taken: Optional[str] = None  # "implemented", "dismissed", "considering"
 
 # ===== NO SEPARATE FINANCIAL PROFILE NEEDED =====
 
