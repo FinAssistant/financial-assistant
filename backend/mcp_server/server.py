@@ -10,6 +10,10 @@ import os
 
 from .config import config
 from .tools.plaid_tools import register_plaid_tools
+from fastmcp.server.dependencies import get_access_token, AccessToken
+
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from app.services.auth_service import AuthService
 
 # Configure logging
 logging.basicConfig(
@@ -17,10 +21,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Get auth service for JWT configuration
+auth_service = AuthService()
+
+# Configure JWT verifier with your existing secret key
+jwt_verifier = JWTVerifier(
+    public_key=auth_service.secret_key,  # Use your existing secret key
+    algorithm=auth_service.algorithm,  # HS256
+)
+
 # Initialize FastMCP server
 mcp = FastMCP(
     name=config.server_name,
-    version=config.server_version
+    version=config.server_version,
+    auth=jwt_verifier
 )
 
 # Server start time for health checks
@@ -80,6 +94,57 @@ def get_current_time(timezone: str = "UTC") -> Dict[str, str]:
         "timezone": timezone,
         "server": config.server_name
     }
+
+
+@mcp.tool
+async def whoami() -> Dict[str, Any]:
+    """
+    Get information about the authenticated user from JWT token.
+    
+    Returns:
+        Authenticated user information from JWT context
+    """
+    logger.info("🐛 whoami tool called")
+    
+    try:
+        token: AccessToken | None = get_access_token()
+        logger.info(f"🐛 Token type: {type(token)}")
+        
+        if token is None:
+            logger.info("🐛 No token found, returning unauthenticated")
+            result = {"authenticated": False, "debug": "no_token"}
+            logger.info(f"🐛 Returning: {result}")
+            return result
+        
+        logger.info(f"🐛 Token attributes: client_id={getattr(token, 'client_id', 'N/A')}, scopes={getattr(token, 'scopes', 'N/A')}")
+        logger.info(f"🐛 Token claims: {getattr(token, 'claims', 'N/A')}")
+        
+        result = {
+            "authenticated": True,
+            "user_id": token.claims.get("sub", {}).get("user_id"),
+            "email": token.claims.get("sub", {}).get("email"),
+            "name": token.claims.get("sub", {}).get("name"),
+            "scopes": token.scopes,
+            "expires_at": token.expires_at,
+            "debug": "token_found"
+        }
+        
+        logger.info(f"🐛 Returning authenticated result")
+        return result
+        
+    except Exception as e:
+        logger.error(f"🐛 Exception in whoami: {e}")
+        logger.error(f"🐛 Exception type: {type(e)}")
+        import traceback
+        logger.error(f"🐛 Traceback: {traceback.format_exc()}")
+        
+        error_result = {
+            "authenticated": False, 
+            "error": str(e),
+            "debug": "exception_occurred"
+        }
+        logger.info(f"🐛 Returning error result: {error_result}")
+        return error_result
 
 
 
