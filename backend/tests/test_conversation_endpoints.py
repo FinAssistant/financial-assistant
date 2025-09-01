@@ -230,7 +230,9 @@ class TestConversationEndpointsAsync:
         # Mock auth for async client too
         app.dependency_overrides[get_current_user] = mock_get_current_user
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        from httpx import ASGITransport
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/conversation/message",
                 json={"message": "Async test message"}
@@ -247,7 +249,9 @@ class TestConversationEndpointsAsync:
         # Mock auth for async client too
         app.dependency_overrides[get_current_user] = mock_get_current_user
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        from httpx import ASGITransport
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/conversation/send",
                 json={"message": "Async streaming test"}
