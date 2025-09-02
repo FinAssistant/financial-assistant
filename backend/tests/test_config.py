@@ -17,7 +17,7 @@ def test_default_settings():
     assert settings.plaid_client_id is None
     assert settings.plaid_secret is None
     assert settings.plaid_env == "sandbox"
-    assert settings.plaid_products == ["transactions", "accounts"]
+    assert settings.plaid_products == ["identity", "transactions", "liabilities", "investments"]
 
 
 def test_cors_origins_default():

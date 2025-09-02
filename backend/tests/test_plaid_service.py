@@ -507,6 +507,201 @@ class TestPlaidServiceBalances:
         assert "Plaid not configured" in result["error"]
 
 
+class TestPlaidServiceIdentity:
+    """Test identity information retrieval methods."""
+    
+    @patch('app.services.plaid_service.settings')
+    def test_get_identity_success(self, mock_settings):
+        """Test successful identity retrieval."""
+        mock_settings.plaid_client_id = "test_client_id"
+        mock_settings.plaid_secret = "test_secret"
+        
+        service = PlaidService()
+        service.client = Mock()
+        
+        mock_account = Mock()
+        mock_account.to_dict.return_value = {
+            "account_id": "acc_123",
+            "name": "Test Account",
+            "mask": "0000",
+            "owners": [
+                {
+                    "names": ["John Doe"],
+                    "emails": [{"data": "john@example.com", "primary": True}],
+                    "phone_numbers": [{"data": "555-0123", "primary": True}],
+                    "addresses": [{"city": "San Francisco", "region": "CA", "postal_code": "94105", "country": "US"}]
+                }
+            ]
+        }
+        
+        service.client.identity_get.return_value = {
+            "accounts": [mock_account]
+        }
+        
+        result = service.get_identity("access-token")
+        
+        assert result["status"] == "success"
+        assert len(result["identities"]) == 1
+        assert result["identities"][0]["account_id"] == "acc_123"
+        assert len(result["identities"][0]["owners"]) == 1
+        assert result["identities"][0]["owners"][0]["names"] == ["John Doe"]
+    
+    @patch('app.services.plaid_service.settings')
+    def test_get_identity_no_config(self, mock_settings):
+        """Test identity retrieval with missing configuration."""
+        mock_settings.plaid_client_id = None
+        mock_settings.plaid_secret = None
+        
+        service = PlaidService()
+        
+        result = service.get_identity("access-token")
+        
+        assert result["status"] == "error"
+        assert "Plaid not configured" in result["error"]
+
+
+class TestPlaidServiceLiabilities:
+    """Test liability accounts retrieval methods."""
+    
+    @patch('app.services.plaid_service.settings')
+    def test_get_liabilities_success(self, mock_settings):
+        """Test successful liability retrieval."""
+        mock_settings.plaid_client_id = "test_client_id"
+        mock_settings.plaid_secret = "test_secret"
+        
+        service = PlaidService()
+        service.client = Mock()
+        
+        mock_response = Mock()
+        mock_response.to_dict.return_value = {
+            "accounts": [
+                {
+                    "account_id": "acc_123",
+                    "name": "Credit Card",
+                    "mask": "0000",
+                    "type": "credit",
+                    "subtype": "credit_card",
+                    "balances": {
+                        "current": -1500.0,
+                        "limit": 5000.0,
+                        "available": 3500.0,
+                        "iso_currency_code": "USD"
+                    }
+                }
+            ],
+            "liabilities": {
+                "credit": [
+                    {
+                        "account_id": "acc_123",
+                        "apr_percentage": 18.5,
+                        "apr_type": "variable_apr"
+                    }
+                ],
+                "mortgage": [],
+                "student": []
+            }
+        }
+        
+        service.client.liabilities_get.return_value = mock_response
+        
+        result = service.get_liabilities("access-token")
+        
+        assert result["status"] == "success"
+        assert len(result["liabilities"]["accounts"]) == 1
+        assert len(result["liabilities"]["credit"]) == 1
+        assert result["liabilities"]["accounts"][0]["account_id"] == "acc_123"
+    
+    @patch('app.services.plaid_service.settings')
+    def test_get_liabilities_no_config(self, mock_settings):
+        """Test liability retrieval with missing configuration."""
+        mock_settings.plaid_client_id = None
+        mock_settings.plaid_secret = None
+        
+        service = PlaidService()
+        
+        result = service.get_liabilities("access-token")
+        
+        assert result["status"] == "error"
+        assert "Plaid not configured" in result["error"]
+
+
+class TestPlaidServiceInvestments:
+    """Test investment accounts and holdings retrieval methods."""
+    
+    @patch('app.services.plaid_service.settings')
+    def test_get_investments_success(self, mock_settings):
+        """Test successful investment retrieval."""
+        mock_settings.plaid_client_id = "test_client_id"
+        mock_settings.plaid_secret = "test_secret"
+        
+        service = PlaidService()
+        service.client = Mock()
+        
+        mock_response = Mock()
+        mock_response.to_dict.return_value = {
+            "accounts": [
+                {
+                    "account_id": "acc_123",
+                    "name": "Investment Account",
+                    "mask": "0000",
+                    "type": "investment",
+                    "subtype": "401k",
+                    "balances": {
+                        "current": 50000.0,
+                        "available": 50000.0,
+                        "iso_currency_code": "USD"
+                    }
+                }
+            ],
+            "holdings": [
+                {
+                    "account_id": "acc_123",
+                    "security_id": "sec_123",
+                    "institution_value": 10000.0,
+                    "institution_price": 100.0,
+                    "quantity": 100.0,
+                    "cost_basis": 9000.0,
+                    "iso_currency_code": "USD"
+                }
+            ],
+            "securities": [
+                {
+                    "security_id": "sec_123",
+                    "name": "Apple Inc.",
+                    "ticker_symbol": "AAPL",
+                    "type": "equity",
+                    "close_price": 100.0,
+                    "iso_currency_code": "USD"
+                }
+            ]
+        }
+        
+        service.client.investments_holdings_get.return_value = mock_response
+        
+        result = service.get_investments("access-token")
+        
+        assert result["status"] == "success"
+        assert len(result["investments"]["accounts"]) == 1
+        assert len(result["investments"]["holdings"]) == 1
+        assert len(result["investments"]["securities"]) == 1
+        assert result["investments"]["accounts"][0]["account_id"] == "acc_123"
+        assert result["investments"]["holdings"][0]["security_id"] == "sec_123"
+        assert result["investments"]["securities"][0]["ticker_symbol"] == "AAPL"
+    
+    @patch('app.services.plaid_service.settings')
+    def test_get_investments_no_config(self, mock_settings):
+        """Test investment retrieval with missing configuration."""
+        mock_settings.plaid_client_id = None
+        mock_settings.plaid_secret = None
+        
+        service = PlaidService()
+        
+        result = service.get_investments("access-token")
+        
+        assert result["status"] == "error"
+        assert "Plaid not configured" in result["error"]
+
+
 class TestPlaidServiceIntegration:
     """Test integration scenarios."""
     

@@ -183,10 +183,10 @@ MCP_SERVER_PORT=8001
 MCP_LOG_LEVEL=INFO
 
 # Plaid Configuration (Optional - for financial data access)
-MCP_PLAID_CLIENT_ID=your-plaid-client-id
-MCP_PLAID_SECRET=your-plaid-secret
-MCP_PLAID_ENV=sandbox
-MCP_PLAID_PRODUCTS=["transactions", "accounts", "balances"]
+PLAID_CLIENT_ID=your-plaid-client-id
+PLAID_SECRET=your-plaid-secret
+PLAID_ENV=sandbox
+PLAID_PRODUCTS=["transactions", "accounts", "balances"]
 ```
 
 ## 🏗️ Architecture
@@ -274,82 +274,14 @@ The application includes Plaid API integration through the MCP (Model Context Pr
    - Navigate to your application in the Plaid Dashboard
    - Copy your `client_id` and `secret` (sandbox credentials)
 
-### Configuration
-
-1. **Update Environment Variables:**
-   ```bash
+3. **Update Environment Variables:**
    # Add to your .env file
-   MCP_PLAID_CLIENT_ID=your-plaid-client-id-from-dashboard
-   MCP_PLAID_SECRET=your-plaid-secret-from-dashboard
-   MCP_PLAID_ENV=sandbox
-   MCP_PLAID_PRODUCTS=["transactions", "accounts", "balances"]
-   ```
+   PLAID_CLIENT_ID=your-plaid-client-id-from-dashboard
+   PLAID_SECRET=your-plaid-secret-from-dashboard
+   PLAID_ENV=sandbox
+   PLAID_PRODUCTS=["transactions", "accounts"]
 
-2. **Restart the Application:**
-   ```bash
-   ./scripts/start-dev.sh
-   ```
 
-### Testing Plaid Integration
 
-1. **Test MCP Server:**
-   ```bash
-   # Run MCP client test
-   cd backend
-   python test_mcp_client.py
-   ```
 
-2. **Expected Output:**
-   ```
-   ✅ Found 8 tools: mcp_health_check, echo, get_current_time, create_link_token, exchange_public_token, get_accounts, get_transactions, get_balances
-   ✅ Link token creation successful! (or expected error if credentials not configured)
-   ✅ Expected error: No connected accounts (this is correct behavior)
-   ✅ All Plaid tools are properly registered!
-   ```
 
-### Plaid Sandbox Testing
-
-The sandbox environment provides test data for development:
-
-1. **Create Link Token**: Generate a token for Plaid Link
-2. **Link Bank Account**: Use Plaid Link UI with test credentials
-3. **Exchange Token**: Convert public token to access token
-4. **Access Financial Data**: Retrieve accounts, transactions, and balances
-
-### Plaid Test Credentials (Sandbox)
-
-Use these credentials in Plaid Link for testing:
-
-- **Username**: `user_good`
-- **Password**: `pass_good`
-
-### Available Financial Data Tools
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `create_link_token` | Generate Plaid Link token | `user_id`, `products` (optional) |
-| `exchange_public_token` | Exchange public for access token | `public_token`, `user_id` |
-| `get_accounts` | Retrieve connected bank accounts | `user_id` |
-| `get_transactions` | Get transaction history | `user_id`, `start_date`, `end_date`, `account_id` (optional) |
-| `get_balances` | Get real-time account balances | `user_id`, `account_id` (optional) |
-
-### Security Considerations
-
-- ✅ Access tokens are never exposed in API responses
-- ✅ Sensitive account data is automatically sanitized
-- ✅ All financial data requests require proper authentication
-- ✅ In-memory storage for POC (replace with secure database in production)
-
-### Production Deployment
-
-For production use:
-
-1. **Upgrade to Plaid Production:**
-   - Complete Plaid's production approval process
-   - Update `MCP_PLAID_ENV=production`
-   - Replace sandbox credentials with production ones
-
-2. **Secure Token Storage:**
-   - Replace in-memory storage with encrypted database
-   - Implement proper user session management
-   - Add token rotation and expiration handling

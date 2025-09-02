@@ -279,4 +279,176 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             logger.error(f"Error getting balances: {str(e)}")
             return {"status": "error", "error": "Failed to retrieve balances"}
     
+    @mcp.tool
+    def get_identity(account_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get identity information for authenticated user's connected accounts.
+        
+        Args:
+            account_id: Optional specific account ID
+            
+        Returns:
+            Identity information including names, emails, addresses
+        """
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
+            
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Get user's access tokens
+            access_tokens = _get_user_access_tokens(user_id)
+            if not access_tokens:
+                return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
+            
+            # Aggregate identity from all institutions
+            all_identities = []
+            
+            for access_token in access_tokens:
+                result = plaid_service.get_identity(access_token, account_id)
+                
+                if result["status"] == "success":
+                    all_identities.extend(result["identities"])
+                else:
+                    logger.warning(f"Failed to get identity for one access token: {result.get('error')}")
+            
+            logger.info(f"Retrieved identity information for {len(all_identities)} accounts for user {user_id}")
+            
+            return {
+                "status": "success",
+                "identities": all_identities,
+                "timestamp": datetime.now().isoformat(),
+                "total_accounts": len(all_identities)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting identity: {str(e)}")
+            return {"status": "error", "error": "Failed to retrieve identity information"}
+    
+    @mcp.tool
+    def get_liabilities(account_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get liability accounts for authenticated user's connected institutions.
+        
+        Args:
+            account_id: Optional specific account ID
+            
+        Returns:
+            Liability information including credit cards, mortgages, student loans
+        """
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
+            
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Get user's access tokens
+            access_tokens = _get_user_access_tokens(user_id)
+            if not access_tokens:
+                return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
+            
+            # Aggregate liabilities from all institutions
+            all_accounts = []
+            all_credit = []
+            all_mortgage = []
+            all_student = []
+            
+            for access_token in access_tokens:
+                result = plaid_service.get_liabilities(access_token, account_id)
+                
+                if result["status"] == "success":
+                    liabilities = result["liabilities"]
+                    all_accounts.extend(liabilities["accounts"])
+                    all_credit.extend(liabilities["credit"])
+                    all_mortgage.extend(liabilities["mortgage"])
+                    all_student.extend(liabilities["student"])
+                else:
+                    logger.warning(f"Failed to get liabilities for one access token: {result.get('error')}")
+            
+            logger.info(f"Retrieved liability information for {len(all_accounts)} accounts for user {user_id}")
+            
+            return {
+                "status": "success",
+                "liabilities": {
+                    "accounts": all_accounts,
+                    "credit": all_credit,
+                    "mortgage": all_mortgage,
+                    "student": all_student
+                },
+                "timestamp": datetime.now().isoformat(),
+                "total_accounts": len(all_accounts)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting liabilities: {str(e)}")
+            return {"status": "error", "error": "Failed to retrieve liability information"}
+    
+    @mcp.tool
+    def get_investments(account_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get investment accounts and holdings for authenticated user.
+        
+        Args:
+            account_id: Optional specific account ID
+            
+        Returns:
+            Investment information including accounts, holdings, securities
+        """
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
+            
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Get user's access tokens
+            access_tokens = _get_user_access_tokens(user_id)
+            if not access_tokens:
+                return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
+            
+            # Aggregate investments from all institutions
+            all_accounts = []
+            all_holdings = []
+            all_securities = []
+            
+            for access_token in access_tokens:
+                result = plaid_service.get_investments(access_token, account_id)
+                
+                if result["status"] == "success":
+                    investments = result["investments"]
+                    all_accounts.extend(investments["accounts"])
+                    all_holdings.extend(investments["holdings"])
+                    all_securities.extend(investments["securities"])
+                else:
+                    logger.warning(f"Failed to get investments for one access token: {result.get('error')}")
+            
+            logger.info(f"Retrieved investment information for {len(all_accounts)} accounts with {len(all_holdings)} holdings for user {user_id}")
+            
+            return {
+                "status": "success",
+                "investments": {
+                    "accounts": all_accounts,
+                    "holdings": all_holdings,
+                    "securities": all_securities
+                },
+                "timestamp": datetime.now().isoformat(),
+                "total_accounts": len(all_accounts),
+                "total_holdings": len(all_holdings)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting investments: {str(e)}")
+            return {"status": "error", "error": "Failed to retrieve investment information"}
+    
     logger.info("Plaid MCP tools registered successfully")

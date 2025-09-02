@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     plaid_secret: Optional[str] = Field(default=None, description="Plaid secret key")
     plaid_env: str = Field(default="sandbox", description="Plaid environment (sandbox|production)")
     plaid_products: List[str] = Field(
-        default_factory=lambda: ["transactions", "accounts"],
+        default_factory=lambda: ["identity", "transactions", "liabilities", "investments"],
         description="Plaid products to use"
     )
 

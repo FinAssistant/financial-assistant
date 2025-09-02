@@ -20,10 +20,6 @@ class TestMCPConfig:
         assert config.server_version == "0.1.0"
         assert config.server_port == 8001
         assert config.log_level == "INFO"
-        assert config.plaid_client_id is None
-        assert config.plaid_secret is None
-        assert config.plaid_env == "sandbox"
-        assert config.plaid_products == ["transactions", "accounts", "balances"]
     
     def test_config_from_env_vars(self):
         """Test configuration loading from environment variables."""
@@ -34,9 +30,7 @@ class TestMCPConfig:
             "MCP_SERVER_NAME": "test-server",
             "MCP_SERVER_VERSION": "1.0.0",
             "MCP_SERVER_PORT": "9001",
-            "MCP_LOG_LEVEL": "DEBUG",
-            "MCP_PLAID_CLIENT_ID": "test-client-id",
-            "MCP_PLAID_SECRET": "test-secret"
+            "MCP_LOG_LEVEL": "DEBUG"
         }
         
         with patch.dict(os.environ, env_vars):
@@ -46,8 +40,6 @@ class TestMCPConfig:
             assert config.server_version == "1.0.0" 
             assert config.server_port == 9001
             assert config.log_level == "DEBUG"
-            assert config.plaid_client_id == "test-client-id"
-            assert config.plaid_secret == "test-secret"
     
     def test_config_case_insensitive(self):
         """Test that config is case insensitive."""
