@@ -26,11 +26,17 @@ The AI Financial Assistant employs an **agentic AI architecture** with clear sep
 ```text
 ai-financial-assistant/
 ├── frontend/           # React application
-├── backend/           # FastAPI application  
-├── mcp-server/        # Model Context Protocol server
+├── backend/           # FastAPI application + integrated MCP server
+│   └── mcp_server/    # MCP tools accessible at /mcp endpoint
 ├── scripts/          # Development and deployment scripts
 └── docs/             # Documentation
 ```
+
+**MCP Integration Strategy**:
+- **POC Approach**: MCP server mounted within FastAPI at `/mcp` endpoint for simplified single-container deployment
+- **Lifecycle Management**: Combined lifespan management ensures FastAPI and MCP server start/stop together
+- **Future Flexibility**: `run_server()` function enables independent MCP server deployment when multi-service architecture is required
+- **Benefits**: Shared authentication, configuration, and operational simplicity during POC validation phase
 
 ## High Level Architecture Diagram
 
