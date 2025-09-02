@@ -13,7 +13,8 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 
 from .config import settings
-from .database_models import Base, UserModel
+from .sqlmodel_models import UserModel
+from sqlmodel import SQLModel
 
 
 class SQLiteUserStorage:
@@ -41,7 +42,7 @@ class SQLiteUserStorage:
         """Ensure database is initialized."""
         if not self._initialized:
             async with self.engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
+                await conn.run_sync(SQLModel.metadata.create_all)
             self._initialized = True
     
     async def user_exists(self, email: str) -> bool:
