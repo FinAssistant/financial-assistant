@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -10,10 +10,16 @@ from app.routers.auth import get_current_user
 from app.ai.orchestrator import OrchestratorAgent
 
 
-# Pydantic models for request/response
+# AI SDK compatible message model
+class ClientMessage(BaseModel):
+    """AI SDK ClientMessage structure."""
+    role: str = Field(..., description="Message role: user, assistant, or system")
+    content: str = Field(..., description="Message content")
+
+# AI SDK compatible request model
 class ConversationRequest(BaseModel):
-    """Request model for conversation messages."""
-    message: str = Field(..., min_length=1, max_length=1000, description="User message")
+    """AI SDK compatible request model for conversation messages."""
+    messages: List[ClientMessage] = Field(..., min_length=1, description="Array of conversation messages")
     session_id: Optional[str] = Field(None, description="Optional conversation session ID")
 
 
@@ -53,11 +59,24 @@ async def send_message(
     Compatible with AI-SDK format for frontend integration.
     Requires authentication.
     """
-    # Validate message content
-    if not request.message or not request.message.strip():
+    # Validate messages array
+    if not request.messages:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message cannot be empty"
+            detail="Messages array cannot be empty"
+        )
+    
+    # Get the last user message from the messages array
+    last_message = None
+    for message in reversed(request.messages):
+        if message.role == "user":
+            last_message = message
+            break
+    
+    if not last_message or not last_message.content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid user message found"
         )
     
     # Generate consistent session ID using same pattern as orchestrator
@@ -66,7 +85,7 @@ async def send_message(
     try:
         # Process message through orchestrator
         ai_response = orchestrator.process_message(
-            user_message=request.message.strip(),
+            user_message=last_message.content.strip(),
             user_id=current_user,
             session_id=session_id
         )
@@ -81,38 +100,23 @@ async def send_message(
         # Create AI-SDK compatible streaming response
         def generate_stream():
             """Generate AI-SDK compatible streaming response."""
-            # Send the AI response as a streaming format
-            response_data = {
-                "id": str(uuid.uuid4()),
-                "object": "chat.completion.chunk",
-                "created": int(datetime.now().timestamp()),
-                "model": "orchestrator",
-                "choices": [{
-                    "index": 0,
-                    "delta": {
-                        "role": "assistant",
-                        "content": ai_response["content"]
-                    },
-                    "finish_reason": None
-                }]
-            }
+            message_id = str(uuid.uuid4())
+            text_id = str(uuid.uuid4())
             
-            # Send data chunk
-            yield f"data: {json.dumps(response_data)}\n\n"
+            # Send message start
+            yield f'data: {json.dumps({"type": "start", "messageId": message_id})}\n\n'
             
-            # Send final chunk
-            final_response = {
-                "id": str(uuid.uuid4()),
-                "object": "chat.completion.chunk",
-                "created": int(datetime.now().timestamp()),
-                "model": "orchestrator",
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop"
-                }]
-            }
-            yield f"data: {json.dumps(final_response)}\n\n"
+            # Send text start
+            yield f'data: {json.dumps({"type": "text-start", "id": text_id})}\n\n'
+            
+            # Send text content as delta
+            content = ai_response["content"]
+            yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": content})}\n\n'
+            
+            # Send text end
+            yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
+            
+            # Send stream termination
             yield "data: [DONE]\n\n"
         
         return StreamingResponse(
@@ -122,7 +126,8 @@ async def send_message(
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "Content-Type": "text/plain; charset=utf-8",
-                "X-Accel-Buffering": "no"  # Disable nginx buffering
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "x-vercel-ai-data-stream": "v1"  # AI SDK required header
             }
         )
         
@@ -143,11 +148,24 @@ async def send_message_non_streaming(
     Alternative endpoint for non-streaming clients.
     Requires authentication.
     """
-    # Validate message content
-    if not request.message or not request.message.strip():
+    # Validate messages array
+    if not request.messages:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message cannot be empty"
+            detail="Messages array cannot be empty"
+        )
+    
+    # Get the last user message from the messages array
+    last_message = None
+    for message in reversed(request.messages):
+        if message.role == "user":
+            last_message = message
+            break
+    
+    if not last_message or not last_message.content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid user message found"
         )
     
     # Generate consistent session ID using same pattern as orchestrator
@@ -156,7 +174,7 @@ async def send_message_non_streaming(
     try:
         # Process message through orchestrator
         ai_response = orchestrator.process_message(
-            user_message=request.message.strip(),
+            user_message=last_message.content.strip(),
             user_id=current_user,
             session_id=session_id
         )
