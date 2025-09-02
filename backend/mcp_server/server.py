@@ -14,6 +14,7 @@ from fastmcp.server.dependencies import get_access_token, AccessToken
 
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from app.services.auth_service import AuthService
+from app.services.plaid_service import PlaidService
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Get auth service for JWT configuration
 auth_service = AuthService()
+
+# Initialize PlaidService
+plaid_service = PlaidService()
 
 # Configure JWT verifier with your existing secret key
 jwt_verifier = JWTVerifier(
@@ -105,20 +109,20 @@ async def whoami() -> Dict[str, Any]:
         Authenticated user information from JWT context
     """
     logger.info("🐛 whoami tool called")
-    
+
     try:
         token: AccessToken | None = get_access_token()
         logger.info(f"🐛 Token type: {type(token)}")
-        
+
         if token is None:
             logger.info("🐛 No token found, returning unauthenticated")
             result = {"authenticated": False, "debug": "no_token"}
             logger.info(f"🐛 Returning: {result}")
             return result
-        
+
         logger.info(f"🐛 Token attributes: client_id={getattr(token, 'client_id', 'N/A')}, scopes={getattr(token, 'scopes', 'N/A')}")
         logger.info(f"🐛 Token claims: {getattr(token, 'claims', 'N/A')}")
-        
+
         result = {
             "authenticated": True,
             "user_id": token.claims.get("sub", {}).get("user_id"),
@@ -128,16 +132,16 @@ async def whoami() -> Dict[str, Any]:
             "expires_at": token.expires_at,
             "debug": "token_found"
         }
-        
+
         logger.info(f"🐛 Returning authenticated result")
         return result
-        
+
     except Exception as e:
         logger.error(f"🐛 Exception in whoami: {e}")
         logger.error(f"🐛 Exception type: {type(e)}")
         import traceback
         logger.error(f"🐛 Traceback: {traceback.format_exc()}")
-        
+
         error_result = {
             "authenticated": False, 
             "error": str(e),
@@ -155,9 +159,9 @@ def get_mcp_app():
     Returns:
         ASGI application that can be mounted in FastAPI
     """
-    # Register tools first
-    register_plaid_tools(mcp)
-    logger.info("Registered Plaid tools (placeholders for Story 1.6)")
+    # Register tools with PlaidService instance
+    register_plaid_tools(mcp, plaid_service)
+    logger.info("Registered Plaid tools with PlaidService")
     
     # Return the ASGI app for mounting in FastAPI
     return mcp.http_app(path="/", stateless_http=True, transport="streamable-http")
@@ -168,9 +172,9 @@ def run_server():
     logger.info(f"Starting MCP server: {config.server_name} v{config.server_version}")
     logger.info(f"Server will run on port: {config.server_port}")
     
-    # Register Plaid tools (will be implemented in Story 1.6)
-    register_plaid_tools(mcp)
-    logger.info("Registered Plaid tools (placeholders for Story 1.6)")
+    # Register Plaid tools with PlaidService
+    register_plaid_tools(mcp, plaid_service)
+    logger.info("Registered Plaid tools with PlaidService")
     
     # Run the FastMCP server with HTTP transport
     mcp.run(

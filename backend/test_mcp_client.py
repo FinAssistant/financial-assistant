@@ -221,16 +221,6 @@ async def test_all_tools(jwt_token: str):
         print("✅ create_link_token tool working")
     else:
         print("❌ create_link_token tool not found")
-    
-    # Test get_accounts
-    if 'get_accounts' in tool_dict:
-        result = await tool_dict['get_accounts'].ainvoke({"user_id": "test_user_123"})
-        print("\n📤 Testing get_accounts...")
-        print(f"📥 Output: {json.dumps(result, indent=2)}")
-        print("✅ get_accounts tool working")
-    else:
-        print("❌ get_accounts tool not found")
-
 
 async def run_all_tests():
     """Run all MCP server tests."""

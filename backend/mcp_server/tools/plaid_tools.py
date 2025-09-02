@@ -1,117 +1,282 @@
 """
-Plaid API tools for MCP server (Story 1.6 placeholder).
-These will be implemented in Story 1.6.
+Plaid API tools for MCP server.
+Provides secure access to Plaid financial data through MCP tools using PlaidService.
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_access_token, AccessToken
+
+from app.services.plaid_service import PlaidService
 
 logger = logging.getLogger(__name__)
 
+# In-memory storage for user access tokens (replace with database in production)
+_user_access_tokens: Dict[str, List[str]] = {}
 
-def register_plaid_tools(mcp: FastMCP):
+
+def _get_user_access_tokens(user_id: str) -> List[str]:
     """
-    Register Plaid-related tools with the MCP server.
+    Get all access tokens for a user.
+    
+    Args:
+        user_id: User identifier
+        
+    Returns:
+        List of access tokens for the user
+    """
+    return _user_access_tokens.get(user_id, [])
+
+
+def _store_user_access_token(user_id: str, access_token: str) -> None:
+    """
+    Store an access token for a user.
+    
+    Args:
+        user_id: User identifier
+        access_token: Plaid access token to store
+    """
+    if user_id not in _user_access_tokens:
+        _user_access_tokens[user_id] = []
+    
+    if access_token not in _user_access_tokens[user_id]:
+        _user_access_tokens[user_id].append(access_token)
+        logger.info(f"Stored access token for user {user_id}")
+
+
+def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
+    """
+    Register Plaid-related tools with the MCP server using PlaidService.
     
     Args:
         mcp: FastMCP server instance
+        plaid_service: PlaidService instance for API operations
     """
     
     @mcp.tool
-    async def create_link_token(
-        user_id: str,
-        products: List[str] = ["transactions", "accounts", "balances"]
-    ) -> Dict[str, Any]:
+    def create_link_token(user_id: str, products: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Create a Plaid Link token for user authentication.
         
         Args:
-            user_id: User identifier
+            user_id: User identifier  
             products: List of Plaid products to enable
             
         Returns:
             Link token and expiration information
         """
-        # TODO: Implement in Story 1.6
-        logger.info(f"Creating Plaid Link token for user {user_id}")
-        
-        return {
-            "status": "not_implemented",
-            "message": "Plaid integration will be implemented in Story 1.6",
-            "user_id": user_id,
-            "products": products
-        }
+        try:
+            result = plaid_service.create_link_token(user_id, products)
+            logger.info(f"Created link token for user {user_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Error creating link token: {str(e)}")
+            return {"status": "error", "error": "Failed to create link token"}
     
     @mcp.tool
-    async def exchange_public_token(
-        public_token: str,
-        user_id: str
-    ) -> Dict[str, Any]:
+    def exchange_public_token(public_token: str) -> Dict[str, Any]:
         """
-        Exchange Plaid public token for access token.
+        Exchange Plaid public token for access token and store it for the authenticated user.
         
         Args:
             public_token: Public token from Plaid Link
-            user_id: User identifier
             
         Returns:
-            Success status and metadata
+            Success status and item information
         """
-        # TODO: Implement in Story 1.6
-        logger.info(f"Exchanging public token for user {user_id}")
-        
-        return {
-            "status": "not_implemented",
-            "message": "Plaid integration will be implemented in Story 1.6"
-        }
-    
-    @mcp.tool
-    async def get_accounts(user_id: str) -> Dict[str, Any]:
-        """
-        Get user's connected bank accounts.
-        
-        Args:
-            user_id: User identifier
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
             
-        Returns:
-            List of connected accounts
-        """
-        # TODO: Implement in Story 1.6
-        logger.info(f"Getting accounts for user {user_id}")
-        
-        return {
-            "status": "not_implemented",
-            "message": "Plaid integration will be implemented in Story 1.6",
-            "accounts": []
-        }
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Exchange token using PlaidService
+            result = plaid_service.exchange_public_token(public_token)
+            
+            if result["status"] == "success":
+                # Store the access token for this user
+                access_token = result["access_token"]
+                _store_user_access_token(user_id, access_token)
+                
+                # Remove access token from response for security
+                del result["access_token"]
+                result["message"] = "Account successfully connected"
+                logger.info(f"Exchanged token and stored access token for user {user_id}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error exchanging public token: {str(e)}")
+            return {"status": "error", "error": "Failed to exchange token"}
     
     @mcp.tool
-    async def get_transactions(
-        user_id: str,
+    def get_accounts() -> Dict[str, Any]:
+        """
+        Get authenticated user's connected bank accounts from all institutions.
+        
+        Returns:
+            Aggregated list of connected accounts
+        """
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
+            
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Get user's access tokens
+            access_tokens = _get_user_access_tokens(user_id)
+            if not access_tokens:
+                return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
+            
+            # Aggregate accounts from all institutions
+            all_accounts = []
+            institution_info = []
+            
+            for access_token in access_tokens:
+                result = plaid_service.get_accounts(access_token)
+                
+                if result["status"] == "success":
+                    all_accounts.extend(result["accounts"])
+                    institution_info.append(result["item"])
+                else:
+                    logger.warning(f"Failed to get accounts for one access token: {result.get('error')}")
+            
+            logger.info(f"Retrieved {len(all_accounts)} accounts for user {user_id}")
+            
+            return {
+                "status": "success",
+                "accounts": all_accounts,
+                "institutions": institution_info,
+                "total_accounts": len(all_accounts)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting accounts: {str(e)}")
+            return {"status": "error", "error": "Failed to retrieve accounts"}
+    
+    @mcp.tool
+    def get_transactions(
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         account_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Get user's transactions.
+        Get authenticated user's transactions from all connected institutions.
         
         Args:
-            user_id: User identifier
-            start_date: Start date for transactions (ISO format)
-            end_date: End date for transactions (ISO format)
+            start_date: Start date for transactions (YYYY-MM-DD format)
+            end_date: End date for transactions (YYYY-MM-DD format)
             account_id: Optional specific account ID
             
         Returns:
-            List of transactions
+            Aggregated list of transactions
         """
-        # TODO: Implement in Story 1.6
-        logger.info(f"Getting transactions for user {user_id}")
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
+            
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Get user's access tokens
+            access_tokens = _get_user_access_tokens(user_id)
+            if not access_tokens:
+                return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
+            
+            # Aggregate transactions from all institutions
+            all_transactions = []
+            total_transactions = 0
+            
+            for access_token in access_tokens:
+                result = plaid_service.get_transactions(access_token, start_date, end_date, account_id)
+                
+                if result["status"] == "success":
+                    all_transactions.extend(result["transactions"])
+                    total_transactions += result["total_transactions"]
+                else:
+                    logger.warning(f"Failed to get transactions for one access token: {result.get('error')}")
+            
+            # Sort transactions by date (newest first)
+            all_transactions.sort(key=lambda t: t.get("date", ""), reverse=True)
+            
+            logger.info(f"Retrieved {len(all_transactions)} transactions for user {user_id}")
+            
+            return {
+                "status": "success",
+                "transactions": all_transactions,
+                "total_transactions": total_transactions,
+                "date_range": {
+                    "start": start_date or str((datetime.now() - timedelta(days=30)).date()),
+                    "end": end_date or str(datetime.now().date())
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting transactions: {str(e)}")
+            return {"status": "error", "error": "Failed to retrieve transactions"}
+    
+    @mcp.tool
+    def get_balances(account_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get real-time account balances for authenticated user.
         
-        return {
-            "status": "not_implemented",
-            "message": "Plaid integration will be implemented in Story 1.6",
-            "transactions": []
-        }
+        Args:
+            account_id: Optional specific account ID
+            
+        Returns:
+            Aggregated account balances
+        """
+        try:
+            # Get authenticated user from JWT context
+            token: AccessToken = get_access_token()
+            if not token:
+                return {"status": "error", "error": "Authentication required"}
+            
+            user_id = token.claims.get("sub", {}).get("user_id")
+            if not user_id:
+                return {"status": "error", "error": "User ID not found in token"}
+            
+            # Get user's access tokens
+            access_tokens = _get_user_access_tokens(user_id)
+            if not access_tokens:
+                return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
+            
+            # Aggregate balances from all institutions
+            all_balances = []
+            
+            for access_token in access_tokens:
+                result = plaid_service.get_balances(access_token, account_id)
+                
+                if result["status"] == "success":
+                    all_balances.extend(result["balances"])
+                else:
+                    logger.warning(f"Failed to get balances for one access token: {result.get('error')}")
+            
+            logger.info(f"Retrieved balances for {len(all_balances)} accounts for user {user_id}")
+            
+            return {
+                "status": "success",
+                "balances": all_balances,
+                "timestamp": datetime.now().isoformat(),
+                "total_accounts": len(all_balances)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting balances: {str(e)}")
+            return {"status": "error", "error": "Failed to retrieve balances"}
+    
+    logger.info("Plaid MCP tools registered successfully")
