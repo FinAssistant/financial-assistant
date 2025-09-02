@@ -3,6 +3,7 @@ import { persistStore, persistReducer } from 'redux-persist'
 import storage from 'redux-persist/lib/storage'
 import { baseApi } from './api/baseApi'
 import authReducer from './slices/authSlice'
+import conversationReducer from './slices/conversationSlice'
 
 const authPersistConfig = {
   key: 'auth',
@@ -15,6 +16,7 @@ const persistedAuthReducer = persistReducer(authPersistConfig, authReducer)
 export const store = configureStore({
   reducer: {
     auth: persistedAuthReducer,
+    conversation: conversationReducer,
     [baseApi.reducerPath]: baseApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
