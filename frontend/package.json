@@ -15,6 +15,7 @@
     "codegen:api": "npx @rtk-query/codegen-openapi rtk-query-codegen-config.json"
   },
   "dependencies": {
+    "@ai-sdk/react": "^2.0.29",
     "@reduxjs/toolkit": "^1.9.7",
     "ai": "^5.0.29",
     "lucide-react": "^0.542.0",
