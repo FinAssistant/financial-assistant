@@ -35,6 +35,8 @@ ai-financial-assistant/
 **MCP Integration Strategy**:
 - **POC Approach**: MCP server mounted within FastAPI at `/mcp` endpoint for simplified single-container deployment
 - **Lifecycle Management**: Combined lifespan management ensures FastAPI and MCP server start/stop together
+- **Scope**: MCP server reserved for external API integrations only (Plaid tools, future external services)
+- **Service Layer**: Internal business logic implemented as direct service layer for better performance
 - **Future Flexibility**: `run_server()` function enables independent MCP server deployment when multi-service architecture is required
 - **Benefits**: Shared authentication, configuration, and operational simplicity during POC validation phase
 
@@ -47,26 +49,35 @@ graph TD
     C --> D[RTK Query API Layer]
     D --> E[FastAPI Backend]
     E --> F[Orchestrator Agent]
+    E --> I[Service Layer]
     F --> G[Onboarding Agent]
     F --> H[Spending Agent]
-    G --> I[MCP Server]
+    
+    G --> I
     H --> I
-    I --> J[Plaid APIs]
-    I --> K[Graphiti Database]
+    I --> N[SpendingService]
+    I --> O[AuthService]
+    I --> P[AnalysisService]
     
-    F --> L[LLM Provider]
-    G --> L
-    H --> L
+    G --> J[MCP Server]
+    H --> J
+    J --> K[Plaid APIs]
+    J --> L[Graphiti Database]
     
-    B --> M[AI-SDK Chat Interface]
-    M --> E
+    F --> M[LLM Provider]
+    G --> M
+    H --> M
+    
+    B --> Q[AI-SDK Chat Interface]
+    Q --> E
     
     style B fill:#e1f5fe
     style E fill:#f3e5f5
     style F fill:#fff3e0
     style G fill:#e8f5e8
     style H fill:#e8f5e8
-    style I fill:#fce4ec
+    style I fill:#e8f8e8
+    style J fill:#fce4ec
 ```
 
 ## Architectural Patterns
