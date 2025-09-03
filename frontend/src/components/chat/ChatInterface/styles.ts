@@ -1,4 +1,5 @@
 import styled from 'styled-components'
+import { Loader2 } from 'lucide-react'
 
 export const ChatContainer = styled.div`
   display: flex;
@@ -68,7 +69,6 @@ export const StyledThreadContainer = styled.div`
       border-radius: ${({ theme }) => `${theme.radii.xl} ${theme.radii.xl} ${theme.radii.base} ${theme.radii.xl}`};
       padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
       margin-left: auto;
-      max-width: 85%;
       box-shadow: ${({ theme }) => theme.shadows.sm};
     }
   }
@@ -80,7 +80,6 @@ export const StyledThreadContainer = styled.div`
       border-radius: ${({ theme }) => `${theme.radii.xl} ${theme.radii.xl} ${theme.radii.xl} ${theme.radii.base}`};
       padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
       margin-right: auto;
-      max-width: 85%;
       box-shadow: ${({ theme }) => theme.shadows.sm};
     }
   }
@@ -185,5 +184,104 @@ export const StyledThreadContainer = styled.div`
     &::-webkit-scrollbar-thumb:hover {
       background: ${({ theme }) => theme.colors.border.dark};
     }
+  }
+`
+
+// Loading indicator styled component
+export const LoadingIndicator = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing[2]};
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
+  margin-right: auto;
+  background: ${({ theme }) => theme.colors.background.secondary};
+  border-radius: ${({ theme }) => `${theme.radii.xl} ${theme.radii.xl} ${theme.radii.xl} ${theme.radii.base}`};
+  box-shadow: ${({ theme }) => theme.shadows.sm};
+`
+
+export const LoadingText = styled.span`
+  font-size: ${({ theme }) => theme.fontSizes.sm};
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
+export const SpinningIcon = styled(Loader2)`
+  animation: spin 1s linear infinite;
+  color: ${({ theme }) => theme.colors.primary.main};
+  
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`
+
+// Message component styling
+export const MessageContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  margin-bottom: ${({ theme }) => theme.spacing[3]};
+`
+
+export const UserMessageContainer = styled(MessageContainer)`
+  align-items: flex-end;
+`
+
+export const AssistantMessageContainer = styled(MessageContainer)`
+  align-items: flex-start;
+`
+
+export const MessageBubble = styled.div<{ isUser?: boolean }>`
+  padding: ${({ theme }) => theme.spacing[3]} ${({ theme }) => theme.spacing[4]};
+  border-radius: ${({ theme, isUser }) => 
+    isUser 
+      ? `${theme.radii.xl} ${theme.radii.xl} ${theme.radii.base} ${theme.radii.xl}`
+      : `${theme.radii.xl} ${theme.radii.xl} ${theme.radii.xl} ${theme.radii.base}`
+  };
+  background: ${({ theme, isUser }) => 
+    isUser ? theme.colors.primary.main : theme.colors.background.secondary
+  };
+  color: ${({ theme, isUser }) => 
+    isUser ? theme.colors.text.inverse : theme.colors.text.primary
+  };
+  box-shadow: ${({ theme }) => theme.shadows.sm};
+  word-wrap: break-word;
+  width: fit-content;
+  
+  /* Typography styling */
+  font-size: ${({ theme }) => theme.fontSizes.base};
+  line-height: ${({ theme }) => theme.lineHeights.normal};
+  
+  /* Handle markdown content */
+  p {
+    margin: 0 0 ${({ theme }) => theme.spacing[2]} 0;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  
+  /* Handle code blocks */
+  pre {
+    background: ${({ theme, isUser }) => 
+      isUser ? 'rgba(255, 255, 255, 0.1)' : theme.colors.background.primary
+    };
+    padding: ${({ theme }) => theme.spacing[2]};
+    border-radius: ${({ theme }) => theme.radii.base};
+    overflow-x: auto;
+    font-size: ${({ theme }) => theme.fontSizes.sm};
+  }
+  
+  /* Handle inline code */
+  code {
+    background: ${({ theme, isUser }) => 
+      isUser ? 'rgba(255, 255, 255, 0.1)' : theme.colors.background.primary
+    };
+    padding: ${({ theme }) => theme.spacing[1]};
+    border-radius: ${({ theme }) => theme.radii.sm};
+    font-size: ${({ theme }) => theme.fontSizes.sm};
+    font-family: ${({ theme }) => theme.fonts.mono};
   }
 `
