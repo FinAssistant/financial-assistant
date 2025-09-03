@@ -10,11 +10,24 @@ from app.routers.auth import get_current_user
 from app.ai.orchestrator import OrchestratorAgent
 
 
-# AI SDK compatible message model
+# AI SDK 5 compatible message part model
+class MessagePart(BaseModel):
+    """AI SDK 5 message part structure."""
+    type: str = Field(..., description="Part type: text, image, etc.")
+    text: str = Field(..., description="Text content for text parts")
+
+# AI SDK 5 compatible message model
 class ClientMessage(BaseModel):
-    """AI SDK ClientMessage structure."""
+    """AI SDK 5 ClientMessage structure."""
+    id: str = Field(..., description="Message ID")
     role: str = Field(..., description="Message role: user, assistant, or system")
-    content: str = Field(..., description="Message content")
+    parts: List[MessagePart] = Field(..., description="Message parts array")
+    
+    @property
+    def content(self) -> str:
+        """Extract text content from parts array for backwards compatibility."""
+        text_parts = [part.text for part in self.parts if part.type == "text" and part.text]
+        return " ".join(text_parts)
 
 # AI SDK compatible request model
 class ConversationRequest(BaseModel):
