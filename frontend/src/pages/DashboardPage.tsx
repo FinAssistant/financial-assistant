@@ -1,6 +1,7 @@
 import React from 'react'
 import styled from 'styled-components'
 import { TrendingUp, DollarSign, CreditCard, Target, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { ChatInterface } from '../components/chat/ChatInterface'
 
 // Layout components
 const DashboardContainer = styled.div`
@@ -187,6 +188,20 @@ const PlaceholderContent = styled.div`
   position: relative;
 `
 
+const DashboardChatInterface = styled(ChatInterface)`
+  /* Dashboard integration styling with proper spacing */
+  margin-bottom: ${({ theme }) => theme.spacing['2xl']};
+  
+  /* Override height for dashboard integration */
+  height: 400px;
+  max-height: 400px;
+  
+  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
+    height: 350px;
+    max-height: 350px;
+  }
+`
+
 // Recent activity section
 const ActivitySection = styled.div`
   background: ${({ theme }) => theme.colors.background.secondary};
@@ -303,6 +318,9 @@ const DashboardPage: React.FC = () => {
           </StatTrend>
         </StatCard>
       </StatsGrid>
+
+      {/* AI Assistant Chat */}
+      <DashboardChatInterface />
 
       {/* Charts */}
       <ChartsGrid>
