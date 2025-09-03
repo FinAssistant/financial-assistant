@@ -333,11 +333,11 @@ class TestPlaidServiceAccounts:
 
 
 class TestPlaidServiceTransactions:
-    """Test transaction retrieval methods."""
+    """Test transaction sync methods using the new sync endpoint."""
     
     @patch('app.services.plaid_service.settings')
-    def test_get_transactions_success(self, mock_settings):
-        """Test successful transaction retrieval."""
+    def test_sync_transactions_success(self, mock_settings):
+        """Test successful transaction sync with pagination."""
         mock_settings.plaid_client_id = "test_client_id"
         mock_settings.plaid_secret = "test_secret"
         
@@ -345,8 +345,7 @@ class TestPlaidServiceTransactions:
         service.client = Mock()
         
         # Mock transaction response
-        mock_transaction = Mock()
-        mock_transaction.to_dict.return_value = {
+        mock_transaction = {
             "transaction_id": "trans_123",
             "account_id": "acc_456",
             "amount": 25.99,
@@ -355,77 +354,90 @@ class TestPlaidServiceTransactions:
             "category": ["Food and Drink"]
         }
         
-        service.client.transactions_get.return_value = {
-            "transactions": [mock_transaction],
-            "total_transactions": 1,
-            "request_id": "req_123"
-        }
-        
-        result = service.get_transactions("access-token-123")
-        
-        assert result["status"] == "success"
-        assert len(result["transactions"]) == 1
-        assert result["transactions"][0]["transaction_id"] == "trans_123"
-        assert result["transactions"][0]["amount"] == 25.99
-        assert result["total_transactions"] == 1
-    
-    @patch('app.services.plaid_service.settings')
-    def test_get_transactions_with_date_range(self, mock_settings):
-        """Test transaction retrieval with custom date range."""
-        mock_settings.plaid_client_id = "test_client_id"
-        mock_settings.plaid_secret = "test_secret"
-        
-        service = PlaidService()
-        service.client = Mock()
-        
-        mock_transaction = Mock()
-        mock_transaction.to_dict.return_value = {
-            "transaction_id": "trans_123",
-            "account_id": "acc_456",
-            "amount": 25.99,
-            "name": "Coffee Shop"
-        }
-        
-        service.client.transactions_get.return_value = {
-            "transactions": [mock_transaction],
-            "total_transactions": 1
-        }
-        
-        result = service.get_transactions(
-            "access-token-123", 
-            start_date="2024-01-01", 
-            end_date="2024-01-31"
+        # Mock the sync response with has_more = False to avoid infinite loop
+        service.client.transactions_sync.return_value = Mock(
+            to_dict=lambda: {
+                "added": [mock_transaction],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "cursor_123",
+                "has_more": False,
+                "request_id": "req_123"
+            }
         )
         
+        result = service.sync_transactions("access-token-123")
+        
         assert result["status"] == "success"
-        assert result["date_range"]["start"] == "2024-01-01"
-        assert result["date_range"]["end"] == "2024-01-31"
+        assert len(result["added"]) == 1
+        assert result["added"][0]["transaction_id"] == "trans_123"
+        assert result["added"][0]["amount"] == 25.99
+        assert result["total_synced"] == 1
+        assert result["has_more"] is False
     
     @patch('app.services.plaid_service.settings')
-    def test_get_transactions_with_account_filter(self, mock_settings):
-        """Test transaction retrieval with account filter."""
+    @patch('time.sleep')  # Mock sleep to speed up test
+    def test_sync_transactions_with_polling(self, mock_sleep, mock_settings):
+        """Test transaction sync with polling when data not ready."""
         mock_settings.plaid_client_id = "test_client_id"
         mock_settings.plaid_secret = "test_secret"
         
         service = PlaidService()
         service.client = Mock()
         
-        mock_transaction = Mock()
-        mock_transaction.to_dict.return_value = {
-            "transaction_id": "trans_123",
-            "account_id": "acc_456",
-            "amount": 25.99
-        }
+        # First call returns empty (not ready), second call returns data
+        responses = [
+            Mock(to_dict=lambda: {
+                "added": [],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "",
+                "has_more": False
+            }),
+            Mock(to_dict=lambda: {
+                "added": [{"transaction_id": "trans_123"}],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "cursor_123",
+                "has_more": False
+            })
+        ]
         
-        service.client.transactions_get.return_value = {
-            "transactions": [mock_transaction],
-            "total_transactions": 1
-        }
+        service.client.transactions_sync.side_effect = responses
         
-        result = service.get_transactions("access-token-123", account_id="acc_456")
+        result = service.sync_transactions("access-token-123", max_retries=2)
         
         assert result["status"] == "success"
-        service.client.transactions_get.assert_called_once()
+        assert len(result["added"]) == 1
+        assert mock_sleep.called  # Verify polling happened
+    
+    @patch('app.services.plaid_service.settings')
+    @patch('time.sleep')
+    def test_sync_transactions_max_retries_exceeded(self, mock_sleep, mock_settings):
+        """Test transaction sync when max retries exceeded."""
+        mock_settings.plaid_client_id = "test_client_id"
+        mock_settings.plaid_secret = "test_secret"
+        
+        service = PlaidService()
+        service.client = Mock()
+        
+        # Always return empty response
+        service.client.transactions_sync.return_value = Mock(
+            to_dict=lambda: {
+                "added": [],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "",
+                "has_more": False
+            }
+        )
+        
+        result = service.sync_transactions("access-token-123", max_retries=2, retry_delay=1)
+        
+        assert result["status"] == "warning"
+        assert "Max retries" in result["message"]
+        assert len(result["added"]) == 0
+        assert len(result["modified"]) == 0
 
 
 class TestPlaidServiceBalances:

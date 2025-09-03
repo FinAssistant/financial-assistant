@@ -166,21 +166,20 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             return {"status": "error", "error": "Failed to retrieve accounts"}
     
     @mcp.tool
-    def get_transactions(
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        account_id: Optional[str] = None
+    def get_all_transactions(
+        cursor: Optional[str] = None,
+        max_iterations: int = 10
     ) -> Dict[str, Any]:
         """
-        Get authenticated user's transactions from all connected institutions.
+        Get ALL transactions for authenticated user using sync endpoint with pagination.
+        This is the recommended approach per Plaid documentation.
         
         Args:
-            start_date: Start date for transactions (YYYY-MM-DD format)
-            end_date: End date for transactions (YYYY-MM-DD format)
-            account_id: Optional specific account ID
+            cursor: Starting cursor for pagination (optional)
+            max_iterations: Maximum number of sync calls to prevent infinite loops
             
         Returns:
-            Aggregated list of transactions
+            All transactions across all connected accounts
         """
         try:
             # Get authenticated user from JWT context
@@ -197,36 +196,48 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not access_tokens:
                 return {"status": "error", "error": "No connected accounts. Please connect your bank account first."}
             
-            # Aggregate transactions from all institutions
+            # Aggregate all transactions from all institutions
             all_transactions = []
-            total_transactions = 0
             
             for access_token in access_tokens:
-                result = plaid_service.get_transactions(access_token, start_date, end_date, account_id)
+                current_cursor = cursor
+                iterations = 0
                 
-                if result["status"] == "success":
-                    all_transactions.extend(result["transactions"])
-                    total_transactions += result["total_transactions"]
-                else:
-                    logger.warning(f"Failed to get transactions for one access token: {result.get('error')}")
+                while iterations < max_iterations:
+                    result = plaid_service.sync_transactions(access_token, current_cursor)
+                    
+                    if result["status"] == "success":
+                        # Add all transactions from this sync
+                        all_transactions.extend(result.get("added", []))
+                        all_transactions.extend(result.get("modified", []))
+                        
+                        # Check if we need to continue syncing
+                        if not result.get("has_more", False):
+                            break
+                            
+                        current_cursor = result.get("next_cursor")
+                        if not current_cursor:
+                            break
+                            
+                        iterations += 1
+                    else:
+                        logger.warning(f"Failed to sync transactions for one access token: {result.get('error')}")
+                        break
             
             # Sort transactions by date (newest first)
             all_transactions.sort(key=lambda t: t.get("date", ""), reverse=True)
             
-            logger.info(f"Retrieved {len(all_transactions)} transactions for user {user_id}")
+            logger.info(f"Retrieved {len(all_transactions)} total transactions for user {user_id}")
             
             return {
                 "status": "success",
                 "transactions": all_transactions,
-                "total_transactions": total_transactions,
-                "date_range": {
-                    "start": start_date or str((datetime.now() - timedelta(days=30)).date()),
-                    "end": end_date or str(datetime.now().date())
-                }
+                "total_transactions": len(all_transactions),
+                "message": f"Retrieved {len(all_transactions)} transactions using sync endpoint"
             }
             
         except Exception as e:
-            logger.error(f"Error getting transactions: {str(e)}")
+            logger.error(f"Error getting all transactions: {str(e)}")
             return {"status": "error", "error": "Failed to retrieve transactions"}
     
     @mcp.tool

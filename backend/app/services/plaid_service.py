@@ -4,13 +4,12 @@ Provides secure access to Plaid financial data through clean API methods.
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 from functools import lru_cache
 
 from plaid import ApiClient, Configuration, Environment
 from plaid.api import plaid_api
-from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
@@ -20,6 +19,7 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.identity_get_request import IdentityGetRequest
 from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from plaid.exceptions import ApiException
 
 from app.core.config import settings
@@ -282,77 +282,118 @@ class PlaidService:
             logger.error(f"Unexpected error getting accounts: {str(e)}")
             return {"status": "error", "error": "Failed to retrieve accounts"}
     
-    def get_transactions(
+    def sync_transactions(
         self, 
-        access_token: str,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        account_id: Optional[str] = None
+        access_token: str, 
+        cursor: Optional[str] = None,
+        max_retries: int = 5,
+        retry_delay: int = 2
     ) -> Dict[str, Any]:
         """
-        Get transactions for given access token.
+        Sync transactions for given access token using transactions/sync endpoint.
+        This is the recommended approach per Plaid documentation.
+        Handles polling when transactions aren't ready yet (empty cursor response).
         
         Args:
             access_token: Plaid access token
-            start_date: Start date for transactions (YYYY-MM-DD format)
-            end_date: End date for transactions (YYYY-MM-DD format)
-            account_id: Optional specific account ID
+            cursor: Cursor for pagination (optional for initial sync)
+            max_retries: Maximum number of retries when waiting for transactions
+            retry_delay: Delay between retries in seconds
             
         Returns:
-            List of transactions
+            Sync response with transactions and next cursor
         """
         if not self.client:
             return {"status": "error", "error": "Plaid not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET."}
         
+        import time
+        
+        # Set cursor to empty for initial sync if not provided
+        if cursor is None:
+            cursor = ''
+        
+        # Collections for all transactions
+        all_added = []
+        all_modified = []
+        all_removed = []
+        has_more = True
+        retries = 0
+        
         try:
-            # Set default date range if not provided (last 30 days)
-            if not end_date:
-                end_date = datetime.now().date()
-            else:
-                end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            # Iterate through each page of transaction updates
+            while has_more:
+                request = TransactionsSyncRequest(
+                    access_token=access_token,
+                    cursor=cursor
+                )
                 
-            if not start_date:
-                start_date = end_date - timedelta(days=30)
-            else:
-                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+                response = self.client.transactions_sync(request)
+                response_dict = response.to_dict() if hasattr(response, 'to_dict') else response
+                
+                cursor = response_dict.get('next_cursor', '')
+                
+                # If no transactions are available yet, wait and poll the endpoint
+                # This happens when the item is still being processed by Plaid
+                if cursor == '' and len(response_dict.get("added", [])) == 0:
+                    if retries >= max_retries:
+                        logger.warning(f"Max retries ({max_retries}) reached while waiting for transactions")
+                        break
+                    logger.info(f"No transactions ready yet, waiting {retry_delay}s before retry {retries + 1}/{max_retries}")
+                    time.sleep(retry_delay)
+                    retries += 1
+                    continue
+                
+                # Process transactions from this page
+                page_added = []
+                for transaction in response_dict.get("added", []):
+                    if hasattr(transaction, 'to_dict'):
+                        transaction = transaction.to_dict()
+                    sanitized = self._sanitize_transaction_data(transaction)
+                    page_added.append(sanitized)
+                all_added.extend(page_added)
+                
+                page_modified = []
+                for transaction in response_dict.get("modified", []):
+                    if hasattr(transaction, 'to_dict'):
+                        transaction = transaction.to_dict()
+                    sanitized = self._sanitize_transaction_data(transaction)
+                    page_modified.append(sanitized)
+                all_modified.extend(page_modified)
+                
+                all_removed.extend(response_dict.get("removed", []))
+                has_more = response_dict.get("has_more", False)
+                
+                logger.info(f"Synced page: {len(page_added)} added, {len(page_modified)} modified, has_more: {has_more}")
             
-            # Create request
-            request = TransactionsGetRequest(
-                access_token=access_token,
-                start_date=start_date,
-                end_date=end_date
-            )
+            total_synced = len(all_added) + len(all_modified)
+            logger.info(f"Total sync complete: {len(all_added)} added, {len(all_modified)} modified, {len(all_removed)} removed")
             
-            # Add account filter if specified
-            if account_id:
-                request.account_ids = [account_id]
-            
-            response = self.client.transactions_get(request)
-            
-            # Sanitize transaction data before returning
-            transactions = []
-            for transaction in response["transactions"]:
-                sanitized = self._sanitize_transaction_data(transaction.to_dict())
-                transactions.append(sanitized)
-            
-            logger.info(f"Retrieved {len(transactions)} transactions")
+            if retries >= max_retries and total_synced == 0:
+                return {
+                    "status": "warning",
+                    "added": all_added,
+                    "modified": all_modified,
+                    "removed": all_removed,
+                    "message": f"Max retries ({max_retries}) reached. Item may still be processing. Try again in a few moments.",
+                    "next_cursor": cursor,
+                    "has_more": has_more
+                }
             
             return {
                 "status": "success",
-                "transactions": transactions,
-                "total_transactions": response["total_transactions"],
-                "request_id": response.get("request_id"),
-                "date_range": {
-                    "start": str(start_date),
-                    "end": str(end_date)
-                }
+                "added": all_added,
+                "modified": all_modified,
+                "removed": all_removed,
+                "next_cursor": cursor,
+                "has_more": has_more,
+                "total_synced": total_synced
             }
             
         except ApiException as e:
             return self._handle_plaid_error(e)
         except Exception as e:
-            logger.error(f"Unexpected error getting transactions: {str(e)}")
-            return {"status": "error", "error": "Failed to retrieve transactions"}
+            logger.error(f"Unexpected error syncing transactions: {str(e)}")
+            return {"status": "error", "error": "Failed to sync transactions"}
     
     def get_balances(self, access_token: str, account_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -636,3 +677,67 @@ class PlaidService:
         except Exception as e:
             logger.error(f"Unexpected error getting investments: {str(e)}")
             return {"status": "error", "error": "Failed to retrieve investment information"}
+    
+    def create_sandbox_public_token(
+        self, 
+        institution_id: str = "ins_109508",  # Chase
+        products: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a sandbox public token for testing purposes.
+        Only works in sandbox environment.
+        
+        Args:
+            institution_id: Institution ID (default: Chase)
+            products: List of Plaid products to enable
+            
+        Returns:
+            Response containing public token
+        """
+        if not self.client:
+            return {"status": "error", "error": "Plaid not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET."}
+        
+        # Only allow in sandbox environment
+        plaid_env = getattr(settings, 'plaid_env', 'sandbox')
+        if plaid_env != 'sandbox':
+            return {"status": "error", "error": "Sandbox public token creation only available in sandbox environment."}
+        
+        if products is None:
+            products = ["identity", "transactions", "liabilities", "investments"]
+        
+        try:
+            from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
+            from plaid.model.sandbox_public_token_create_request_options import SandboxPublicTokenCreateRequestOptions
+            
+            # Convert product strings to Plaid Products enum
+            plaid_products = []
+            for product in products:
+                if product in ["transactions", "identity", "liabilities", "investments"]:
+                    plaid_products.append(Products(product))
+            
+            # Create sandbox public token
+            options = SandboxPublicTokenCreateRequestOptions(
+                webhook="https://httpbin.org/post"
+            )
+            
+            request = SandboxPublicTokenCreateRequest(
+                institution_id=institution_id,
+                initial_products=plaid_products,
+                options=options
+            )
+            
+            response = self.client.sandbox_public_token_create(request)
+            
+            logger.info(f"Created sandbox public token for institution {institution_id}")
+            
+            return {
+                "status": "success",
+                "public_token": response["public_token"],
+                "request_id": response.get("request_id")
+            }
+            
+        except ApiException as e:
+            return self._handle_plaid_error(e)
+        except Exception as e:
+            logger.error(f"Unexpected error creating sandbox public token: {str(e)}")
+            return {"status": "error", "error": "Failed to create sandbox public token"}
