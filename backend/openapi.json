@@ -289,24 +289,33 @@
       },
       "ClientMessage": {
         "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Message ID"
+          },
           "role": {
             "type": "string",
             "title": "Role",
             "description": "Message role: user, assistant, or system"
           },
-          "content": {
-            "type": "string",
-            "title": "Content",
-            "description": "Message content"
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/MessagePart"
+            },
+            "type": "array",
+            "title": "Parts",
+            "description": "Message parts array"
           }
         },
         "type": "object",
         "required": [
+          "id",
           "role",
-          "content"
+          "parts"
         ],
         "title": "ClientMessage",
-        "description": "AI SDK ClientMessage structure."
+        "description": "AI SDK 5 ClientMessage structure."
       },
       "ConversationHealthResponse": {
         "properties": {
@@ -452,6 +461,27 @@
         ],
         "title": "LoginRequest",
         "description": "User login request."
+      },
+      "MessagePart": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Part type: text, image, etc."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Text content for text parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "MessagePart",
+        "description": "AI SDK 5 message part structure."
       },
       "MessageResponse": {
         "properties": {
