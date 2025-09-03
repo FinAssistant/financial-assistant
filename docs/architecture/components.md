@@ -21,6 +21,7 @@
 - GET /api/conversation/history/{session_id} - Retrieve conversation history
 - POST /api/conversation/onboarding - Direct onboarding agent access
 - POST /api/conversation/spending - Direct spending agent access
+- POST /api/conversation/investment - Direct investment agent access
 
 **Agent Architecture**:
 ```python
@@ -29,7 +30,8 @@ class FinancialAssistantGraph:
     agents = {
         "orchestrator": OrchestratorAgent,
         "onboarding": OnboardingAgent, 
-        "spending": SpendingAgent
+        "spending": SpendingAgent,
+        "investment": InvestmentAgent
     }
     
     shared_state = GlobalState  # Shared across all agents
@@ -47,6 +49,10 @@ class FinancialAssistantGraph:
 - Tool: plaid_exchange_token - Exchange public token for access token  
 - Tool: plaid_get_accounts - Retrieve connected accounts with fresh data
 - Tool: plaid_get_transactions - Fetch transactions on-demand
+- Tool: market_get_stock_quote - Get current stock/ETF price from Alpha Vantage
+- Tool: market_get_stock_fundamentals - Get stock fundamental data from Alpha Vantage
+- Tool: market_get_sector_performance - Get sector performance data from Finnhub
+- Tool: investment_analyze_portfolio - Analyze user portfolio for recommendations
 - Tool: graphiti_store_context - Store user context in graph database
 - Tool: graphiti_query_relationships - Query user financial relationships
 - Tool: graphiti_store_conversation - Store conversation context
@@ -59,6 +65,10 @@ class FinancialMCPServer:
         "plaid_exchange_token": PlaidExchangeTool,
         "plaid_get_accounts": PlaidAccountsTool,
         "plaid_get_transactions": PlaidTransactionsTool,
+        "market_get_stock_quote": AlphaVantageQuoteTool,
+        "market_get_stock_fundamentals": AlphaVantageFundamentalsTool,
+        "market_get_sector_performance": FinnhubSectorTool,
+        "investment_analyze_portfolio": PortfolioAnalysisTool,
         "graphiti_store_context": GraphitiStoreTool,
         "graphiti_query_relationships": GraphitiQueryTool,
         "graphiti_store_conversation": GraphitiConversationTool
@@ -138,6 +148,65 @@ class FinancialAnalysisService:
 
 **Dependencies**: Transaction data, user profile data
 **Technology Stack**: Python data processing, basic ML for categorization
+
+### Investment Analysis Service
+**Responsibility**: Real-time investment recommendations, portfolio analysis, and market data integration for personalized stock/ETF suggestions
+
+**Key Interfaces**:
+- POST /api/investment/recommendations - Generate personalized investment recommendations
+- GET /api/investment/portfolio-analysis/{user_id} - Analyze current portfolio allocation
+- POST /api/investment/risk-assessment - Process user risk tolerance assessment
+- GET /api/investment/market-data/{symbol} - Retrieve current market data for stocks/ETFs
+
+**Investment Recommendation Flow**:
+```python
+class InvestmentAnalysisService:
+    async def generate_recommendations(self, user_id: str) -> Dict[str, Any]:
+        """Generate personalized investment recommendations"""
+        # Get user financial profile and risk tolerance
+        user_profile = await self.get_user_profile(user_id)
+        risk_profile = user_profile.get('risk_profile', {})
+        
+        # Analyze cash flow and available funds for investment
+        cash_flow = await self.financial_analysis.get_cash_flow(user_id)
+        available_funds = self.calculate_investment_capacity(cash_flow)
+        
+        # Get current market data for recommended assets
+        market_data = await self.get_market_data_for_portfolio(risk_profile)
+        
+        # Generate personalized allocation recommendations
+        recommendations = self.generate_asset_allocation(
+            risk_profile=risk_profile,
+            available_funds=available_funds,
+            market_data=market_data
+        )
+        
+        return {
+            "recommendations": recommendations,
+            "rationale": self.explain_recommendations(recommendations, risk_profile),
+            "risk_warnings": self.generate_risk_disclaimers()
+        }
+    
+    async def get_market_data_for_portfolio(self, risk_profile: Dict) -> Dict[str, Any]:
+        """Fetch market data for relevant stocks/ETFs based on risk profile"""
+        # Use Alpha Vantage for individual stocks, Finnhub for sector data
+        recommended_assets = self.get_asset_universe(risk_profile)
+        market_data = {}
+        
+        for asset in recommended_assets:
+            price_data = await self.alpha_vantage_client.get_quote(asset.symbol)
+            fundamentals = await self.alpha_vantage_client.get_fundamentals(asset.symbol)
+            market_data[asset.symbol] = {
+                "price": price_data,
+                "fundamentals": fundamentals,
+                "sector": asset.sector
+            }
+            
+        return market_data
+```
+
+**Dependencies**: Alpha Vantage API, Finnhub API, user financial data, risk profile data
+**Technology Stack**: Alpha Vantage Python SDK, Finnhub Python client, portfolio optimization algorithms
 
 ## Frontend Components
 
@@ -226,9 +295,10 @@ class GlobalState(BaseModel):
 - Handles simple queries directly or routes to specialized agents
 - Manages conversation flow and context switches
 
-**Specialized Agents**: Domain-focused processing (Onboarding, Spending) with access to shared state and MCP tools
-- Onboarding Agent: Account setup, goal setting, initial financial profiling
-- Spending Agent: Expense analysis, budgeting, cash flow recommendations
+**Specialized Agents**: Domain-focused processing (Onboarding, Spending, Investment) with access to shared state and MCP tools
+- Onboarding Agent: Account setup, goal setting, initial financial profiling, risk tolerance assessment
+- Spending Agent: Expense analysis, budgeting, cash flow recommendations  
+- Investment Agent: Market data analysis, personalized stock/ETF recommendations, portfolio optimization
 
 **Error Handling**: Graceful degradation with fallback to orchestrator for failed agent operations
 
@@ -237,10 +307,13 @@ class GlobalState(BaseModel):
 # High confidence routing
 "Connect my bank account" → onboarding (0.95 confidence)
 "Where do I spend too much?" → spending (0.9 confidence)
+"Should I invest in Apple stock?" → investment (0.92 confidence)
+"What's a good portfolio allocation for me?" → investment (0.88 confidence)
 "What is compound interest?" → orchestrator direct response (0.85 confidence)
 
 # Context-aware routing  
 "How much should I save?" + user_has_accounts → spending (0.75 confidence)
+"Where should I put my money?" + user_has_risk_profile → investment (0.80 confidence)
 "Can you help with money stuff?" → orchestrator clarification (0.6 confidence)
 ```
 

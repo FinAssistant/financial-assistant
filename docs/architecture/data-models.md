@@ -76,6 +76,25 @@ class AccountType(Enum):
     LOAN = "loan"
     MORTGAGE = "mortgage"
 
+class InvestmentTimeline(Enum):
+    """Investment time horizon for risk and allocation decisions"""
+    SHORT_TERM = "short_term"      # < 2 years
+    MEDIUM_TERM = "medium_term"    # 2-10 years
+    LONG_TERM = "long_term"        # 10+ years
+
+class RiskTolerance(Enum):
+    """Investment risk tolerance levels"""
+    CONSERVATIVE = "conservative"   # Low volatility, capital preservation
+    MODERATE = "moderate"          # Balanced growth and stability
+    AGGRESSIVE = "aggressive"      # High growth potential, high volatility
+
+class InvestmentExperience(Enum):
+    """Previous investment experience levels"""
+    NONE = "none"
+    BASIC = "basic"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+
 # ===== CORE USER MODEL =====
 
 @dataclass  
@@ -84,6 +103,7 @@ class OnboardingProgress:
     accounts_connected: bool = False        # Binary: Plaid integration complete
     first_conversation_completed: bool = False  # Binary: Had initial AI conversation
     graphiti_context_established: bool = False  # Binary: Has some context nodes
+    risk_assessment_completed: bool = False # Binary: Investment risk tolerance assessed
     
     # Timestamps for understanding user engagement
     first_login: Optional[datetime] = None
@@ -176,6 +196,20 @@ class GraphitiQueryCache:
 # - Message persistence across sessions  
 # - Thread-based conversation management
 # - State serialization/deserialization
+
+# ===== INVESTMENT RISK MODELS =====
+
+@dataclass
+class RiskProfile:
+    """Investment risk tolerance and preferences"""
+    user_id: str
+    risk_tolerance: Optional[RiskTolerance] = None
+    investment_timeline: Optional[InvestmentTimeline] = None
+    investment_percentage: Optional[float] = None  # % of savings to invest (0-100)
+    volatility_comfort: Optional[int] = None  # Scale 1-10
+    previous_experience: Optional[InvestmentExperience] = None
+    assessment_date: datetime = field(default_factory=datetime.now)
+    last_updated: datetime = field(default_factory=datetime.now)
 
 # ===== ACCOUNT MODELS =====
 

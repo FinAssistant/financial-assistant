@@ -24,6 +24,8 @@ This is the DEFINITIVE technology selection for the entire project. All developm
 | **AI Framework** | LangGraph | 0.0.x | Multi-agent conversation orchestration | Specialized agent routing with shared conversation state |
 | **Frontend AI** | AI-SDK | 2.2.x | React AI conversation interface | Seamless streaming AI integration with React |
 | **Financial API** | Plaid | Latest | Bank account and transaction data | Industry standard for financial data aggregation |
+| **Market Data API (Primary)** | Alpha Vantage | Latest | Real-time stock/ETF prices and fundamentals | Free tier sufficient for MVP, comprehensive data coverage |
+| **Market Data API (Secondary)** | Finnhub | Latest | Sector performance and market insights | Complements Alpha Vantage with sector analysis |
 | **API Client** | RTK Query | Built-in RTK | Frontend API state management | Integrated caching and state management |
 | **Container** | Docker | 24.x | Development and deployment consistency | Consistent environments across development/production |
 | **Package Manager** | UV | Latest | Python dependency management | Modern, fast Python dependency resolution |

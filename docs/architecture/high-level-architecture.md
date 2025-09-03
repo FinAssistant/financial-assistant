@@ -2,7 +2,7 @@
 
 ## Technical Summary
 
-The AI Financial Assistant employs an **agentic AI architecture** with clear separation between frontend and backend concerns. The Python FastAPI backend serves the React frontend while orchestrating specialized AI agents through LangGraph. An Orchestrator Agent routes user requests to domain specialists (Onboarding, Spending) that access shared tools via MCP server for secure financial data processing and contextual memory. The frontend uses Redux Toolkit for predictable state management and AI-SDK for seamless conversational interfaces. This architecture prioritizes **security** for financial data, **user trust** through transparent AI interactions, and **development velocity** for POC validation.
+The AI Financial Assistant employs an **agentic AI architecture** with clear separation between frontend and backend concerns. The Python FastAPI backend serves the React frontend while orchestrating specialized AI agents through LangGraph. An Orchestrator Agent routes user requests to domain specialists (Onboarding, Spending, Investment) that access shared tools via MCP server for secure financial data processing, market data integration, and contextual memory. The Investment Agent provides personalized stock and ETF recommendations through enhanced onboarding risk assessment and real-time market data analysis. The frontend uses Redux Toolkit for predictable state management and AI-SDK for seamless conversational interfaces. This architecture prioritizes **security** for financial data, **user trust** through transparent AI interactions, and **development velocity** for POC validation.
 
 ## Platform and Infrastructure Choice
 
@@ -14,7 +14,8 @@ The AI Financial Assistant employs an **agentic AI architecture** with clear sep
 - **Storage**: In-memory storage for POC (Redis-compatible for future scaling)
 - **AI Services**: Configurable LLM providers via environment variables
 - **Financial APIs**: Plaid integration via MCP server for multi-agent access
-- **Tool Server**: MCP server providing centralized Plaid APIs and Graphiti database access
+- **Market Data APIs**: Alpha Vantage and Finnhub integration via MCP server for investment recommendations
+- **Tool Server**: MCP server providing centralized Plaid APIs, market data APIs, and Graphiti database access
 - **Graph Database**: Graphiti for contextual memory and relationship tracking
 
 ## Repository Structure
@@ -43,14 +44,19 @@ graph TD
     E --> F[Orchestrator Agent]
     F --> G[Onboarding Agent]
     F --> H[Spending Agent]
+    F --> N[Investment Agent]
     G --> I[MCP Server]
     H --> I
+    N --> I
     I --> J[Plaid APIs]
     I --> K[Graphiti Database]
+    I --> O[Alpha Vantage API]
+    I --> P[Finnhub API]
     
     F --> L[LLM Provider]
     G --> L
     H --> L
+    N --> L
     
     B --> M[AI-SDK Chat Interface]
     M --> E
@@ -60,6 +66,7 @@ graph TD
     style F fill:#fff3e0
     style G fill:#e8f5e8
     style H fill:#e8f5e8
+    style N fill:#e3f2fd
     style I fill:#fce4ec
 ```
 
