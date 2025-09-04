@@ -18,16 +18,7 @@ class MCPConfig(BaseSettings):
     
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
-    
-    # Plaid configuration (will be used in Story 1.6)
-    plaid_client_id: Optional[str] = Field(default=None, description="Plaid client ID")
-    plaid_secret: Optional[str] = Field(default=None, description="Plaid secret key")
-    plaid_env: str = Field(default="sandbox", description="Plaid environment")
-    plaid_products: List[str] = Field(
-        default_factory=lambda: ["transactions", "accounts", "balances"],
-        description="Plaid products to use"
-    )
-    
+
     model_config = ConfigDict(
         env_prefix="MCP_",
         env_file=".env",

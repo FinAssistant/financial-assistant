@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """Application configuration settings."""
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[".env", "../.env"],  # Check both current dir and parent dir
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
@@ -50,7 +50,15 @@ class Settings(BaseSettings):
     ai_max_tokens: int = Field(default=500, description="Maximum tokens for AI responses")
     langgraph_memory_type: str = Field(default="in_memory", description="LangGraph memory backend")
     conversation_timeout: int = Field(default=300, description="Conversation timeout in seconds")
-
+    
+    # Plaid API settings
+    plaid_client_id: Optional[str] = Field(default=None, description="Plaid client ID")
+    plaid_secret: Optional[str] = Field(default=None, description="Plaid secret key")
+    plaid_env: str = Field(default="sandbox", description="Plaid environment (sandbox|production)")
+    plaid_products: List[str] = Field(
+        default_factory=lambda: ["identity", "transactions", "liabilities", "investments"],
+        description="Plaid products to use"
+    )
 
 # Global settings instance
 settings = Settings()
