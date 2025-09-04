@@ -76,29 +76,10 @@ class AccountType(Enum):
     LOAN = "loan"
     MORTGAGE = "mortgage"
 
-class SpendingPersonalityType(Enum):
-    """Spending personality types for behavioral analysis and personalized recommendations"""
-    SAVER = "saver"                     # Conservative spender, focused on accumulation
-    SPENDER = "spender"                 # Enjoys spending, values experiences and goods
-    PLANNER = "planner"                 # Methodical approach, budgets carefully
-    IMPULSE = "impulse"                 # Spontaneous spending patterns
-    CONVENIENCE_FOCUSED = "convenience" # Values convenience over cost optimization
-
-class SpendingTrigger(Enum):
-    """Common spending triggers for behavioral pattern recognition"""
-    STRESS = "stress"
-    SOCIAL_PRESSURE = "social_pressure"
-    EMOTIONAL = "emotional"
-    SEASONAL = "seasonal"
-    ROUTINE = "routine"
-    CELEBRATION = "celebration"
-
-class BudgetAlertType(Enum):
-    """Types of budget alerts for different spending thresholds"""
-    WARNING_75_PERCENT = "warning_75"   # 75% of budget used
-    ALERT_90_PERCENT = "alert_90"       # 90% of budget used  
-    EXCEEDED_100_PERCENT = "exceeded_100" # Budget exceeded
-    ANOMALY_DETECTED = "anomaly"        # Unusual spending pattern
+# Note: Spending personality types, triggers, and budget alerts are stored in Graphiti
+# as contextual insights rather than rigid structured enums, allowing for nuanced
+# personality analysis like "mostly saver with planner tendencies" or complex
+# trigger patterns that evolve over time
 
 # ===== CORE USER MODEL =====
 
@@ -228,47 +209,14 @@ class Transaction:
     pending: bool = False
     auto_categorized: bool = False
     user_feedback_category: Optional[str] = None  # User-corrected category for learning
-    spending_trigger: Optional[SpendingTrigger] = None  # Identified behavioral trigger
-    is_anomaly: bool = False  # Flagged as unusual spending
-    confidence_score: Optional[float] = None  # AI categorization confidence (0-1)
 
-@dataclass
-class BudgetCategory:
-    """Budget tracking for specific spending categories"""
-    id: str
-    user_id: str
-    category_name: str
-    monthly_limit: Decimal
-    current_spent: Decimal = Decimal('0.00')
-    last_updated: datetime = field(default_factory=datetime.now)
-    alert_thresholds: List[BudgetAlertType] = field(default_factory=list)
-    personality_adjusted: bool = False  # Whether limits were adjusted based on personality profile
+# Note: Spending triggers, anomaly detection, and behavioral insights
+# are stored in Graphiti as contextual analysis rather than structured fields
 
-@dataclass
-class SpendingPersonalityProfile:
-    """User's spending personality profile derived from behavioral analysis"""
-    user_id: str
-    primary_type: SpendingPersonalityType
-    secondary_type: Optional[SpendingPersonalityType] = None
-    confidence_score: float = 0.0  # Confidence in personality assessment (0-1)
-    spending_triggers: List[SpendingTrigger] = field(default_factory=list)
-    risk_tolerance: Optional[str] = None  # High, Medium, Low
-    communication_style: str = "balanced"  # gentle, direct, encouraging, analytical
-    last_analyzed: datetime = field(default_factory=datetime.now)
-    behavioral_insights: Dict[str, Any] = field(default_factory=dict)  # Additional insights as JSON
-
-@dataclass 
-class OptimizationOpportunity:
-    """Identified cost-saving or efficiency opportunities"""
-    user_id: str
-    opportunity_type: str  # "subscription_duplicate", "service_underused", "better_alternative"
-    description: str
-    potential_monthly_savings: Decimal
-    confidence_score: float  # How confident we are in this recommendation (0-1)
-    personality_fit: float  # How well this fits user's personality (0-1)
-    implementation_difficulty: str  # "easy", "medium", "complex"
-    identified_at: datetime = field(default_factory=datetime.now)
-    user_action_taken: Optional[str] = None  # "implemented", "dismissed", "considering"
+# Note: Budget categories, personality profiles, and optimization opportunities
+# are stored in Graphiti as contextual insights and relationships rather than
+# structured database models. This allows for flexible, evolving analysis
+# that adapts to user behavior and preferences over time.
 
 # ===== NO SEPARATE FINANCIAL PROFILE NEEDED =====
 
@@ -302,11 +250,10 @@ class OptimizationOpportunity:
 
 **What Lives Where:**
 
-**Structured Storage (PostgreSQL/In-Memory):**
+**Structured Storage (SQLite):**
 - User identity & authentication
 - Personal context (family structure, dependents) - affects app routing
 - Account integration (Plaid tokens, balances) - external API contracts
-- Conversation metadata - for debugging and analytics
 
 **Graph Database (Graphiti + Neo4j):**
 - Financial goals and their relationships
@@ -315,6 +262,7 @@ class OptimizationOpportunity:
 - Values and investment preferences
 - Goal conflicts and prioritization
 - Behavioral patterns and insights
+- All spending analysis results and personality profiles
 
 **Benefits:**
 ✅ Natural conversational extraction
@@ -323,7 +271,7 @@ class OptimizationOpportunity:
 ✅ No forced schema constraints
 ✅ Better handles nuanced financial contexts
 
-**LangGraph + Graphiti Integration:**
+**LangGraph + Graphiti Integration via MCP Tools:**
 ```python
 # LangGraph manages conversation flow and state
 class FinancialAssistantState(BaseModel):
@@ -332,16 +280,22 @@ class FinancialAssistantState(BaseModel):
     user_id: str
     # LangGraph checkpointer persists this state automatically
 
-# Graphiti integration happens within agent nodes
-async def onboarding_agent(state: FinancialAssistantState):
-    # Store conversation in Graphiti for long-term learning
-    await graphiti.add_episode(state.user_id, state.user_message)
+# Graphiti integration happens within agent nodes via MCP tools
+async def spending_agent_node(state: FinancialAssistantState):
+    # Store conversation context in Graphiti via MCP tool
+    await mcp_client.call_tool("graphiti_store_context", {
+        "user_id": state.user_id,
+        "context": f"User spending inquiry: {state.user_message}"
+    })
     
-    # Query Graphiti for context
-    context = await graphiti.search(state.user_id, "financial goals and constraints")
+    # Query Graphiti for previous spending insights via MCP tool
+    context = await mcp_client.call_tool("graphiti_query_relationships", {
+        "user_id": state.user_id,
+        "query": "spending patterns personality insights"
+    })
     
-    # Generate response (LangGraph manages the conversation flow)
-    response = await llm.ainvoke([...])
+    # Generate response with context (LangGraph manages the conversation flow)
+    response = await llm.ainvoke([context, state.user_message])
     return {"agent_response": response}
 
 # LangGraph handles:

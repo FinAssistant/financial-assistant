@@ -78,21 +78,18 @@ As a user, I want my transactions automatically categorized, analyzed, and trans
 ### Optimization Engine
 10. Smart expense reduction recommendations with personality-tailored strategies
 11. Subscription and recurring payment optimization (duplicates, unused services, consolidation)
-12. Cost optimization opportunities with alternative provider suggestions and savings calculations
+12. Cost optimization opportunities with savings calculations based on spending patterns
 13. Residual cash optimization with surplus allocation recommendations
 
 ### Budget & Planning
-14. Dynamic budget management with category-wise limits and real-time tracking
-15. Intelligent budget recommendations based on spending history and personality
-16. Budget alerts, variance analysis, and adjustment suggestions
-17. Goal alignment analysis comparing spending habits to stated objectives
+14. Conversational budget guidance with spending awareness and category insights
+15. Intelligent budget recommendations delivered through AI conversation based on spending history and personality
+16. Budget alerts and variance insights delivered conversationally with adjustment suggestions
+17. Goal alignment analysis comparing spending habits to stated objectives through AI conversation
 
 ### User Experience & Interface
 18. Conversational transaction queries with natural language processing
-19. Interactive spending visualization and drill-down capabilities
-20. Personalized reports with actionable insights and specific improvement steps
-21. Personality-aware communication with adaptive tone and messaging
-22. Budget setup wizard with guided category selection
+19. Personality-aware communication with adaptive tone and messaging based on user insights stored in Graphiti
     
 
 ## Story 2.4: Financial Profile Dashboard

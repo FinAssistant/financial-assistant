@@ -47,46 +47,22 @@ class FinancialAssistantGraph:
 - Tool: plaid_exchange_token - Exchange public token for access token  
 - Tool: plaid_get_accounts - Retrieve connected accounts with fresh data
 - Tool: plaid_get_transactions - Fetch transactions on-demand
-- Tool: plaid_categorize_transactions - AI-powered transaction categorization with user feedback learning
-- Tool: plaid_analyze_spending_patterns - Identify recurring expenses, seasonal trends, and anomalies
-- Tool: plaid_detect_subscription_services - Find duplicate and unused recurring payments
 - Tool: graphiti_store_context - Store user context in graph database
 - Tool: graphiti_query_relationships - Query user financial relationships
-- Tool: graphiti_store_conversation - Store conversation context
-- Tool: graphiti_store_personality_profile - Store spending personality insights and risk tolerance
-- Tool: graphiti_query_spending_behaviors - Query historical spending patterns and triggers
-- Tool: budget_manage_categories - Create, update, and track category-wise budget limits
-- Tool: budget_generate_alerts - Create real-time budget variance notifications
-- Tool: optimization_suggest_cost_reductions - Generate personality-tailored expense reduction strategies
-- Tool: optimization_analyze_cash_flow - Forecast trends and identify surplus allocation opportunities
 
 **MCP Architecture**:
 ```python
 class FinancialMCPServer:
     tools = {
-        # Plaid Integration Tools
+        # Plaid Integration Tools (External API Access)
         "plaid_get_link_token": PlaidLinkTokenTool,
         "plaid_exchange_token": PlaidExchangeTool,
         "plaid_get_accounts": PlaidAccountsTool,
         "plaid_get_transactions": PlaidTransactionsTool,
-        "plaid_categorize_transactions": PlaidCategorizationTool,
-        "plaid_analyze_spending_patterns": PlaidPatternAnalysisTool,
-        "plaid_detect_subscription_services": PlaidSubscriptionDetectionTool,
         
-        # Graphiti Context & Personality Tools
+        # Graphiti General-Purpose Tools
         "graphiti_store_context": GraphitiStoreTool,
         "graphiti_query_relationships": GraphitiQueryTool,
-        "graphiti_store_conversation": GraphitiConversationTool,
-        "graphiti_store_personality_profile": GraphitiPersonalityTool,
-        "graphiti_query_spending_behaviors": GraphitiBehaviorQueryTool,
-        
-        # Budget Management Tools
-        "budget_manage_categories": BudgetManagementTool,
-        "budget_generate_alerts": BudgetAlertTool,
-        
-        # Optimization & Analysis Tools
-        "optimization_suggest_cost_reductions": CostOptimizationTool,
-        "optimization_analyze_cash_flow": CashFlowAnalysisTool
     }
 ```
 
@@ -117,59 +93,6 @@ class PlaidSyncService:
 **Dependencies**: Plaid Python client, secure token storage
 **Technology Stack**: Plaid Python SDK, encrypted token storage
 
-### Financial Analysis Service
-**Responsibility**: Comprehensive financial analysis including transaction categorization, personality profiling, budget management, and optimization recommendations
-
-**Key Interfaces**:
-- POST /api/analysis/categorize-transactions - AI-powered transaction categorization with user feedback learning
-- GET /api/analysis/cash-flow/{user_id} - Generate cash flow analysis with trend detection and forecasting
-- POST /api/analysis/onboarding-profile - Generate initial financial profile with personality assessment
-- GET /api/analysis/spending-patterns/{user_id} - Comprehensive spending pattern analysis with behavioral insights
-- POST /api/analysis/personality-profile - Generate spending personality profile (Saver, Spender, Planner, etc.)
-- GET /api/analysis/anomaly-detection/{user_id} - Detect unusual transactions and spending spikes
-- POST /api/analysis/budget-recommendations - Generate intelligent budget suggestions based on history and personality
-- GET /api/analysis/optimization-opportunities/{user_id} - Identify cost reduction and efficiency improvements
-- POST /api/analysis/subscription-analysis - Analyze recurring payments for duplicates and unused services
-- GET /api/analysis/goal-alignment/{user_id} - Compare spending habits against stated financial objectives
-
-**Automatic Categorization Flow**:
-```python
-class FinancialAnalysisService:
-    async def categorize_user_transactions(self, user_id: str) -> Dict[str, Any]:
-        """Categorize transactions during onboarding or periodic sync"""
-        accounts = self.get_user_accounts(user_id)
-        all_categorized = []
-        
-        for account in accounts:
-            # Fetch fresh transactions from Plaid
-            transactions = await self.plaid_service.get_transactions(account.id)
-            
-            # Auto-categorize using simple rules + LLM for unclear cases
-            categorized = await self.auto_categorize_transactions(transactions)
-            all_categorized.extend(categorized)
-        
-        # Store insights in Graphiti, not raw transactions
-        await self.graphiti.store_spending_insights(user_id, all_categorized)
-        return self.generate_spending_insights(all_categorized)
-    
-    async def auto_categorize_transactions(self, transactions: List[Transaction]) -> List[Transaction]:
-        """Automatic categorization using rules + LLM fallback"""
-        for transaction in transactions:
-            # First: Rule-based categorization
-            category = self.rule_based_categorize(transaction.description)
-            
-            if not category:
-                # Fallback: LLM categorization for unclear transactions
-                category = await self.llm_categorize(transaction.description)
-            
-            transaction.category = category
-            transaction.auto_categorized = True
-            
-        return transactions
-```
-
-**Dependencies**: Transaction data, user profile data
-**Technology Stack**: Python data processing, basic ML for categorization
 
 ## Frontend Components
 
@@ -208,29 +131,20 @@ class FinancialAnalysisService:
 **Technology Stack**: Plaid React SDK, Redux state management
 
 ### Financial Dashboard Components
-**Responsibility**: Advanced spending visualization, interactive analytics, and personalized financial insights display
+**Responsibility**: Minimal dashboard for account overview with conversational-first approach
 
 **Key Interfaces**:
-- AccountCard for individual account display with real-time balance updates
-- TransactionList with AI-powered categorization and natural language search
-- SpendingPatternChart with drill-down capabilities and trend analysis
-- PersonalityProfileDisplay showing spending type and behavioral insights
-- BudgetTracker with real-time progress indicators and variance alerts
-- OptimizationRecommendations displaying personality-tailored cost reduction strategies
-- SubscriptionAnalyzer showing recurring payments with optimization suggestions
-- CashFlowForecast with trend detection and surplus allocation recommendations
-- InteractiveReports with conversational query interface
-- BudgetSetupWizard with guided category selection and limit setting
+- AccountCard for basic account display with current balances
+- TransactionList for simple transaction history viewing
+- ChatInterface for AI-powered financial insights and analysis
 
-**Advanced Visualization Features**:
-- Interactive spending charts with multi-dimensional filtering
-- Personality-aware communication adapting tone to user profile
-- Real-time budget alerts with contextual explanations
-- Anomaly detection visualizations with spending spike highlights
-- Goal alignment progress displays comparing habits to objectives
+**Design Approach**:
+- Conversational-first: Users get insights through AI chat, not complex visualizations
+- Minimal UI: Essential account and transaction data only
+- Analysis via conversation: Spending patterns, personality insights, and recommendations delivered through AI conversation
 
-**Dependencies**: Redux state, advanced charting libraries (D3.js/Chart.js), AI-SDK for conversational queries
-**Technology Stack**: React components with styled-components, D3.js for interactive charts, Recharts for standard visualizations
+**Dependencies**: Redux state, basic UI components, AI-SDK for conversational interface
+**Technology Stack**: React components with styled-components, minimal charting for basic summaries
 
 ## Agent Communication Patterns
 
