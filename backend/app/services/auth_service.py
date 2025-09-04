@@ -1,7 +1,7 @@
 import bcrypt
 import jwt
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -82,11 +82,11 @@ class AuthService:
     
     def generate_access_token(self, user_id: str) -> str:
         """Generate JWT access token for user."""
-        expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=self.access_token_expire_minutes)
         payload = {
             "sub": user_id,
             "exp": expire,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
             "type": "access"
         }
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)

@@ -130,7 +130,16 @@ class TestConversationEndpoints:
             "/conversation/message",
             json={
                 "messages": [
-                    {"role": "user", "content": "   \n\t  "}
+                    {
+                        "id": "test-msg-3",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "   \n\t  "
+                            }
+                        ]
+                    }
                 ]
             }
         )
@@ -172,7 +181,16 @@ class TestConversationEndpoints:
             "/conversation/send",
             json={
                 "messages": [
-                    {"role": "user", "content": "Test streaming message"}
+                    {
+                        "id": "test-msg-4",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Test streaming message"
+                            }
+                        ]
+                    }
                 ]
             }
         )
@@ -235,7 +253,16 @@ class TestConversationEndpoints:
             "/conversation/message",
             json={
                 "messages": [
-                    {"role": "user", "content": "Test message"}
+                    {
+                        "id": "test-msg-5",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Test message"
+                            }
+                        ]
+                    }
                 ]
             }
         )
@@ -262,7 +289,16 @@ class TestConversationEndpoints:
             "/conversation/message",
             json={
                 "messages": [
-                    {"role": "assistant", "content": "I'm an assistant"}
+                    {
+                        "id": "test-msg-6",
+                        "role": "assistant",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "I'm an assistant"
+                            }
+                        ]
+                    }
                 ]
             }
         )
@@ -288,7 +324,16 @@ class TestConversationEndpointsAsync:
                 "/conversation/message",
                 json={
                     "messages": [
-                        {"role": "user", "content": "Async test message"}
+                        {
+                            "id": "test-msg-7",
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "text": "Async test message"
+                                }
+                            ]
+                        }
                     ]
                 }
             )
@@ -311,7 +356,16 @@ class TestConversationEndpointsAsync:
                 "/conversation/send",
                 json={
                     "messages": [
-                        {"role": "user", "content": "Async streaming test"}
+                        {
+                            "id": "test-msg-8",
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "text": "Async streaming test"
+                                }
+                            ]
+                        }
                     ]
                 }
             )
