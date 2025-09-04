@@ -2,33 +2,37 @@
 
 **Epic Goal:** Implement AI-powered onboarding with guided financial data integration, capture user goals and values, and create comprehensive user financial profiles to establish the foundation for personalized AI recommendations.
 
-## Story 2.1: Onboarding Agent - AI-Powered User Setup
+## Story 2.1: Two-Phase Onboarding - Essential Setup + Ongoing Discovery
 
-As a user,I want an intelligent, conversational onboarding experience,so that I can easily provide my goals, values, and preferences while being guided through account setup.
+As a user,I want to quickly complete essential onboarding to start using the app, then have the AI gradually learn my preferences through natural conversations,so that I get immediate value while building a deeper, personalized financial profile over time.
 
 **Acceptance Criteria:**
 
-1.  Multi-step wizard interface with progress indicators
-    
-2.  LangGraph-powered conversational AI guide
-    
-3.  Dynamic question flow based on user responses
-    
-4.  Goal setting guidance (short, medium, long-term)
-    
-5.  Values and preferences capture (risk tolerance, ethical investing, lifestyle)
-    
-6.  Wizard state management and ability to resume
-    
-7.  Natural language processing for user inputs
-    
-8.  Guidance and explanation for connecting financial accounts
-    
-9.  Onboarding Agent implementation as LangGraph subgraph
-    
-10.  Integration with Orchestrator Agent for request routing
-    
-11.  MCP tool access for data persistence and retrieval
+**Phase 1: Essential Information Wizard (Single Session)**
+1.  Multi-step wizard interface with clear progress indicators leading to completion
+2.  Essential demographic information capture (age range, family structure, location)
+3.  Basic financial goal identification (retirement, house, emergency fund, etc.)
+4.  High-level risk comfort assessment (conservative, moderate, aggressive)
+5.  Account connection through Plaid integration
+6.  Clear "Profile Complete" state that enables core app functionality
+7.  Wizard state management and ability to resume if interrupted
+8.  Completion celebration and explanation of what happens next
+
+**Phase 2: Ongoing Conversational Discovery (Continuous)**
+9.  Natural conversation-based deepening of understanding (no progress bars)
+10. Gradual discovery of nuanced preferences and values through regular interactions
+11. Investment philosophy and ethical preferences revealed over time
+12. Complex family obligations and constraints learned through context
+13. Spending priorities and lifestyle values understood through discussion
+14. Risk tolerance refinement based on real scenarios and market conditions
+15. Financial behavior patterns observed and learned from user interactions
+
+**Two-Phase Integration:**
+16. Clear distinction between "ready to use" (Phase 1) and "fully personalized" (Phase 2)
+17. Immediate value delivery after Phase 1 completion
+18. Progressive enhancement of recommendations as Phase 2 understanding deepens
+19. User awareness of ongoing learning without pressure to complete everything upfront
+20. Profile insights that show how understanding has evolved over time
     
 
 ## Story 2.2: Plaid Integration and Account Connection

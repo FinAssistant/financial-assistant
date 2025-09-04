@@ -13,7 +13,7 @@ This is the DEFINITIVE technology selection for the entire project. All developm
 | **Backend Language** | Python | 3.11.x | Server-side development | Excellent AI/ML ecosystem, FastAPI compatibility |
 | **Backend Framework** | FastAPI | 0.104.x | API framework with auto-docs | Async support, automatic OpenAPI generation, security features |
 | **API Style** | REST | OpenAPI 3.0 | Client-server communication | Simple, well-understood, excellent tooling |
-| **Database** | In-Memory Dict | POC Only | Data storage for POC | Simplifies POC development, Redis-compatible transition path |
+| **Database** | SQLite | 3.41.x | Persistent data storage | Local file persistence with async SQLAlchemy, maintains simplicity for POC |
 | **Cache** | In-Memory | POC Only | Session and conversation caching | Sufficient for POC user load |
 | **Authentication** | Google OAuth + JWT | OAuth 2.0 | User authentication and session management | Trusted provider, reduces password management |
 | **Frontend Testing** | Jest + Testing Library | Latest | Component and integration testing | React ecosystem standard |

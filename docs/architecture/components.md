@@ -117,7 +117,8 @@ class FinancialAnalysisService:
             categorized = await self.auto_categorize_transactions(transactions)
             all_categorized.extend(categorized)
         
-        # Generate insights without storing transactions
+        # Store insights in Graphiti, not raw transactions
+        await self.graphiti.store_spending_insights(user_id, all_categorized)
         return self.generate_spending_insights(all_categorized)
     
     async def auto_categorize_transactions(self, transactions: List[Transaction]) -> List[Transaction]:
