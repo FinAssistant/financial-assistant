@@ -5,8 +5,8 @@ import { renderWithProviders } from '../../tests/setupTests'
 // Mock the API
 const mockLogout = jest.fn()
 
-jest.mock('../../store/api/authApi', () => ({
-  ...jest.requireActual('../../store/api/authApi'),
+jest.mock('../../store/api/generated', () => ({
+  ...jest.requireActual('../../store/api/generated'),
   useLogoutAuthLogoutPostMutation: () => [mockLogout, { isLoading: false }],
 }))
 

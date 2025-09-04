@@ -1,6 +1,12 @@
 export default {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
+  globals: {
+    'ts-jest': {
+      useESM: true,
+    },
+  },
   roots: ['<rootDir>/src'],
   testMatch: [
     '**/__tests__/**/*.{js,jsx,ts,tsx}',
@@ -9,9 +15,13 @@ export default {
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(@assistant-ui|ai)/)',
+  ],
   setupFilesAfterEnv: ['<rootDir>/src/tests/setupTests.tsx'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import { authApi } from '../api/authApi'
+import { api } from '../api/generated'
 
 export interface User {
   id: string
@@ -46,17 +46,17 @@ const authSlice = createSlice({
   extraReducers: (builder) => {
     // Handle register
     builder
-      .addMatcher(authApi.endpoints.registerAuthRegisterPost.matchPending, (state) => {
+      .addMatcher(api.endpoints.registerAuthRegisterPost.matchPending, (state) => {
         state.loading = true
       })
-      .addMatcher(authApi.endpoints.registerAuthRegisterPost.matchFulfilled, (state, action) => {
+      .addMatcher(api.endpoints.registerAuthRegisterPost.matchFulfilled, (state, action) => {
         const { access_token, user } = action.payload
         state.user = user as User
         state.token = access_token
         state.isAuthenticated = true
         state.loading = false
       })
-      .addMatcher(authApi.endpoints.registerAuthRegisterPost.matchRejected, (state) => {
+      .addMatcher(api.endpoints.registerAuthRegisterPost.matchRejected, (state) => {
         state.loading = false
         state.user = null
         state.token = null
@@ -65,17 +65,17 @@ const authSlice = createSlice({
 
     // Handle login
     builder
-      .addMatcher(authApi.endpoints.loginAuthLoginPost.matchPending, (state) => {
+      .addMatcher(api.endpoints.loginAuthLoginPost.matchPending, (state) => {
         state.loading = true
       })
-      .addMatcher(authApi.endpoints.loginAuthLoginPost.matchFulfilled, (state, action) => {
+      .addMatcher(api.endpoints.loginAuthLoginPost.matchFulfilled, (state, action) => {
         const { access_token, user } = action.payload
         state.user = user as User
         state.token = access_token
         state.isAuthenticated = true
         state.loading = false
       })
-      .addMatcher(authApi.endpoints.loginAuthLoginPost.matchRejected, (state) => {
+      .addMatcher(api.endpoints.loginAuthLoginPost.matchRejected, (state) => {
         state.loading = false
         state.user = null
         state.token = null
@@ -84,7 +84,7 @@ const authSlice = createSlice({
 
     // Handle logout
     builder
-      .addMatcher(authApi.endpoints.logoutAuthLogoutPost.matchFulfilled, (state) => {
+      .addMatcher(api.endpoints.logoutAuthLogoutPost.matchFulfilled, (state) => {
         state.user = null
         state.token = null
         state.isAuthenticated = false

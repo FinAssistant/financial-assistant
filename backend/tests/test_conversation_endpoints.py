@@ -47,10 +47,23 @@ class TestConversationEndpoints:
     """Test cases for conversation API endpoints."""
     
     def test_send_message_success(self, client):
-        """Test successful message sending."""
+        """Test successful message sending with AI SDK format."""
         response = client.post(
             "/conversation/message",
-            json={"message": "Hello, I need help with budgeting"}
+            json={
+                "messages": [
+                    {
+                        "id": "test-msg-1",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Hello, I need help with budgeting"
+                            }
+                        ]
+                    }
+                ]
+            }
         )
         
         assert response.status_code == 200
@@ -78,7 +91,18 @@ class TestConversationEndpoints:
         response = client.post(
             "/conversation/message",
             json={
-                "message": "Test message", 
+                "messages": [
+                    {
+                        "id": "test-msg-2",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Test message"
+                            }
+                        ]
+                    }
+                ], 
                 "session_id": custom_session_id
             }
         )
@@ -87,35 +111,52 @@ class TestConversationEndpoints:
         data = response.json()
         assert data["session_id"] == custom_session_id
     
-    def test_send_message_empty_message(self, client):
-        """Test sending empty message."""
+    def test_send_message_empty_messages_array(self, client):
+        """Test sending empty messages array."""
         response = client.post(
             "/conversation/message",
-            json={"message": ""}
+            json={"messages": []}
         )
         
-        # Pydantic validation happens first, so we get 422 not 400
+        # Pydantic validation happens first, so we get 422 not 400  
         assert response.status_code == 422
         error_details = response.json()["detail"]
-        # Check that validation error mentions message length
-        assert any("at least 1 character" in str(error) for error in error_details)
+        # Check that validation error mentions messages length
+        assert any("at least 1 item" in str(error) for error in error_details)
     
     def test_send_message_whitespace_only(self, client):
         """Test sending message with only whitespace."""
         response = client.post(
             "/conversation/message",
-            json={"message": "   \n\t  "}
+            json={
+                "messages": [
+                    {
+                        "id": "test-msg-3",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "   \n\t  "
+                            }
+                        ]
+                    }
+                ]
+            }
         )
         
         # This passes Pydantic validation but fails our custom validation
         assert response.status_code == 400
-        assert "Message cannot be empty" in response.json()["detail"]
+        assert "No valid user message found" in response.json()["detail"]
     
     def test_send_message_unauthorized(self, unauthenticated_client):
         """Test sending message without authentication."""
         response = unauthenticated_client.post(
             "/conversation/message",
-            json={"message": "Hello"}
+            json={
+                "messages": [
+                    {"role": "user", "content": "Hello"}
+                ]
+            }
         )
         
         assert response.status_code == 403  # Missing authorization header
@@ -124,33 +165,54 @@ class TestConversationEndpoints:
         """Test sending message with invalid token."""
         response = unauthenticated_client.post(
             "/conversation/message",
-            json={"message": "Hello"},
+            json={
+                "messages": [
+                    {"role": "user", "content": "Hello"}
+                ]
+            },
             headers={"Authorization": "Bearer invalid_token"}
         )
         
         assert response.status_code == 401
     
     def test_streaming_endpoint_success(self, client):
-        """Test streaming conversation endpoint."""
+        """Test streaming conversation endpoint with AI SDK format."""
         response = client.post(
             "/conversation/send",
-            json={"message": "Test streaming message"}
+            json={
+                "messages": [
+                    {
+                        "id": "test-msg-4",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Test streaming message"
+                            }
+                        ]
+                    }
+                ]
+            }
         )
         
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/plain")
+        assert response.headers["x-vercel-ai-data-stream"] == "v1"
         
-        # Check that we get streaming data
+        # Check that we get AI SDK streaming data format
         content = response.content.decode()
         assert "data:" in content
-        assert "chat.completion.chunk" in content
+        assert '"type": "start"' in content
+        assert '"type": "text-start"' in content  
+        assert '"type": "text-delta"' in content
+        assert '"type": "text-end"' in content
         assert "[DONE]" in content
     
-    def test_streaming_endpoint_empty_message(self, client):
-        """Test streaming endpoint with empty message."""
+    def test_streaming_endpoint_empty_messages(self, client):
+        """Test streaming endpoint with empty messages array."""
         response = client.post(
             "/conversation/send",
-            json={"message": ""}
+            json={"messages": []}
         )
         
         assert response.status_code == 422  # Pydantic validation error
@@ -189,7 +251,20 @@ class TestConversationEndpoints:
         
         response = client.post(
             "/conversation/message",
-            json={"message": "Test message"}
+            json={
+                "messages": [
+                    {
+                        "id": "test-msg-5",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Test message"
+                            }
+                        ]
+                    }
+                ]
+            }
         )
         
         assert response.status_code == 500
@@ -208,16 +283,28 @@ class TestConversationEndpoints:
         assert data["status"] == "unhealthy"
         assert data["error"] is not None
     
-    def test_message_too_long(self, client):
-        """Test message that exceeds maximum length."""
-        long_message = "x" * 1001  # Exceeds 1000 char limit
-        
+    def test_no_user_message_in_array(self, client):
+        """Test messages array with no user messages."""
         response = client.post(
             "/conversation/message",
-            json={"message": long_message}
+            json={
+                "messages": [
+                    {
+                        "id": "test-msg-6",
+                        "role": "assistant",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "I'm an assistant"
+                            }
+                        ]
+                    }
+                ]
+            }
         )
         
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400
+        assert "No valid user message found" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -225,7 +312,7 @@ class TestConversationEndpointsAsync:
     """Async test cases for conversation endpoints."""
     
     async def test_async_send_message(self):
-        """Test async message sending."""
+        """Test async message sending with AI SDK format."""
         app = create_app()
         # Mock auth for async client too
         app.dependency_overrides[get_current_user] = mock_get_current_user
@@ -235,7 +322,20 @@ class TestConversationEndpointsAsync:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/conversation/message",
-                json={"message": "Async test message"}
+                json={
+                    "messages": [
+                        {
+                            "id": "test-msg-7",
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "text": "Async test message"
+                                }
+                            ]
+                        }
+                    ]
+                }
             )
         
         assert response.status_code == 200
@@ -244,7 +344,7 @@ class TestConversationEndpointsAsync:
         assert data["agent"] == "orchestrator"
     
     async def test_async_streaming_send(self):
-        """Test async streaming endpoint."""
+        """Test async streaming endpoint with AI SDK format."""
         app = create_app()
         # Mock auth for async client too
         app.dependency_overrides[get_current_user] = mock_get_current_user
@@ -254,10 +354,25 @@ class TestConversationEndpointsAsync:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/conversation/send",
-                json={"message": "Async streaming test"}
+                json={
+                    "messages": [
+                        {
+                            "id": "test-msg-8",
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "text": "Async streaming test"
+                                }
+                            ]
+                        }
+                    ]
+                }
             )
         
         assert response.status_code == 200
         content = response.content.decode()
         assert "data:" in content
+        assert '"type": "start"' in content
+        assert '"type": "text-start"' in content
         assert "[DONE]" in content

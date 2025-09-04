@@ -11,10 +11,15 @@
     "pretest": "npm run lint && tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "codegen:api": "npx @rtk-query/codegen-openapi rtk-query-codegen-config.json"
   },
   "dependencies": {
+    "@ai-sdk/react": "^2.0.30",
+    "@assistant-ui/react": "^0.10.45",
+    "@assistant-ui/react-ai-sdk": "^1.0.5",
     "@reduxjs/toolkit": "^1.9.7",
+    "ai": "^5.0.30",
     "lucide-react": "^0.542.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

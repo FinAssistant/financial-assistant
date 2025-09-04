@@ -1,6 +1,6 @@
 import pytest
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.services.auth_service import AuthService, LoginCredentials, RegisterData, AuthResult
 
@@ -147,11 +147,11 @@ class TestAuthService:
         user_id = "test_user_123"
         
         # Create expired token (expired 1 minute ago)
-        expire = datetime.utcnow() - timedelta(minutes=1)
+        expire = datetime.now(timezone.utc) - timedelta(minutes=1)
         payload = {
             "sub": user_id,
             "exp": expire,
-            "iat": datetime.utcnow() - timedelta(minutes=2),
+            "iat": datetime.now(timezone.utc) - timedelta(minutes=2),
             "type": "access"
         }
         expired_token = jwt.encode(payload, self.auth_service.secret_key, algorithm=self.auth_service.algorithm)

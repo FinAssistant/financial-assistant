@@ -1,0 +1,55 @@
+name: Validate OpenAPI Schema
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend/app/**/*.py'
+      - 'backend/openapi.json'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend/app/**/*.py'
+      - 'backend/openapi.json'
+
+jobs:
+  validate-openapi:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install UV
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Set up Python
+      run: uv python install
+      working-directory: ./backend
+    
+    - name: Install dependencies
+      run: uv sync
+      working-directory: ./backend
+      
+    - name: Generate current OpenAPI schema
+      run: |
+        uv run python -c "from app.main import create_app; import json; app = create_app(); print(json.dumps(app.openapi(), indent=2))" > openapi-current.json
+      working-directory: ./backend
+      
+    - name: Compare OpenAPI schemas
+      run: |
+        if ! diff -q backend/openapi.json backend/openapi-current.json > /dev/null; then
+          echo "❌ OpenAPI schema is out of date!"
+          echo ""
+          echo "The committed openapi.json file doesn't match the current FastAPI schema."
+          echo "Please run the following commands to update it:"
+          echo ""
+          echo "  cd backend && uv run python -c \"from app.main import create_app; import json; app = create_app(); print(json.dumps(app.openapi(), indent=2))\" > openapi.json"
+          echo "  cd frontend && npm run codegen:api"
+          echo ""
+          echo "Then commit the updated files."
+          exit 1
+        else
+          echo "✅ OpenAPI schema is up to date!"
+        fi
