@@ -4,7 +4,7 @@ from app.core.config import Settings
 
 def test_default_settings():
     """Test default configuration values."""
-    settings = Settings()
+    settings = Settings(_env_file=None)
     
     assert settings.app_name == "AI Financial Assistant"
     assert settings.app_version == "0.1.0"
@@ -13,6 +13,11 @@ def test_default_settings():
     assert settings.debug is False
     assert settings.environment == "development"
     assert settings.static_dir == "app/static"
+    # Test new Plaid defaults
+    assert settings.plaid_client_id is None
+    assert settings.plaid_secret is None
+    assert settings.plaid_env == "sandbox"
+    assert settings.plaid_products == ["identity", "transactions", "liabilities", "investments"]
 
 
 def test_cors_origins_default():
