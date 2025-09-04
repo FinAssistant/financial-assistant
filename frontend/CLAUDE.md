@@ -53,14 +53,14 @@
 - Annotate return types
 - Always destructure props
 - Avoid `any` type, use `unknown` or strict generics
-- Group imports: react → next → libraries → local
 
 ## Code Quality
-   - Type hints required for all code
-   - Public APIs must have docstrings
-   - Functions must be focused and small
-   - Follow existing patterns exactly
-   - Line length: 88 chars maximum
+
+- Type hints required for all code
+- Public APIs must have docstrings
+- Functions must be focused and small
+- Follow existing patterns exactly
+- Line length: 88 chars maximum
 
 ## ⚙️ Dev Commands
 

@@ -16,16 +16,37 @@ jest.mock("@assistant-ui/react", () => ({
     Root: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="thread-root">{children}</div>
     ),
+    Viewport: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="thread-viewport">{children}</div>
+    ),
+    Empty: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="thread-empty">{children}</div>
+    ),
+    Messages: () => <div data-testid="thread-messages">Messages</div>,
+    If: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="thread-if">{children}</div>
+    ),
   },
   ComposerPrimitive: {
     Root: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="composer-root">{children}</div>
+    ),
+    Input: ({ placeholder, ...props }: { [key: string]: string }) => (
+      <input
+        data-testid="composer-input"
+        placeholder={placeholder}
+        {...props}
+      />
+    ),
+    Send: ({ children }: { children: React.ReactNode }) => (
+      <button data-testid="composer-send">{children}</button>
     ),
   },
   MessagePrimitive: {
     Root: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="message-root">{children}</div>
     ),
+    Content: () => <div data-testid="message-content">Message content</div>,
   },
 }));
 
@@ -95,7 +116,10 @@ describe("ChatInterface", () => {
 
     expect(mockDefaultChatTransport).toHaveBeenCalledWith({
       api: "/conversation/send",
-      headers: undefined, // No auth in this test case
+      headers: {
+        Authorization: "Bearer fake-token",
+        "Content-Type": "application/json",
+      },
     });
     expect(mockUseChatRuntime).toHaveBeenCalledWith({
       transport: expect.any(Object),

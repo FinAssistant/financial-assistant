@@ -52,7 +52,16 @@ class TestConversationEndpoints:
             "/conversation/message",
             json={
                 "messages": [
-                    {"role": "user", "content": "Hello, I need help with budgeting"}
+                    {
+                        "id": "test-msg-1",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Hello, I need help with budgeting"
+                            }
+                        ]
+                    }
                 ]
             }
         )
@@ -83,7 +92,16 @@ class TestConversationEndpoints:
             "/conversation/message",
             json={
                 "messages": [
-                    {"role": "user", "content": "Test message"}
+                    {
+                        "id": "test-msg-2",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": "Test message"
+                            }
+                        ]
+                    }
                 ], 
                 "session_id": custom_session_id
             }
