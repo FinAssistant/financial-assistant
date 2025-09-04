@@ -4,7 +4,8 @@ import threading
 import time
 
 from app.models.user import User
-from app.core.database import InMemoryUserStorage
+from app.core.database import AsyncUserStorageWrapper
+# For testing, we'll use the new SQLite storage
 
 
 class TestUserModel:
@@ -130,18 +131,36 @@ class TestUserModel:
         assert 'password_hash' not in public_dict
 
 
-class TestInMemoryUserStorage:
-    """Test cases for InMemoryUserStorage."""
+class TestSQLiteUserStorage:
+    """Test cases for SQLite UserStorage (formerly InMemoryUserStorage)."""
     
     def setup_method(self):
         """Set up test fixtures."""
-        self.storage = InMemoryUserStorage()
+        # Use test database to avoid conflicts
+        import tempfile
+        import os
+        self.test_db_path = os.path.join(tempfile.gettempdir(), "test_financial_assistant.db")
+        self.storage = AsyncUserStorageWrapper()
+        # Override database URL for testing
+        self.storage._async_storage.database_url = f"sqlite+aiosqlite:///{self.test_db_path}"
+        
+        # Clean database before each test
+        self.storage.clear_all_users()
+        
+        # Test data setup
         self.test_user_data = {
             'id': 'user123',
             'email': 'test@example.com',
             'password_hash': 'hashed_password',
             'name': 'Test User'
         }
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        import os
+        # Clean up test database
+        if os.path.exists(self.test_db_path):
+            os.remove(self.test_db_path)
     
     def test_create_user_success(self):
         """Test successful user creation."""

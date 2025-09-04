@@ -11,6 +11,11 @@
 - **Lifecycle Management**: Combined lifespan management ensures FastAPI and MCP server start/stop together  
 - **Future Flexibility**: `run_server()` function enables independent MCP server deployment when needed
 
+### Data Persistence
+- **SQLite Database**: Persistent local file storage (`./financial_assistant.db`)
+- **Container Volumes**: Database file persisted via Docker volume mounts
+- **Backup Strategy**: Database file can be copied for backup/restore operations
+
 ### Single Container Deployment
 
 ```dockerfile
@@ -36,6 +41,9 @@ RUN uv sync --frozen
 
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./app/static
+
+# Create database directory
+RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 8000

@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # Environment
     environment: str = Field(default="development", description="Environment (development|production)")
     
+    # Database settings
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./financial_assistant.db",
+        description="Database URL for SQLite persistence"
+    )
+    database_echo: bool = Field(default=False, description="Echo SQL queries for debugging")
+
     # AI/LangGraph settings
     ai_model_name: str = Field(default="gpt-3.5-turbo", description="AI model to use")
     ai_temperature: float = Field(default=0.7, description="AI response temperature")
