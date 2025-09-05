@@ -7,9 +7,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from enum import Enum
 
-from sqlmodel import SQLModel, Field, Column, DateTime, JSON
+from sqlmodel import SQLModel, Field, Column, DateTime
 from pydantic import EmailStr, field_validator
-
 
 class AgeRange(str, Enum):
     """Age range categories for demographic analysis."""
@@ -20,7 +19,6 @@ class AgeRange(str, Enum):
     RANGE_55_64 = "55_64"
     OVER_65 = "over_65"
 
-
 class LifeStage(str, Enum):
     """Life stage categories that affect financial priorities."""
     STUDENT = "student"
@@ -30,7 +28,6 @@ class LifeStage(str, Enum):
     PRE_RETIREMENT = "pre_retirement"
     RETIREMENT = "retirement"
 
-
 class MaritalStatus(str, Enum):
     """Marital status options."""
     SINGLE = "single"
@@ -38,7 +35,6 @@ class MaritalStatus(str, Enum):
     DIVORCED = "divorced"
     WIDOWED = "widowed"
     SEPARATED = "separated"
-
 
 # Base model for shared fields and methods
 class UserBase(SQLModel):
@@ -52,7 +48,6 @@ class UserBase(SQLModel):
     def normalize_email(cls, v: str) -> str:
         """Normalize email to lowercase."""
         return v.lower()
-
 
 # Database model (table=True)
 class UserModel(UserBase, table=True):
@@ -77,15 +72,13 @@ class UserModel(UserBase, table=True):
                         onupdate=lambda: datetime.now(timezone.utc))
     )
     
-    # Extended profile data as JSON (for backward compatibility)
-    profile_data: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert to dictionary format for backward compatibility.
         Matches the interface expected by existing code.
         """
-        base_dict = {
+
+        return {
             'id': self.id,
             'email': self.email,
             'password_hash': self.password_hash,
@@ -93,12 +86,6 @@ class UserModel(UserBase, table=True):
             'profile_complete': self.profile_complete,
             'created_at': self.created_at,
         }
-        
-        # Add profile data fields to match existing behavior
-        if self.profile_data:
-            base_dict.update(self.profile_data)
-            
-        return base_dict
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'UserModel':
@@ -111,10 +98,7 @@ class UserModel(UserBase, table=True):
         # Extract core fields
         core_data = {k: v for k, v in data.items() if k in core_fields}
         
-        # Everything else goes in profile_data
-        profile_data = {k: v for k, v in data.items() if k not in core_fields and k != 'updated_at'}
-        
-        return cls(**core_data, profile_data=profile_data)
+        return cls(**core_data)
     
     def update_from_dict(self, updates: Dict[str, Any]) -> None:
         """
@@ -128,15 +112,6 @@ class UserModel(UserBase, table=True):
             if field in updates:
                 setattr(self, field, updates[field])
         
-        # Update profile data
-        profile_updates = {k: v for k, v in updates.items() 
-                          if k not in core_fields and k not in {'id', 'email', 'password_hash'}}
-        
-        if profile_updates:
-            current_profile = self.profile_data or {}
-            current_profile.update(profile_updates)
-            self.profile_data = current_profile
-        
         self.updated_at = datetime.now(timezone.utc)
     
     def to_public_dict(self) -> Dict[str, Any]:
@@ -144,23 +119,14 @@ class UserModel(UserBase, table=True):
         Convert to public dictionary (without sensitive data).
         Maintains compatibility with existing User dataclass.
         """
-        public_dict = {
+
+        return {
             'id': self.id,
             'email': self.email,
             'name': self.name,
             'profile_complete': self.profile_complete,
             'created_at': self.created_at
         }
-        
-        # Add non-sensitive profile data
-        if self.profile_data:
-            # Filter out any potentially sensitive keys
-            safe_keys = {'bio', 'preferences', 'settings'}  # Add more as needed
-            safe_profile = {k: v for k, v in self.profile_data.items() if k in safe_keys}
-            public_dict.update(safe_profile)
-            
-        return public_dict
-
 
 # API response models (table=False - these are just Pydantic models)
 class UserRead(UserBase):
@@ -168,7 +134,6 @@ class UserRead(UserBase):
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-
 
 class UserPublic(SQLModel):
     """Public user model without sensitive data."""
@@ -178,7 +143,6 @@ class UserPublic(SQLModel):
     profile_complete: bool
     created_at: datetime
 
-
 class UserCreate(SQLModel):
     """User model for creation requests."""
     id: str
@@ -186,13 +150,10 @@ class UserCreate(SQLModel):
     password_hash: str
     name: str = ""
 
-
 class UserUpdate(SQLModel):
     """User model for update requests."""
     name: Optional[str] = None
     profile_complete: Optional[bool] = None
-    profile_data: Optional[Dict[str, Any]] = None
-
 
 # Future: PersonalContext model for structured demographic data
 class PersonalContextModel(SQLModel, table=True):
@@ -253,7 +214,6 @@ class PersonalContextModel(SQLModel, table=True):
             'updated_at': self.updated_at
         }
 
-
 # API models for PersonalContext
 class PersonalContextRead(SQLModel):
     """PersonalContext for API responses."""
@@ -272,7 +232,6 @@ class PersonalContextRead(SQLModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-
 class PersonalContextCreate(SQLModel):
     """PersonalContext for creation requests."""
     age_range: Optional[AgeRange] = None
@@ -286,7 +245,6 @@ class PersonalContextCreate(SQLModel):
     has_emergency_fund: bool = False
     has_retirement_savings: bool = False
     has_investment_experience: bool = False
-
 
 class PersonalContextUpdate(SQLModel):
     """PersonalContext for update requests."""
