@@ -53,4 +53,4 @@ uv.lock
 *.db
 
 # Architecture conversations
-docs/architecture/data-model-design-conversation.md
+claude-conversations/
