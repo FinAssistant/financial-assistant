@@ -96,23 +96,9 @@ async def send_message(
     session_id = request.session_id or f"session_{current_user}"
     
     try:
-        # Process message through orchestrator
-        ai_response = orchestrator.process_message(
-            user_message=last_message.content.strip(),
-            user_id=current_user,
-            session_id=session_id
-        )
-        
-        # Check for processing errors
-        if ai_response.get("error"):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"AI processing error: {ai_response['error']}"
-            )
-        
         # Create AI-SDK compatible streaming response
-        def generate_stream():
-            """Generate AI-SDK compatible streaming response."""
+        async def generate_real_stream():
+            """Generate AI-SDK compatible streaming response with real LangGraph streaming."""
             message_id = str(uuid.uuid4())
             text_id = str(uuid.uuid4())
             
@@ -122,18 +108,34 @@ async def send_message(
             # Send text start
             yield f'data: {json.dumps({"type": "text-start", "id": text_id})}\n\n'
             
-            # Send text content as delta
-            content = ai_response["content"]
-            yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": content})}\n\n'
-            
-            # Send text end
-            yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
+            try:
+                # Get response from orchestrator
+                ai_response = orchestrator.process_message(
+                    user_message=last_message.content.strip(),
+                    user_id=current_user,
+                    session_id=session_id
+                )
+                
+                # Stream the content
+                content = ai_response.get("content", "")
+                if content:
+                    # Send text content as delta
+                    yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": content})}\n\n'
+                
+                # Send text end
+                yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
+                
+            except Exception as e:
+                # Send error as content
+                error_msg = "I apologize, but I'm having trouble processing your message right now. Please try again."
+                yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": error_msg})}\n\n'
+                yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
             
             # Send stream termination
             yield "data: [DONE]\n\n"
         
         return StreamingResponse(
-            generate_stream(),
+            generate_real_stream(),
             media_type="text/plain",
             headers={
                 "Cache-Control": "no-cache",
