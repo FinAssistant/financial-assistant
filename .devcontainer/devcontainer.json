@@ -1,0 +1,50 @@
+{
+  "name": "Financial Assistant",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11-bookworm",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  
+  // Forward ports from the shared network
+  "forwardPorts": [
+    7474, // Neo4j HTTP interface
+    7687, // Neo4j Bolt protocol
+    8080  // MCP server (accessible via neo4j's network)
+  ],
+  
+  "portsAttributes": {
+    "7474": {
+      "label": "Neo4j Browser",
+      "onAutoForward": "notify"
+    },
+    "7687": {
+      "label": "Neo4j Bolt",
+      "onAutoForward": "silent"
+    },
+    "8080": {
+      "label": "Graphiti MCP Server",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Wait for neo4j to be healthy before starting
+  "waitFor": "postCreateCommand",
+  "postCreateCommand": "echo 'Dev container ready!'",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+
+  "remoteUser": "root"
+}
