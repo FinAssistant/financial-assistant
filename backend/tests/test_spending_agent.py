@@ -42,7 +42,7 @@ class TestSpendingAgent:
         assert "spending_insights" in result
         assert result["user_context"]["user_id"] == "test_user_123"
         assert "demographics" in result["user_context"]
-        assert "preferences" in result["user_context"]
+        assert "financial_context" in result["user_context"]
     
     def test_route_intent_node_spending_keywords(self):
         """Test _route_intent_node detects spending-related intents."""
@@ -76,41 +76,26 @@ class TestSpendingAgent:
         result = self.agent._route_intent_node(state)
         assert result == {}
     
-    def test_generate_response_node_personality_styles(self):
-        """Test _generate_response_node adapts to different personality styles."""
-        # Test friendly style
-        friendly_state = {
+    def test_generate_response_node_basic(self):
+        """Test _generate_response_node generates basic responses."""
+        test_state = {
             "messages": [HumanMessage(content="Tell me about my spending")],
             "user_context": {
-                "preferences": {"communication_style": "friendly"}
+                "demographics": {},
+                "financial_context": {}
             },
             "detected_intent": "spending_analysis"
         }
         
-        result = self.agent._generate_response_node(friendly_state)
+        result = self.agent._generate_response_node(test_state)
         assert "messages" in result
         assert len(result["messages"]) == 1
         
         ai_message = result["messages"][0]
         assert isinstance(ai_message, AIMessage)
-        assert "🏦" in ai_message.content or "Hey!" in ai_message.content
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "spending_analysis"
-        assert ai_message.additional_kwargs["personality_style"] == "friendly"
-        
-        # Test professional style
-        professional_state = {
-            "messages": [HumanMessage(content="Tell me about my spending")],
-            "user_context": {
-                "preferences": {"communication_style": "professional"}
-            },
-            "detected_intent": "spending_analysis"
-        }
-        
-        result = self.agent._generate_response_node(professional_state)
-        ai_message = result["messages"][0]
         assert "analyze" in ai_message.content.lower()
-        assert ai_message.additional_kwargs["personality_style"] == "professional"
     
     def test_generate_response_node_different_intents(self):
         """Test _generate_response_node handles different intents correctly."""
@@ -125,7 +110,7 @@ class TestSpendingAgent:
         for intent in intents_to_test:
             state = {
                 "messages": [HumanMessage(content="Test message")],
-                "user_context": {"preferences": {"communication_style": "professional"}},
+                "user_context": {"demographics": {}, "financial_context": {}},
                 "detected_intent": intent
             }
             
@@ -148,7 +133,6 @@ class TestSpendingAgent:
         assert "content" in result
         assert "agent" in result
         assert "intent" in result
-        assert "personality_style" in result
         assert result["agent"] == "spending_agent"
         assert result["user_id"] == user_id
         assert result["session_id"] == session_id
@@ -193,50 +177,40 @@ class TestSpendingAgentResponseGeneration:
         """Setup method called before each test."""
         self.agent = SpendingAgent()
     
-    def test_generate_spending_analysis_response_styles(self):
-        """Test spending analysis response generation with different styles."""
-        friendly_response = self.agent._generate_spending_analysis_response("friendly")
-        professional_response = self.agent._generate_spending_analysis_response("professional")
+    def test_generate_spending_analysis_response(self):
+        """Test spending analysis response generation."""
+        response = self.agent._generate_spending_analysis_response()
         
-        assert "🏦" in friendly_response or "Hey!" in friendly_response
-        assert "analyze" in professional_response.lower()
-        assert friendly_response != professional_response
+        assert "analyze" in response.lower()
+        assert "spending" in response.lower()
     
-    def test_generate_budget_response_styles(self):
-        """Test budget response generation with different styles."""
-        friendly_response = self.agent._generate_budget_response("friendly")
-        professional_response = self.agent._generate_budget_response("professional")
+    def test_generate_budget_response(self):
+        """Test budget response generation."""
+        response = self.agent._generate_budget_response()
         
-        assert "💰" in friendly_response or "Great" in friendly_response
-        assert "budget" in professional_response.lower()
-        assert friendly_response != professional_response
+        assert "budget" in response.lower()
+        assert "planning" in response.lower()
     
-    def test_generate_optimization_response_styles(self):
-        """Test optimization response generation with different styles."""
-        friendly_response = self.agent._generate_optimization_response("friendly")
-        professional_response = self.agent._generate_optimization_response("professional")
+    def test_generate_optimization_response(self):
+        """Test optimization response generation."""
+        response = self.agent._generate_optimization_response()
         
-        assert "✨" in friendly_response or "love" in friendly_response.lower()
-        assert "optimization" in professional_response.lower()
-        assert friendly_response != professional_response
+        assert "optimization" in response.lower()
+        assert "spending" in response.lower()
     
-    def test_generate_transaction_response_styles(self):
-        """Test transaction response generation with different styles."""
-        friendly_response = self.agent._generate_transaction_response("friendly")
-        professional_response = self.agent._generate_transaction_response("professional")
+    def test_generate_transaction_response(self):
+        """Test transaction response generation."""
+        response = self.agent._generate_transaction_response()
         
-        assert "🔍" in friendly_response or "Sure" in friendly_response
-        assert "transaction" in professional_response.lower()
-        assert friendly_response != professional_response
+        assert "transaction" in response.lower()
+        assert "query" in response.lower()
     
-    def test_generate_default_response_styles(self):
-        """Test default response generation with different styles."""
-        friendly_response = self.agent._generate_default_response("friendly")
-        professional_response = self.agent._generate_default_response("professional")
+    def test_generate_default_response(self):
+        """Test default response generation."""
+        response = self.agent._generate_default_response()
         
-        assert "😊" in friendly_response or "Hi there" in friendly_response
-        assert "analysis agent" in professional_response
-        assert friendly_response != professional_response
+        assert "spending analysis agent" in response.lower()
+        assert "assist" in response.lower()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,8 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END, START, MessagesState
 import logging
 
+from app.services.user_context_dao import UserContextDAOSync
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +35,7 @@ class SpendingAgent:
     
     def __init__(self):
         self.graph = None
+        self._user_context_dao = UserContextDAOSync()
         self._setup_graph()
     
     def _setup_graph(self) -> None:
@@ -64,26 +67,36 @@ class SpendingAgent:
         
         Subtask: Implement agent initialization node with SQLite context retrieval
         """
-        logger.info(f"Initializing SpendingAgent for user: {state.get('user_id', 'unknown')}")
+        user_id = state.get("user_id", "")
+        logger.info(f"Initializing SpendingAgent for user: {user_id}")
         
-        # FIXME: Implement actual SQLite service integration
-        # This is a mock implementation - replace with real SQLite service call
-        mock_user_context = {
-            "user_id": state.get("user_id", ""),
-            "demographics": {
-                "age_group": "25-34",
-                "income_level": "middle", 
-                "location": "urban"
-            },
-            "preferences": {
-                "communication_style": "friendly",
-                "financial_goals": ["save_money", "budget_better"]
+        try:
+            # Retrieve user context from SQLite via DAO
+            user_context = self._user_context_dao.get_user_context(user_id)
+            
+            if not user_context:
+                # User not found - return default context
+                logger.warning(f"User context not found for user_id: {user_id}")
+                user_context = {
+                    "user_id": user_id,
+                    "demographics": {},
+                    "financial_context": {}
+                }
+            else:
+                logger.info(f"Successfully retrieved user context for user: {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error retrieving user context for {user_id}: {str(e)}")
+            # Fallback to empty context on error
+            user_context = {
+                "user_id": user_id,
+                "demographics": {},
+                "financial_context": {}
             }
-        }
         
-        # Update state with context
+        # Update state with retrieved context
         return {
-            "user_context": mock_user_context,
+            "user_context": user_context,
             "spending_insights": {}  # Will be populated by Graphiti later
         }
     
@@ -128,74 +141,56 @@ class SpendingAgent:
         
         Subtask: Implement conversational response generation node with personality awareness
         """
-        user_context = state.get("user_context", {})
         detected_intent = state.get("detected_intent", "general_spending")
         
-        # FIXME: Implement actual personality-aware response generation
-        # This is a mock implementation - replace with proper personality adaptation
-        communication_style = user_context.get("preferences", {}).get("communication_style", "professional")
-        
-        # Generate response based on intent and personality
+        # FIXME: Implement actual personality-aware response generation and tell LLM
+        # to be professional in response generation when implementing real LLM calls
+
+        # Generate response based on intent
         if detected_intent == "spending_analysis":
-            response_content = self._generate_spending_analysis_response(communication_style)
+            response_content = self._generate_spending_analysis_response()
         elif detected_intent == "budget_planning":
-            response_content = self._generate_budget_response(communication_style)
+            response_content = self._generate_budget_response()
         elif detected_intent == "optimization":
-            response_content = self._generate_optimization_response(communication_style)
+            response_content = self._generate_optimization_response()
         elif detected_intent == "transaction_query":
-            response_content = self._generate_transaction_response(communication_style)
+            response_content = self._generate_transaction_response()
         else:
-            response_content = self._generate_default_response(communication_style)
+            response_content = self._generate_default_response()
         
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
-                "intent": detected_intent,
-                "personality_style": communication_style
+                "intent": detected_intent
             }
         )
         
         return {"messages": [response]}
     
-    def _generate_spending_analysis_response(self, style: str) -> str:
-        """Generate spending analysis response with personality adaptation."""
+    def _generate_spending_analysis_response(self) -> str:
+        """Generate spending analysis response."""
         # FIXME: Implement real spending analysis with transaction data
-        if style == "friendly":
-            return "Hey! I'd love to help you understand your spending patterns! 🏦 Let me analyze your recent transactions and give you some personalized insights."
-        else:
-            return "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
+        return "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
     
-    def _generate_budget_response(self, style: str) -> str:
-        """Generate budget planning response with personality adaptation."""
+    def _generate_budget_response(self) -> str:
+        """Generate budget planning response."""
         # FIXME: Implement real budget analysis
-        if style == "friendly":
-            return "Great question about budgeting! 💰 I can help you create a personalized budget based on your spending habits and goals."
-        else:
-            return "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
+        return "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
     
-    def _generate_optimization_response(self, style: str) -> str:
+    def _generate_optimization_response(self) -> str:
         """Generate optimization recommendations response."""
         # FIXME: Implement real optimization algorithms
-        if style == "friendly":
-            return "I love helping people save money! ✨ Let me look for opportunities to optimize your spending and boost your savings."
-        else:
-            return "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
+        return "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
     
-    def _generate_transaction_response(self, style: str) -> str:
+    def _generate_transaction_response(self) -> str:
         """Generate transaction query response."""
         # FIXME: Implement real transaction querying
-        if style == "friendly":
-            return "Sure thing! I can help you find and understand any transaction. What would you like to know? 🔍"
-        else:
-            return "I can help you query and analyze your transaction data. Please specify what information you're looking for."
+        return "I can help you query and analyze your transaction data. Please specify what information you're looking for."
     
-    def _generate_default_response(self, style: str) -> str:
+    def _generate_default_response(self) -> str:
         """Generate default spending agent response."""
-        if style == "friendly":
-            return "Hi there! I'm your spending assistant! 😊 I can help analyze your spending, create budgets, find ways to save money, and answer questions about your transactions. What would you like to explore today?"
-        else:
-            return "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
+        return "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
     
     def invoke_spending_conversation(self, user_message: str, user_id: str, session_id: str) -> Dict[str, Any]:
         """
@@ -243,7 +238,6 @@ class SpendingAgent:
                 "content": ai_message.content,
                 "agent": ai_message.additional_kwargs.get("agent", "spending_agent"),
                 "intent": ai_message.additional_kwargs.get("intent", "general_spending"),
-                "personality_style": ai_message.additional_kwargs.get("personality_style", "professional"),
                 "session_id": session_id,
                 "user_id": user_id,
                 "message_type": "ai_response"
@@ -263,7 +257,6 @@ class SpendingAgent:
 
 # Global instance - following the established pattern
 _spending_agent = None
-
 
 def get_spending_agent() -> SpendingAgent:
     """Get or create the global SpendingAgent instance."""
