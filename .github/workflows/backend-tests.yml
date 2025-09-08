@@ -1,0 +1,63 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+    paths: 
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install UV
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Run linting (if available)
+      run: |
+        if uv run python -c "import ruff" 2>/dev/null; then
+          echo "Running ruff linter..."
+          uv run ruff check .
+        else
+          echo "Ruff not installed, skipping linting"
+        fi
+      continue-on-error: true
+    
+    - name: Run type checking (if available)
+      run: |
+        if uv run python -c "import mypy" 2>/dev/null; then
+          echo "Running mypy type checking..."
+          uv run mypy app --ignore-missing-imports
+        else
+          echo "MyPy not installed, skipping type checking"
+        fi
+      continue-on-error: true
+    
+    - name: Run unit tests
+      run: uv run pytest tests/ -v --tb=short --cov=app --cov-report=term-missing
