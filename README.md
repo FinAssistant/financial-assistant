@@ -29,6 +29,7 @@ A modern, full-stack AI-powered financial management application built with Reac
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
+   - Graphiti MCP Server: http://localhost:8080
 
 ## 📁 Project Structure
 
@@ -230,8 +231,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **Port already in use:**
 ```bash
-# Find and kill process using port 8000 or 5173
+# Find and kill process using port 8000, 8080, or 5173
 lsof -ti:8000 | xargs kill
+lsof -ti:8080 | xargs kill  
 lsof -ti:5173 | xargs kill
 ```
 
