@@ -177,47 +177,6 @@ class TestSpendingAgent:
         assert state["user_context"]["test"] == "data"
         assert state["spending_insights"]["insights"] == "data"
 
-class TestSpendingAgentResponseGeneration:
-    """Separate test class for response generation methods."""
-    
-    def setup_method(self):
-        """Setup method called before each test."""
-        self.agent = SpendingAgent()
-    
-    def test_generate_spending_analysis_response(self):
-        """Test spending analysis response generation."""
-        response = self.agent._generate_spending_analysis_response()
-        
-        assert "analyze" in response.lower()
-        assert "spending" in response.lower()
-    
-    def test_generate_budget_response(self):
-        """Test budget response generation."""
-        response = self.agent._generate_budget_response()
-        
-        assert "budget" in response.lower()
-        assert "planning" in response.lower()
-    
-    def test_generate_optimization_response(self):
-        """Test optimization response generation."""
-        response = self.agent._generate_optimization_response()
-        
-        assert "optimization" in response.lower()
-        assert "spending" in response.lower()
-    
-    def test_generate_transaction_response(self):
-        """Test transaction response generation."""
-        response = self.agent._generate_transaction_response()
-        
-        assert "transaction" in response.lower()
-        assert "query" in response.lower()
-    
-    def test_generate_default_response(self):
-        """Test default response generation."""
-        response = self.agent._generate_default_response()
-        
-        assert "spending analysis agent" in response.lower()
-        assert "assist" in response.lower()
 
 
 if __name__ == "__main__":

@@ -166,46 +166,14 @@ class SpendingAgent:
             "detected_intent": detected_intent
         }
     
-    def _generate_response_node(self, state: SpendingAgentState) -> Dict[str, Any]:
-        """
-        Generate conversational response with personality awareness.
-        
-        Subtask: Implement conversational response generation node with personality awareness
-        """
-        detected_intent = state.get("detected_intent", "general_spending")
-        
-        # FIXME: Implement LLM-based response generation with professional tone
-        # Current implementation uses professional personality style throughout
-
-        # Generate response based on intent
-        if detected_intent == "spending_analysis":
-            response_content = self._generate_spending_analysis_response()
-        elif detected_intent == "budget_planning":
-            response_content = self._generate_budget_response()
-        elif detected_intent == "optimization":
-            response_content = self._generate_optimization_response()
-        elif detected_intent == "transaction_query":
-            response_content = self._generate_transaction_response()
-        else:
-            response_content = self._generate_default_response()
-        
-        response = AIMessage(
-            content=response_content,
-            additional_kwargs={
-                "agent": "spending_agent",
-                "intent": detected_intent
-            }
-        )
-        
-        return {"messages": [response]}
-    
     def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
         Specialized node for spending analysis intent.
         
         FIXME: Implement real spending analysis with transaction data integration
+        and use LLM-based response generation with professional tone
         """
-        response_content = self._generate_spending_analysis_response()
+        response_content = "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
         response = AIMessage(
             content=response_content,
             additional_kwargs={
@@ -220,8 +188,9 @@ class SpendingAgent:
         Specialized node for budget planning intent.
         
         FIXME: Implement real budget planning algorithms
+        and use LLM-based response generation with professional tone
         """
-        response_content = self._generate_budget_response()
+        response_content = "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
         response = AIMessage(
             content=response_content,
             additional_kwargs={
@@ -236,8 +205,9 @@ class SpendingAgent:
         Specialized node for spending optimization intent.
         
         FIXME: Implement real optimization algorithms and recommendations
+        and use LLM-based response generation with professional tone
         """
-        response_content = self._generate_optimization_response()
+        response_content = "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
         response = AIMessage(
             content=response_content,
             additional_kwargs={
@@ -252,8 +222,9 @@ class SpendingAgent:
         Specialized node for transaction query intent.
         
         FIXME: Implement real transaction querying with database integration
+        and use LLM-based response generation with professional tone
         """
-        response_content = self._generate_transaction_response()
+        response_content = "I can help you query and analyze your transaction data. Please specify what information you're looking for."
         response = AIMessage(
             content=response_content,
             additional_kwargs={
@@ -268,8 +239,9 @@ class SpendingAgent:
         Specialized node for general spending inquiries (default).
         
         FIXME: Implement context-aware general responses
+        and use LLM-based response generation with professional tone
         """
-        response_content = self._generate_default_response()
+        response_content = "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
         response = AIMessage(
             content=response_content,
             additional_kwargs={
@@ -279,37 +251,12 @@ class SpendingAgent:
         )
         return {"messages": [response]}
     
-    def _generate_spending_analysis_response(self) -> str:
-        """Generate spending analysis response."""
-        # FIXME: Implement real spending analysis with transaction data
-        return "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
-    
-    def _generate_budget_response(self) -> str:
-        """Generate budget planning response."""
-        # FIXME: Implement real budget analysis
-        return "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
-    
-    def _generate_optimization_response(self) -> str:
-        """Generate optimization recommendations response."""
-        # FIXME: Implement real optimization algorithms
-        return "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
-    
-    def _generate_transaction_response(self) -> str:
-        """Generate transaction query response."""
-        # FIXME: Implement real transaction querying
-        return "I can help you query and analyze your transaction data. Please specify what information you're looking for."
-    
-    def _generate_default_response(self) -> str:
-        """Generate default spending agent response."""
-        return "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
-    
     def invoke_spending_conversation(self, user_message: str, user_id: str, session_id: str) -> Dict[str, Any]:
         """
         Process a user message through the spending agent subgraph.
         
-        FIXME: This method is not yet integrated - will be called by orchestrator_node
-        in LangGraphConfig when routing spending-related queries to this subgraph.
-        Integration happens in later subtask: "Integrate Spending Agent with existing /conversation/send API endpoint"
+        FIXME: Integrate with main orchestrator in /conversation/send API endpoint
+        Currently used for testing - needs integration with LangGraphConfig orchestrator_node
         
         Args:
             user_message: The user's input message
