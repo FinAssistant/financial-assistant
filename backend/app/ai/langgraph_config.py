@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 import sqlite3
@@ -243,7 +244,7 @@ class LangGraphConfig:
             self.logger.error(f"Failed to compile graph: {e}")
             raise
     
-    def _orchestrator_node(self, state: GlobalState, config: dict) -> Dict[str, Any]:
+    def _orchestrator_node(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Orchestrator that uses user profile context from config.
         Demonstrates proper LangGraph pattern with config usage.
@@ -297,7 +298,7 @@ class LangGraphConfig:
             "messages": [response]
         }
     
-    def _small_talk_node(self, state: GlobalState, config: dict) -> Dict[str, Any]:
+    def _small_talk_node(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """LLM-powered small talk agent for casual conversation."""
 
         system_prompt = """You are a friendly AI financial assistant engaging in small talk.
@@ -321,7 +322,7 @@ class LangGraphConfig:
         
         return {"messages": [response]}
     
-    def _dummy_inv_agent(self, state: GlobalState, config: dict) -> Dict[str, Any]:
+    def _dummy_inv_agent(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """Dummy investment agent - placeholder implementation."""
         response = AIMessage(
             content="I can help with investment questions, but this feature is still being developed. Please check back soon!",
@@ -329,7 +330,7 @@ class LangGraphConfig:
         )
         return {"messages": [response]}
     
-    def _dummy_spend_agent(self, state: GlobalState, config: dict) -> Dict[str, Any]:
+    def _dummy_spend_agent(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """Dummy spending agent - placeholder implementation."""
         response = AIMessage(
             content="I can help analyze your spending patterns, but this feature is still being developed. Please check back soon!",

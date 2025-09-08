@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, Annotated
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 from app.services.llm_service import llm_factory
@@ -59,7 +60,7 @@ class OnboardingAgent:
         """Initialize the onboarding agent."""
         self._graph = None
     
-    def _read_db(self, state: OnboardingState, config: dict) -> Dict[str, Any]:
+    def _read_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Read user and personal context data from SQLite database."""
         user_id = config["configurable"]["user_id"]
         
@@ -99,7 +100,7 @@ class OnboardingAgent:
                 # Don't return empty messages - let LangGraph handle it
             }
 
-    def _call_llm(self, state: OnboardingState, config: dict) -> Dict[str, Any]:
+    def _call_llm(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Call LLM to process user message and extract profile data."""
         llm = llm_factory.create_llm()
         
@@ -196,7 +197,7 @@ class OnboardingAgent:
             "onboarding_complete": response.completion_status == "complete"
         }
 
-    def _update_db(self, state: OnboardingState, config: dict) -> Dict[str, Any]:
+    def _update_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Update database with collected profile data."""
         if not state.needs_database_update and not state.onboarding_complete:
             return {"needs_database_update": False}  # Still need to return a valid state field
@@ -231,7 +232,7 @@ class OnboardingAgent:
             # Log error but don't break the flow
             return {"needs_database_update": False}
 
-    def _update_main_graph(self, state: OnboardingState, config: dict) -> Dict[str, Any]:
+    def _update_main_graph(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Update shared fields with GlobalState when onboarding is complete."""
         if not state.onboarding_complete:
             return {"onboarding_complete": False}  # Still need to return a valid state field
