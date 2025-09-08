@@ -42,24 +42,55 @@ class SpendingAgent:
         """Create and configure the spending agent subgraph."""
         workflow = StateGraph(SpendingAgentState)
         
-        # Add nodes following the story requirements
+        # Add core nodes
         workflow.add_node("initialize", self._initialize_node)
-        workflow.add_node("route_intent", self._route_intent_node) 
-        workflow.add_node("generate_response", self._generate_response_node)
+        workflow.add_node("route_intent", self._route_intent_node)
         
-        # Define the graph flow - simple linear for now
-        # FIXME: Implement conditional edges for intent-based routing to specialized nodes
-        # Should route to: spending_analysis_node, budget_planning_node, optimization_node, etc.
-        # Instead of single generate_response_node handling all intents
+        # Add specialized intent-handling nodes
+        workflow.add_node("spending_analysis", self._spending_analysis_node)
+        workflow.add_node("budget_planning", self._budget_planning_node)
+        workflow.add_node("optimization", self._optimization_node)
+        workflow.add_node("transaction_query", self._transaction_query_node)
+        workflow.add_node("general_spending", self._general_spending_node)
+        
+        # Define the graph flow with conditional routing
         workflow.add_edge(START, "initialize")
         workflow.add_edge("initialize", "route_intent")
-        workflow.add_edge("route_intent", "generate_response")
-        workflow.add_edge("generate_response", END)
+        
+        # Add conditional edges based on detected intent
+        workflow.add_conditional_edges(
+            "route_intent",
+            self._route_to_intent_node,
+            {
+                "spending_analysis": "spending_analysis",
+                "budget_planning": "budget_planning", 
+                "optimization": "optimization",
+                "transaction_query": "transaction_query",
+                "general_spending": "general_spending"
+            }
+        )
+        
+        # All specialized nodes lead to END
+        workflow.add_edge("spending_analysis", END)
+        workflow.add_edge("budget_planning", END)
+        workflow.add_edge("optimization", END)
+        workflow.add_edge("transaction_query", END)
+        workflow.add_edge("general_spending", END)
         
         # Compile the graph
         self.graph = workflow.compile()
         
-        logger.info("SpendingAgent subgraph initialized")
+        logger.info("SpendingAgent subgraph initialized with conditional routing")
+    
+    def _route_to_intent_node(self, state: SpendingAgentState) -> str:
+        """
+        Router function to determine which intent-specific node to route to.
+        
+        Returns the name of the node to route to based on detected intent.
+        """
+        detected_intent = state.get("detected_intent", "general_spending")
+        logger.info(f"Routing to intent node: {detected_intent}")
+        return detected_intent
     
     def _initialize_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
@@ -143,8 +174,8 @@ class SpendingAgent:
         """
         detected_intent = state.get("detected_intent", "general_spending")
         
-        # FIXME: Implement actual personality-aware response generation and tell LLM
-        # to be professional in response generation when implementing real LLM calls
+        # FIXME: Implement LLM-based response generation with professional tone
+        # Current implementation uses professional personality style throughout
 
         # Generate response based on intent
         if detected_intent == "spending_analysis":
@@ -166,6 +197,86 @@ class SpendingAgent:
             }
         )
         
+        return {"messages": [response]}
+    
+    def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for spending analysis intent.
+        
+        FIXME: Implement real spending analysis with transaction data integration
+        """
+        response_content = self._generate_spending_analysis_response()
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "spending_analysis"
+            }
+        )
+        return {"messages": [response]}
+    
+    def _budget_planning_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for budget planning intent.
+        
+        FIXME: Implement real budget planning algorithms
+        """
+        response_content = self._generate_budget_response()
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "budget_planning"
+            }
+        )
+        return {"messages": [response]}
+    
+    def _optimization_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for spending optimization intent.
+        
+        FIXME: Implement real optimization algorithms and recommendations
+        """
+        response_content = self._generate_optimization_response()
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "optimization"
+            }
+        )
+        return {"messages": [response]}
+    
+    def _transaction_query_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for transaction query intent.
+        
+        FIXME: Implement real transaction querying with database integration
+        """
+        response_content = self._generate_transaction_response()
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "transaction_query"
+            }
+        )
+        return {"messages": [response]}
+    
+    def _general_spending_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for general spending inquiries (default).
+        
+        FIXME: Implement context-aware general responses
+        """
+        response_content = self._generate_default_response()
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "general_spending"
+            }
+        )
         return {"messages": [response]}
     
     def _generate_spending_analysis_response(self) -> str:

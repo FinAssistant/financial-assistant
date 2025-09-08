@@ -76,18 +76,25 @@ class TestSpendingAgent:
         result = self.agent._route_intent_node(state)
         assert result == {}
     
-    def test_generate_response_node_basic(self):
-        """Test _generate_response_node generates basic responses."""
+    def test_route_to_intent_node(self):
+        """Test _route_to_intent_node returns correct intent."""
+        test_state = {"detected_intent": "spending_analysis"}
+        result = self.agent._route_to_intent_node(test_state)
+        assert result == "spending_analysis"
+        
+        # Test default case
+        empty_state = {}
+        result = self.agent._route_to_intent_node(empty_state)
+        assert result == "general_spending"
+    
+    def test_spending_analysis_node(self):
+        """Test _spending_analysis_node generates appropriate responses."""
         test_state = {
             "messages": [HumanMessage(content="Tell me about my spending")],
-            "user_context": {
-                "demographics": {},
-                "financial_context": {}
-            },
             "detected_intent": "spending_analysis"
         }
         
-        result = self.agent._generate_response_node(test_state)
+        result = self.agent._spending_analysis_node(test_state)
         assert "messages" in result
         assert len(result["messages"]) == 1
         
@@ -97,29 +104,29 @@ class TestSpendingAgent:
         assert ai_message.additional_kwargs["intent"] == "spending_analysis"
         assert "analyze" in ai_message.content.lower()
     
-    def test_generate_response_node_different_intents(self):
-        """Test _generate_response_node handles different intents correctly."""
-        intents_to_test = [
-            "spending_analysis",
-            "budget_planning", 
-            "optimization",
-            "transaction_query",
-            "general_spending"
+    def test_specialized_intent_nodes(self):
+        """Test all specialized intent nodes work correctly."""
+        intent_nodes = [
+            ("spending_analysis", self.agent._spending_analysis_node),
+            ("budget_planning", self.agent._budget_planning_node),
+            ("optimization", self.agent._optimization_node),
+            ("transaction_query", self.agent._transaction_query_node),
+            ("general_spending", self.agent._general_spending_node)
         ]
         
-        for intent in intents_to_test:
+        for intent, node_method in intent_nodes:
             state = {
                 "messages": [HumanMessage(content="Test message")],
-                "user_context": {"demographics": {}, "financial_context": {}},
                 "detected_intent": intent
             }
             
-            result = self.agent._generate_response_node(state)
+            result = node_method(state)
             assert "messages" in result
             assert len(result["messages"]) == 1
             
             ai_message = result["messages"][0]
             assert isinstance(ai_message, AIMessage)
+            assert ai_message.additional_kwargs["agent"] == "spending_agent"
             assert ai_message.additional_kwargs["intent"] == intent
     
     def test_invoke_spending_conversation_success(self):
