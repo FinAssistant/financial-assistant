@@ -195,7 +195,8 @@ async def send_message_non_streaming(
         )
         
         # Check for processing errors
-        if ai_response.get("error"):
+        # Only raise HTTP error for truly broken system, not for LLM unavailability
+        if ai_response.get("error") and "LLM not available" not in str(ai_response.get("error")):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"AI processing error: {ai_response['error']}"

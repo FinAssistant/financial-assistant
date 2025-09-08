@@ -177,6 +177,9 @@ class LangGraphConfig:
         self.onb_agent = create_onboarding_node()
         self._setup_graph()
         self.llm = llm_factory.create_llm()
+        
+        if self.llm is None:
+            self.logger.warning("LLM not available - no API key configured. Graph will fail on LLM calls.")
     
     def _initialize_checkpointer(self) -> None:
         """Initialize SQLite checkpointer for conversation persistence."""
@@ -283,6 +286,10 @@ class LangGraphConfig:
             messages = [SystemMessage(content=system_prompt)] + \
                 [SystemMessage(content="User's profile is incomplete")] + messages
 
+        if self.llm is None:
+            from app.services.llm_service import LLMError
+            raise LLMError("LLM not available - API key not configured")
+            
         response = self.llm.invoke(messages)
         
         # Update state with new message
@@ -305,6 +312,10 @@ class LangGraphConfig:
         messages = [SystemMessage(content=system_prompt)] + state.messages
         
         # Call LLM and add agent metadata
+        if self.llm is None:
+            from app.services.llm_service import LLMError
+            raise LLMError("LLM not available - API key not configured")
+            
         response = self.llm.invoke(messages)
         response.additional_kwargs["agent"] = "small_talk"
         

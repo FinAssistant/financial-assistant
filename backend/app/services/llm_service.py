@@ -39,7 +39,7 @@ class LLMFactory:
         self.logger = logging.getLogger(__name__)
         self.default_provider = LLMProvider(settings.default_llm_provider)
     
-    def create_llm(self, provider: Optional[LLMProvider] = None) -> Union[ChatOpenAI, ChatAnthropic]:
+    def create_llm(self, provider: Optional[LLMProvider] = None) -> Optional[Union[ChatOpenAI, ChatAnthropic]]:
         """
         Create LangGraph-compatible LLM instance.
         
@@ -47,10 +47,10 @@ class LLMFactory:
             provider: Specific provider to use (defaults to configured default)
             
         Returns:
-            LangGraph LLM instance (ChatOpenAI or ChatAnthropic)
+            LangGraph LLM instance (ChatOpenAI or ChatAnthropic) or None if no API key configured
             
         Raises:
-            LLMError: If provider not available or credentials invalid
+            LLMError: If provider not available or library not installed
         """
         target_provider = provider or self.default_provider
         
@@ -61,13 +61,15 @@ class LLMFactory:
         else:
             raise LLMError(f"Unsupported provider: {target_provider}")
     
-    def _create_openai_llm(self) -> ChatOpenAI:
+    def _create_openai_llm(self) -> Optional[ChatOpenAI]:
         """Create ChatOpenAI instance."""
         if not ChatOpenAI:
             raise LLMError("langchain_openai not installed")
         
         if not settings.openai_api_key:
-            raise LLMError("OpenAI API key not configured")
+            self.logger.warning("OpenAI API key not configured - LLM calls will fail at runtime")
+            # Return None to indicate LLM not available, handle gracefully in calling code
+            return None
         
         try:
             llm = ChatOpenAI(
@@ -82,13 +84,15 @@ class LLMFactory:
         except Exception as e:
             raise LLMError(f"Failed to create OpenAI LLM: {e}")
     
-    def _create_anthropic_llm(self) -> ChatAnthropic:
+    def _create_anthropic_llm(self) -> Optional[ChatAnthropic]:
         """Create ChatAnthropic instance."""
         if not ChatAnthropic:
             raise LLMError("langchain_anthropic not installed")
         
         if not settings.anthropic_api_key:
-            raise LLMError("Anthropic API key not configured")
+            self.logger.warning("Anthropic API key not configured - LLM calls will fail at runtime")
+            # Return None to indicate LLM not available, handle gracefully in calling code
+            return None
         
         try:
             llm = ChatAnthropic(

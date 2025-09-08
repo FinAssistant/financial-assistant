@@ -51,6 +51,8 @@ uv.lock
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # Architecture conversations
 claude-conversations/
