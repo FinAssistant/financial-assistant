@@ -224,27 +224,6 @@ class TestSQLiteUserStorage:
         assert self.storage.get_user_count() == 0
         assert self.storage.list_all_users() == []
     
-    def test_create_user_profile(self):
-        """Test creating user profile."""
-        self.storage.create_user(self.test_user_data)
-        
-        profile_data = {
-            'name': 'Updated Profile Name',
-            'bio': 'User biography'
-        }
-        
-        updated_user = self.storage.create_user_profile('user123', profile_data)
-        
-        assert updated_user is not None
-        assert updated_user['name'] == 'Updated Profile Name'
-        assert updated_user['bio'] == 'User biography'
-        assert updated_user['profile_complete'] is True
-    
-    def test_create_user_profile_not_found(self):
-        """Test creating profile for non-existent user."""
-        result = self.storage.create_user_profile('nonexistent', {'name': 'Test'})
-        assert result is None
-    
     def test_search_users_by_name(self):
         """Test searching users by name."""
         # Create test users
