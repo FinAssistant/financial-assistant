@@ -247,18 +247,3 @@ class TestDummyAgents:
         assert isinstance(response, AIMessage)
         assert "spending" in response.content.lower()
         assert response.additional_kwargs.get("agent") == "spending"
-    
-    def test_dummy_onboarding_agent(self, mock_llm_factory):
-        """Test dummy onboarding agent."""
-        config = LangGraphConfig()
-        
-        state = GlobalState()
-        test_config = {"configurable": {"user_id": "test_user", "thread_id": "test_thread"}}
-        
-        result = config.dummy_onb_agent(state, test_config)
-        
-        assert "messages" in result
-        response = result["messages"][0]
-        assert isinstance(response, AIMessage)
-        assert "profile" in response.content.lower()
-        assert response.additional_kwargs.get("agent") == "onboarding"

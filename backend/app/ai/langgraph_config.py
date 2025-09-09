@@ -338,14 +338,6 @@ class LangGraphConfig:
         )
         return {"messages": [response]}
     
-    def dummy_onb_agent(self, state: GlobalState, config: dict) -> Dict[str, Any]:
-        """Dummy onboarding agent - placeholder implementation."""
-        response = AIMessage(
-            content="Welcome! I can help you set up your financial profile, but this feature is still being developed. Please check back soon!",
-            additional_kwargs={"agent": "onboarding"}
-        )
-        return {"messages": [response]}
-    
     def find_route(self, state: GlobalState):
         last_message = state.messages[-1]
         self.logger.debug(f"Orchestrator: Last result from LLM : {last_message.content}")
