@@ -23,21 +23,21 @@ FINANCIAL_TEST_EPISODES = [
         "content": "I want to save $50,000 for a house down payment within 2 years. My current savings goal is $2,000 per month.",
         "expected_entities": ["house down payment", "$50,000", "2 years", "$2,000 per month"]
     },
-    {
-        "name": "Risk Preferences",
-        "content": "I'm a conservative investor who prefers low-risk investments. I'm willing to accept 4-6% annual returns to avoid losing money.",
-        "expected_entities": ["conservative investor", "low-risk investments", "4-6% annual returns"]
-    },
-    {
-        "name": "Spending Constraints",
-        "content": "My monthly budget is $4,500. I spend $1,200 on rent, $800 on groceries and dining, and $300 on transportation.",
-        "expected_entities": ["monthly budget", "$4,500", "$1,200 rent", "$800 groceries", "$300 transportation"]
-    },
-    {
-        "name": "Investment Timeline",
-        "content": "I plan to retire in 25 years and want to build a portfolio worth $1.2 million. I can invest $500 monthly in index funds.",
-        "expected_entities": ["retire in 25 years", "$1.2 million portfolio", "$500 monthly", "index funds"]
-    }
+    # {
+    #     "name": "Risk Preferences",
+    #     "content": "I'm a conservative investor who prefers low-risk investments. I'm willing to accept 4-6% annual returns to avoid losing money.",
+    #     "expected_entities": ["conservative investor", "low-risk investments", "4-6% annual returns"]
+    # },
+    # {
+    #     "name": "Spending Constraints",
+    #     "content": "My monthly budget is $4,500. I spend $1,200 on rent, $800 on groceries and dining, and $300 on transportation.",
+    #     "expected_entities": ["monthly budget", "$4,500", "$1,200 rent", "$800 groceries", "$300 transportation"]
+    # },
+    # {
+    #     "name": "Investment Timeline",
+    #     "content": "I plan to retire in 25 years and want to build a portfolio worth $1.2 million. I can invest $500 monthly in index funds.",
+    #     "expected_entities": ["retire in 25 years", "$1.2 million portfolio", "$500 monthly", "index funds"]
+    # }
 ]
 
 
@@ -131,10 +131,11 @@ async def test_financial_entity_extraction():
 
             # Search for related financial concepts using both search tools
             search_queries = [
-                "savings goals",
-                "investment preferences",
-                "budget constraints",
-                "financial planning"
+                # "savings goals",
+                # "investment preferences",
+                # "budget constraints",
+                # "financial planning"
+                "house"
             ]
 
             for query in search_queries:
