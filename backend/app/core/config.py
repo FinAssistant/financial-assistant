@@ -1,6 +1,7 @@
 from typing import Optional, List
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import logging
 
 
 class Settings(BaseSettings):
@@ -44,11 +45,19 @@ class Settings(BaseSettings):
     )
     database_echo: bool = Field(default=False, description="Echo SQL queries for debugging")
 
-    # AI/LangGraph settings
-    ai_model_name: str = Field(default="gpt-3.5-turbo", description="AI model to use")
-    ai_temperature: float = Field(default=0.7, description="AI response temperature")
-    ai_max_tokens: int = Field(default=500, description="Maximum tokens for AI responses")
-    langgraph_memory_type: str = Field(default="in_memory", description="LangGraph memory backend")
+    # LLM Provider settings
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
+    anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key")
+    default_llm_provider: str = Field(default="openai", description="Default LLM provider (openai|anthropic)")
+    openai_model: str = Field(default="gpt-4o", description="OpenAI model to use")
+    anthropic_model: str = Field(default="claude-sonnet-4-20250514", description="Anthropic model to use")
+    llm_max_tokens: int = Field(default=4096, description="Maximum tokens for LLM responses")
+    llm_temperature: float = Field(default=0.7, description="LLM response temperature")
+    llm_request_timeout: int = Field(default=60, description="LLM request timeout in seconds")
+    
+    # LangGraph settings
+    langgraph_memory_type: str = Field(default="sqlite", description="LangGraph memory backend")
+    langgraph_db_path: str = Field(default="./langgraph_checkpoints.db", description="Path to LangGraph checkpoint database")
     conversation_timeout: int = Field(default=300, description="Conversation timeout in seconds")
     
     # Plaid API settings
@@ -59,6 +68,38 @@ class Settings(BaseSettings):
         default_factory=lambda: ["identity", "transactions", "liabilities", "investments"],
         description="Plaid products to use"
     )
+
+    @field_validator('default_llm_provider')
+    @classmethod
+    def validate_llm_provider(cls, v):
+        """Validate that the default LLM provider is supported."""
+        allowed_providers = ["openai", "anthropic"]
+        if v not in allowed_providers:
+            raise ValueError(f"default_llm_provider must be one of {allowed_providers}")
+        return v
+
+    def validate_llm_credentials(self) -> bool:
+        """Validate LLM credentials are available for the configured provider."""
+        logger = logging.getLogger(__name__)
+        
+        if self.default_llm_provider == "openai":
+            if not self.openai_api_key:
+                logger.error("OpenAI API key is required when using OpenAI as the default provider")
+                return False
+            if not self.openai_api_key.startswith("sk-"):
+                logger.error("OpenAI API key appears to be invalid (should start with 'sk-')")
+                return False
+                
+        elif self.default_llm_provider == "anthropic":
+            if not self.anthropic_api_key:
+                logger.error("Anthropic API key is required when using Anthropic as the default provider")
+                return False
+            if not self.anthropic_api_key.startswith("sk-ant-"):
+                logger.error("Anthropic API key appears to be invalid (should start with 'sk-ant-')")
+                return False
+        
+        logger.info(f"LLM credentials validated for provider: {self.default_llm_provider}")
+        return True
 
 # Global settings instance
 settings = Settings()
