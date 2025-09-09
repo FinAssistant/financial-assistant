@@ -38,7 +38,7 @@ def create_test_jwt_token() -> str:
         "email": "test@example.com", 
         "name": "Test User"
     }
-    return auth_service.generate_access_token(user_data)
+    return auth_service.generate_access_token(user_data['user_id'])
 
 
 async def test_authentication():
