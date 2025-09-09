@@ -45,6 +45,7 @@ uv.lock
 
 # Docker
 .dockerignore
+.neo4j
 
 # AI/ML
 .ai/debug-log.md
