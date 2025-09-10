@@ -12,7 +12,7 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 
 from .config import settings
-from .sqlmodel_models import UserModel
+from .sqlmodel_models import UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate
 from sqlmodel import SQLModel
 
 class SQLiteUserStorage:
@@ -177,6 +177,17 @@ class SQLiteUserStorage:
             
             await session.commit()
     
+    async def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Create or update user profile information.
+        Marks profile as complete.
+        Returns updated user data or None if user not found.
+        """
+        profile_updates = profile_data.copy()
+        profile_updates['profile_complete'] = True
+        
+        return await self.update_user(user_id, profile_updates)
+    
     async def search_users_by_name(self, name_query: str) -> List[Dict[str, Any]]:
         """
         Search users by name (case-insensitive partial match).
@@ -196,6 +207,95 @@ class SQLiteUserStorage:
             users = result.fetchall()
             return [user[0].to_dict() for user in users]
 
+    # PersonalContext operations
+    async def get_personal_context(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get personal context data for user. Returns context dict or None if not found."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(PersonalContextModel).where(PersonalContextModel.user_id == user_id)
+            result = await session.execute(stmt)
+            context = result.first()
+            return context[0].to_dict() if context else None
+    
+    async def create_personal_context(self, user_id: str, context_data: PersonalContextCreate) -> Dict[str, Any]:
+        """
+        Create personal context for user.
+        Returns the created context data.
+        Raises ValueError if context already exists.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            try:
+                context_model = PersonalContextModel(user_id=user_id, **context_data.model_dump())
+                session.add(context_model)
+                await session.commit()
+                await session.refresh(context_model)
+                return context_model.to_dict()
+            except IntegrityError:
+                await session.rollback()
+                raise ValueError(f"Personal context for user {user_id} already exists")
+    
+    async def update_personal_context(self, user_id: str, updates: PersonalContextUpdate) -> Optional[Dict[str, Any]]:
+        """
+        Update personal context data.
+        Returns updated context data or None if context not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(PersonalContextModel).where(PersonalContextModel.user_id == user_id)
+            result = await session.execute(stmt)
+            context = result.first()
+            
+            if not context:
+                return None
+            
+            context_model = context[0]
+            
+            # Update fields from PersonalContextUpdate
+            update_data = updates.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(context_model, field, value)
+            
+            context_model.updated_at = datetime.now(timezone.utc)
+            
+            await session.commit()
+            await session.refresh(context_model)
+            return context_model.to_dict()
+    
+    async def create_or_update_personal_context(self, user_id: str, context_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create or update personal context data.
+        Returns the context data (created or updated).
+        """
+        # Try to get existing context
+        existing = await self.get_personal_context(user_id)
+        
+        if existing:
+            # Update existing context
+            update_obj = PersonalContextUpdate(**context_data)
+            return await self.update_personal_context(user_id, update_obj)
+        else:
+            # Create new context
+            create_obj = PersonalContextCreate(**context_data)
+            return await self.create_personal_context(user_id, create_obj)
+    
+    async def delete_personal_context(self, user_id: str) -> bool:
+        """
+        Delete personal context by user ID.
+        Returns True if context was deleted, False if not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(PersonalContextModel).where(PersonalContextModel.user_id == user_id)
+            result = await session.execute(stmt)
+            context = result.first()
+            
+            if not context:
+                return False
+            
+            await session.delete(context[0])
+            await session.commit()
+            return True
 # Async-to-sync wrapper for compatibility with existing sync code
 class AsyncUserStorageWrapper:
     """Wrapper to make async SQLite storage work with sync code."""
@@ -270,9 +370,34 @@ class AsyncUserStorageWrapper:
         """Clear all users from storage."""
         return self._run_async(self._async_storage.clear_all_users())
     
+    def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create or update user profile information."""
+        return self._run_async(self._async_storage.create_user_profile(user_id, profile_data))
+    
     def search_users_by_name(self, name_query: str) -> List[Dict[str, Any]]:
         """Search users by name."""
         return self._run_async(self._async_storage.search_users_by_name(name_query))
+    
+    # PersonalContext operations (sync wrappers)
+    def get_personal_context(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get personal context data for user."""
+        return self._run_async(self._async_storage.get_personal_context(user_id))
+    
+    def create_personal_context(self, user_id: str, context_data) -> Dict[str, Any]:
+        """Create personal context for user."""
+        return self._run_async(self._async_storage.create_personal_context(user_id, context_data))
+    
+    def update_personal_context(self, user_id: str, updates) -> Optional[Dict[str, Any]]:
+        """Update personal context data."""
+        return self._run_async(self._async_storage.update_personal_context(user_id, updates))
+    
+    def create_or_update_personal_context(self, user_id: str, context_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create or update personal context data."""
+        return self._run_async(self._async_storage.create_or_update_personal_context(user_id, context_data))
+    
+    def delete_personal_context(self, user_id: str) -> bool:
+        """Delete personal context by user ID."""
+        return self._run_async(self._async_storage.delete_personal_context(user_id))
 
 # Global user storage instance - now SQLite with sync compatibility
 user_storage = AsyncUserStorageWrapper()

@@ -39,7 +39,7 @@ def create_test_jwt_token() -> str:
         "email": "plaid_test@example.com", 
         "name": "Plaid Test User"
     }
-    return auth_service.generate_access_token(user_data['user_id'])
+    return auth_service.generate_access_token(user_data)
 
 
 
