@@ -7,9 +7,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from enum import Enum
 
-from sqlmodel import SQLModel, Field, Column, DateTime, JSON
+from sqlmodel import SQLModel, Field, Column, DateTime
 from pydantic import EmailStr, field_validator
-
 
 class AgeRange(str, Enum):
     """Age ranges for demographic categorization and app routing logic"""
@@ -20,7 +19,6 @@ class AgeRange(str, Enum):
     RANGE_46_55 = "46_55"
     RANGE_56_65 = "56_65"
     OVER_65 = "over_65"
-
 
 class LifeStage(str, Enum):
     """Life stages that affect financial planning approach and app features"""
@@ -33,7 +31,6 @@ class LifeStage(str, Enum):
     PRE_RETIREMENT = "pre_retirement"
     RETIREMENT = "retirement"
 
-
 class MaritalStatus(str, Enum):
     """Legal marital status - affects tax planning and joint account handling"""
     SINGLE = "single"
@@ -41,7 +38,6 @@ class MaritalStatus(str, Enum):
     DIVORCED = "divorced"
     WIDOWED = "widowed"
     DOMESTIC_PARTNERSHIP = "domestic_partnership"
-
 
 class FamilyStructure(str, Enum):
     """Family structure affects emergency fund needs and financial planning complexity"""
@@ -54,7 +50,6 @@ class FamilyStructure(str, Enum):
     DIVORCED_SHARED_CUSTODY = "divorced_shared_custody"
     DIVORCED_SOLE_CUSTODY = "divorced_sole_custody"
 
-
 class EducationLevel(str, Enum):
     """Education levels for dependents - affects education cost calculations"""
     PRESCHOOL = "preschool"        # 3-5 years
@@ -65,14 +60,12 @@ class EducationLevel(str, Enum):
     COLLEGE_CURRENT = "college_current" # Currently in college
     POST_GRADUATE = "post_graduate"
 
-
 class CaregivingResponsibility(str, Enum):
     """Caregiving responsibilities affect available financial resources"""
     NONE = "none"
     AGING_PARENTS = "aging_parents"
     DISABLED_FAMILY_MEMBER = "disabled_family_member"
     BOTH_CHILDREN_AND_PARENTS = "sandwich_generation"
-
 
 # Base model for shared fields and methods
 class UserBase(SQLModel):
@@ -86,7 +79,6 @@ class UserBase(SQLModel):
     def normalize_email(cls, v: str) -> str:
         """Normalize email to lowercase."""
         return v.lower()
-
 
 # Database model (table=True)
 class UserModel(UserBase, table=True):
@@ -111,12 +103,12 @@ class UserModel(UserBase, table=True):
                         onupdate=lambda: datetime.now(timezone.utc))
     )
     
-    
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert to dictionary format for backward compatibility.
         Matches the interface expected by existing code.
         """
+
         return {
             'id': self.id,
             'email': self.email,
@@ -159,6 +151,7 @@ class UserModel(UserBase, table=True):
         Convert to public dictionary (without sensitive data).
         Maintains compatibility with existing User dataclass.
         """
+
         return {
             'id': self.id,
             'email': self.email,
@@ -167,14 +160,12 @@ class UserModel(UserBase, table=True):
             'created_at': self.created_at
         }
 
-
 # API response models (table=False - these are just Pydantic models)
 class UserRead(UserBase):
     """User model for API responses (read operations)."""
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-
 
 class UserPublic(SQLModel):
     """Public user model without sensitive data."""
@@ -184,7 +175,6 @@ class UserPublic(SQLModel):
     profile_complete: bool
     created_at: datetime
 
-
 class UserCreate(SQLModel):
     """User model for creation requests."""
     id: str
@@ -192,12 +182,10 @@ class UserCreate(SQLModel):
     password_hash: str
     name: str = ""
 
-
 class UserUpdate(SQLModel):
     """User model for update requests."""
     name: Optional[str] = None
     profile_complete: Optional[bool] = None
-
 
 # Spouse and Dependent models for structured family data
 class SpouseBasicInfoModel(SQLModel, table=True):
@@ -219,7 +207,6 @@ class SpouseBasicInfoModel(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), 
                         onupdate=lambda: datetime.now(timezone.utc))
     )
-
 
 class DependentModel(SQLModel, table=True):
     """Minimal dependent info - financial details live in Graphiti"""
@@ -243,7 +230,6 @@ class DependentModel(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), 
                         onupdate=lambda: datetime.now(timezone.utc))
     )
-
 
 # PersonalContext model for structured demographic data
 class PersonalContextModel(SQLModel, table=True):
@@ -306,7 +292,6 @@ class PersonalContextModel(SQLModel, table=True):
             'updated_at': self.updated_at
         }
 
-
 # API models for PersonalContext
 class PersonalContextRead(SQLModel):
     """PersonalContext for API responses."""
@@ -323,7 +308,6 @@ class PersonalContextRead(SQLModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-
 class PersonalContextCreate(SQLModel):
     """PersonalContext for creation requests."""
     age_range: Optional[AgeRange] = None
@@ -335,7 +319,6 @@ class PersonalContextCreate(SQLModel):
     total_dependents_count: int = Field(default=0, ge=0)
     children_count: int = Field(default=0, ge=0)
     caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)
-
 
 class PersonalContextUpdate(SQLModel):
     """PersonalContext for update requests."""

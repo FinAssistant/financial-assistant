@@ -4,7 +4,6 @@ Clean replacement for in-memory storage with persistent data.
 """
 
 import asyncio
-import os
 from typing import Dict, Optional, List, Any
 from datetime import datetime, timezone
 
@@ -15,7 +14,6 @@ from sqlalchemy.exc import IntegrityError
 from .config import settings
 from .sqlmodel_models import UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate
 from sqlmodel import SQLModel
-
 
 class SQLiteUserStorage:
     """
@@ -179,6 +177,16 @@ class SQLiteUserStorage:
             
             await session.commit()
     
+    async def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Create or update user profile information.
+        Marks profile as complete.
+        Returns updated user data or None if user not found.
+        """
+        profile_updates = profile_data.copy()
+        profile_updates['profile_complete'] = True
+        
+        return await self.update_user(user_id, profile_updates)
     
     async def search_users_by_name(self, name_query: str) -> List[Dict[str, Any]]:
         """
@@ -289,7 +297,6 @@ class SQLiteUserStorage:
             await session.commit()
             return True
 
-
 # Async-to-sync wrapper for compatibility with existing sync code
 class AsyncUserStorageWrapper:
     """Wrapper to make async SQLite storage work with sync code."""
@@ -313,7 +320,6 @@ class AsyncUserStorageWrapper:
         if loop.is_running():
             # If we're in an async context, create a new thread
             import concurrent.futures
-            import threading
             
             def run_in_thread():
                 new_loop = asyncio.new_event_loop()
@@ -365,6 +371,9 @@ class AsyncUserStorageWrapper:
         """Clear all users from storage."""
         return self._run_async(self._async_storage.clear_all_users())
     
+    def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create or update user profile information."""
+        return self._run_async(self._async_storage.create_user_profile(user_id, profile_data))
     
     def search_users_by_name(self, name_query: str) -> List[Dict[str, Any]]:
         """Search users by name."""
@@ -390,7 +399,6 @@ class AsyncUserStorageWrapper:
     def delete_personal_context(self, user_id: str) -> bool:
         """Delete personal context by user ID."""
         return self._run_async(self._async_storage.delete_personal_context(user_id))
-
 
 # Global user storage instance - now SQLite with sync compatibility
 user_storage = AsyncUserStorageWrapper()
