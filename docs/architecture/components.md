@@ -49,19 +49,20 @@ class FinancialAssistantGraph:
 - Tool: plaid_get_transactions - Fetch transactions on-demand
 - Tool: graphiti_store_context - Store user context in graph database
 - Tool: graphiti_query_relationships - Query user financial relationships
-- Tool: graphiti_store_conversation - Store conversation context
 
 **MCP Architecture**:
 ```python
 class FinancialMCPServer:
     tools = {
+        # Plaid Integration Tools (External API Access)
         "plaid_get_link_token": PlaidLinkTokenTool,
         "plaid_exchange_token": PlaidExchangeTool,
         "plaid_get_accounts": PlaidAccountsTool,
         "plaid_get_transactions": PlaidTransactionsTool,
+        
+        # Graphiti General-Purpose Tools
         "graphiti_store_context": GraphitiStoreTool,
         "graphiti_query_relationships": GraphitiQueryTool,
-        "graphiti_store_conversation": GraphitiConversationTool
     }
 ```
 
@@ -92,53 +93,6 @@ class PlaidSyncService:
 **Dependencies**: Plaid Python client, secure token storage
 **Technology Stack**: Plaid Python SDK, encrypted token storage
 
-### Financial Analysis Service
-**Responsibility**: Real-time transaction categorization and cash flow analysis without persistent transaction storage
-
-**Key Interfaces**:
-- POST /api/analysis/categorize-transactions - Categorize transactions on-demand
-- GET /api/analysis/cash-flow/{user_id} - Generate cash flow from live Plaid data
-- POST /api/analysis/onboarding-profile - Generate initial financial profile
-- GET /api/analysis/spending-patterns/{user_id} - Analyze spending without storing transactions
-
-**Automatic Categorization Flow**:
-```python
-class FinancialAnalysisService:
-    async def categorize_user_transactions(self, user_id: str) -> Dict[str, Any]:
-        """Categorize transactions during onboarding or periodic sync"""
-        accounts = self.get_user_accounts(user_id)
-        all_categorized = []
-        
-        for account in accounts:
-            # Fetch fresh transactions from Plaid
-            transactions = await self.plaid_service.get_transactions(account.id)
-            
-            # Auto-categorize using simple rules + LLM for unclear cases
-            categorized = await self.auto_categorize_transactions(transactions)
-            all_categorized.extend(categorized)
-        
-        # Store insights in Graphiti, not raw transactions
-        await self.graphiti.store_spending_insights(user_id, all_categorized)
-        return self.generate_spending_insights(all_categorized)
-    
-    async def auto_categorize_transactions(self, transactions: List[Transaction]) -> List[Transaction]:
-        """Automatic categorization using rules + LLM fallback"""
-        for transaction in transactions:
-            # First: Rule-based categorization
-            category = self.rule_based_categorize(transaction.description)
-            
-            if not category:
-                # Fallback: LLM categorization for unclear transactions
-                category = await self.llm_categorize(transaction.description)
-            
-            transaction.category = category
-            transaction.auto_categorized = True
-            
-        return transactions
-```
-
-**Dependencies**: Transaction data, user profile data
-**Technology Stack**: Python data processing, basic ML for categorization
 
 ## Frontend Components
 
@@ -177,47 +131,59 @@ class FinancialAnalysisService:
 **Technology Stack**: Plaid React SDK, Redux state management
 
 ### Financial Dashboard Components
-**Responsibility**: Account overview, transaction display, and goal progress visualization
+**Responsibility**: Minimal dashboard for account overview with conversational-first approach
 
 **Key Interfaces**:
-- AccountCard for individual account display
-- TransactionList with categorization
-- GoalProgress indicators
-- SpendingChart visualization
+- AccountCard for basic account display with current balances
+- TransactionList for simple transaction history viewing
+- ChatInterface for AI-powered financial insights and analysis
 
-**Dependencies**: Redux state, chart libraries
-**Technology Stack**: React components with styled-components, chart libraries TBD
+**Design Approach**:
+- Conversational-first: Users get insights through AI chat, not complex visualizations
+- Minimal UI: Essential account and transaction data only
+- Analysis via conversation: Spending patterns, personality insights, and recommendations delivered through AI conversation
+
+**Dependencies**: Redux state, basic UI components, AI-SDK for conversational interface
+**Technology Stack**: React components with styled-components, minimal charting for basic summaries
 
 ## Agent Communication Patterns
 
 ### Global State Management
-**Responsibility**: Shared state across all agent subgraphs in single LangGraph process
+**Responsibility**: Shared state across all agent subgraphs in single LangGraph process following LangGraph best practices
 
 ```python
 class GlobalState(BaseModel):
-    # User Context
-    user_id: str
-    session_id: str
-    conversation_history: List[Dict[str, Any]]
+    # Messages (LangGraph standard pattern with automatic management)
+    messages: Annotated[list[AnyMessage], add_messages]
     
-    # Current Request Processing
-    user_message: str
-    current_intent: Optional[str] = None
-    active_agent: Optional[str] = None
+    # Shared Data (lazy-loaded when needed)
+    connected_accounts: Optional[List[Dict[str, Any]]] = None  # Basic account info only
+    profile_context: Optional[str] = None  # Cached user profile context string for LLM
+    profile_context_timestamp: Optional[datetime] = None  # Cache invalidation tracking
+```
+
+**Key Architectural Decisions**:
+- **Messages over conversation_history**: Uses LangGraph's `add_messages` reducer for automatic message management
+- **Removed processing fields**: `user_message`, `current_intent`, `active_agent` - agents work directly from messages
+- **User context via config**: `user_id` and `session_id` passed via LangGraph config, not stored in state
+- **Checkpointer handles metadata**: LangGraph's SQLite checkpointer manages creation/update timestamps automatically
+- **Lazy-loaded profile context**: Profile data fetched from SQLite on first access, cached as formatted string for LLM system prompts
+- **Optional shared data**: All cached data fields use `Optional[T] = None` pattern for lazy loading
+- **No handoff context**: Agent coordination handled through LangGraph subgraph state sharing
+- **No MCP results caching**: MCP integration patterns to be determined
+
+**Usage Patterns**:
+```python
+# Nodes access user context from config
+def agent_node(state: GlobalState, config: dict) -> dict:
+    user_id = config["configurable"]["user_id"]
+    session_id = config["configurable"]["thread_id"]  # For checkpointer
     
-    # Shared Financial Data
-    user_profile: Optional[Dict[str, Any]] = None
-    connected_accounts: List[Dict[str, Any]] = []
+    # Lazy-load profile context (cached across runs via checkpointer)
+    profile_context = state.get_profile_context(user_id)
     
-    # Agent Coordination
-    agent_handoff_context: Optional[Dict[str, Any]] = None
-    
-    # Response Building
-    response_chunks: List[str] = []
-    final_response: Optional[str] = None
-    
-    # MCP Tool Results (shared across agents)
-    mcp_tool_results: Dict[str, Any] = {}
+    # Use in LLM system prompt
+    system_message = f"You are a financial assistant. {profile_context}"
 ```
 
 ### Agent Subgraph Patterns

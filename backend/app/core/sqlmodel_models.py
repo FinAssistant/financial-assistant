@@ -7,38 +7,65 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from enum import Enum
 
-from sqlmodel import SQLModel, Field, Column, DateTime, JSON
+from sqlmodel import SQLModel, Field, Column, DateTime
 from pydantic import EmailStr, field_validator
 
-
 class AgeRange(str, Enum):
-    """Age range categories for demographic analysis."""
-    UNDER_25 = "under_25"
-    RANGE_25_34 = "25_34"
-    RANGE_35_44 = "35_44" 
-    RANGE_45_54 = "45_54"
-    RANGE_55_64 = "55_64"
+    """Age ranges for demographic categorization and app routing logic"""
+    UNDER_18 = "under_18"
+    RANGE_18_25 = "18_25"
+    RANGE_26_35 = "26_35"
+    RANGE_36_45 = "36_45"
+    RANGE_46_55 = "46_55"
+    RANGE_56_65 = "56_65"
     OVER_65 = "over_65"
 
-
 class LifeStage(str, Enum):
-    """Life stage categories that affect financial priorities."""
+    """Life stages that affect financial planning approach and app features"""
     STUDENT = "student"
+    YOUNG_PROFESSIONAL = "young_professional"
     EARLY_CAREER = "early_career"
+    ESTABLISHED_CAREER = "established_career"
     FAMILY_BUILDING = "family_building"
-    PEAK_CAREER = "peak_career"
+    PEAK_EARNING = "peak_earning"
     PRE_RETIREMENT = "pre_retirement"
     RETIREMENT = "retirement"
 
-
 class MaritalStatus(str, Enum):
-    """Marital status options."""
+    """Legal marital status - affects tax planning and joint account handling"""
     SINGLE = "single"
     MARRIED = "married"
     DIVORCED = "divorced"
     WIDOWED = "widowed"
-    SEPARATED = "separated"
+    DOMESTIC_PARTNERSHIP = "domestic_partnership"
 
+class FamilyStructure(str, Enum):
+    """Family structure affects emergency fund needs and financial planning complexity"""
+    SINGLE_NO_DEPENDENTS = "single_no_dependents"
+    SINGLE_WITH_DEPENDENTS = "single_with_dependents"
+    MARRIED_DUAL_INCOME = "married_dual_income"
+    MARRIED_SINGLE_INCOME = "married_single_income"
+    MARRIED_NO_INCOME = "married_no_income"
+    DOMESTIC_PARTNERSHIP = "domestic_partnership"
+    DIVORCED_SHARED_CUSTODY = "divorced_shared_custody"
+    DIVORCED_SOLE_CUSTODY = "divorced_sole_custody"
+
+class EducationLevel(str, Enum):
+    """Education levels for dependents - affects education cost calculations"""
+    PRESCHOOL = "preschool"        # 3-5 years
+    ELEMENTARY = "elementary"      # 6-10 years  
+    MIDDLE_SCHOOL = "middle_school" # 11-13 years
+    HIGH_SCHOOL = "high_school"    # 14-18 years
+    COLLEGE_BOUND = "college_bound" # Planning for college
+    COLLEGE_CURRENT = "college_current" # Currently in college
+    POST_GRADUATE = "post_graduate"
+
+class CaregivingResponsibility(str, Enum):
+    """Caregiving responsibilities affect available financial resources"""
+    NONE = "none"
+    AGING_PARENTS = "aging_parents"
+    DISABLED_FAMILY_MEMBER = "disabled_family_member"
+    BOTH_CHILDREN_AND_PARENTS = "sandwich_generation"
 
 # Base model for shared fields and methods
 class UserBase(SQLModel):
@@ -52,7 +79,6 @@ class UserBase(SQLModel):
     def normalize_email(cls, v: str) -> str:
         """Normalize email to lowercase."""
         return v.lower()
-
 
 # Database model (table=True)
 class UserModel(UserBase, table=True):
@@ -77,28 +103,21 @@ class UserModel(UserBase, table=True):
                         onupdate=lambda: datetime.now(timezone.utc))
     )
     
-    # Extended profile data as JSON (for backward compatibility)
-    profile_data: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert to dictionary format for backward compatibility.
         Matches the interface expected by existing code.
         """
-        base_dict = {
+
+        return {
             'id': self.id,
             'email': self.email,
             'password_hash': self.password_hash,
             'name': self.name,
             'profile_complete': self.profile_complete,
             'created_at': self.created_at,
+            'updated_at': self.updated_at
         }
-        
-        # Add profile data fields to match existing behavior
-        if self.profile_data:
-            base_dict.update(self.profile_data)
-            
-        return base_dict
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'UserModel':
@@ -106,36 +125,24 @@ class UserModel(UserBase, table=True):
         Create UserModel from dictionary data.
         Maintains compatibility with existing code.
         """
-        core_fields = {'id', 'email', 'password_hash', 'name', 'profile_complete', 'created_at'}
+        core_fields = {'id', 'email', 'password_hash', 'name', 'profile_complete', 'created_at', 'updated_at'}
         
-        # Extract core fields
+        # Extract only core fields that exist in the UserModel
         core_data = {k: v for k, v in data.items() if k in core_fields}
         
-        # Everything else goes in profile_data
-        profile_data = {k: v for k, v in data.items() if k not in core_fields and k != 'updated_at'}
-        
-        return cls(**core_data, profile_data=profile_data)
+        return cls(**core_data)
     
     def update_from_dict(self, updates: Dict[str, Any]) -> None:
         """
         Update model from dictionary updates.
         Maintains backward compatibility.
         """
-        core_fields = {'name', 'profile_complete'}
+        # Only update core fields that exist in UserModel
+        allowed_fields = {'name', 'profile_complete'}
         
-        # Update core fields
-        for field in core_fields:
+        for field in allowed_fields:
             if field in updates:
                 setattr(self, field, updates[field])
-        
-        # Update profile data
-        profile_updates = {k: v for k, v in updates.items() 
-                          if k not in core_fields and k not in {'id', 'email', 'password_hash'}}
-        
-        if profile_updates:
-            current_profile = self.profile_data or {}
-            current_profile.update(profile_updates)
-            self.profile_data = current_profile
         
         self.updated_at = datetime.now(timezone.utc)
     
@@ -144,23 +151,14 @@ class UserModel(UserBase, table=True):
         Convert to public dictionary (without sensitive data).
         Maintains compatibility with existing User dataclass.
         """
-        public_dict = {
+
+        return {
             'id': self.id,
             'email': self.email,
             'name': self.name,
             'profile_complete': self.profile_complete,
             'created_at': self.created_at
         }
-        
-        # Add non-sensitive profile data
-        if self.profile_data:
-            # Filter out any potentially sensitive keys
-            safe_keys = {'bio', 'preferences', 'settings'}  # Add more as needed
-            safe_profile = {k: v for k, v in self.profile_data.items() if k in safe_keys}
-            public_dict.update(safe_profile)
-            
-        return public_dict
-
 
 # API response models (table=False - these are just Pydantic models)
 class UserRead(UserBase):
@@ -168,7 +166,6 @@ class UserRead(UserBase):
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-
 
 class UserPublic(SQLModel):
     """Public user model without sensitive data."""
@@ -178,7 +175,6 @@ class UserPublic(SQLModel):
     profile_complete: bool
     created_at: datetime
 
-
 class UserCreate(SQLModel):
     """User model for creation requests."""
     id: str
@@ -186,42 +182,87 @@ class UserCreate(SQLModel):
     password_hash: str
     name: str = ""
 
-
 class UserUpdate(SQLModel):
     """User model for update requests."""
     name: Optional[str] = None
     profile_complete: Optional[bool] = None
-    profile_data: Optional[Dict[str, Any]] = None
 
+# Spouse and Dependent models for structured family data
+class SpouseBasicInfoModel(SQLModel, table=True):
+    """Minimal spouse information - financial details live in Graphiti relationships"""
+    __tablename__ = "spouse_basic_info"
+    
+    user_id: str = Field(foreign_key="users.id", primary_key=True)
+    name: Optional[str] = Field(default=None, max_length=255)
+    age_range: Optional[AgeRange] = None
+    employment_status: Optional[str] = Field(default=None, max_length=100)
+    
+    # Timestamps
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), 
+                        onupdate=lambda: datetime.now(timezone.utc))
+    )
 
-# Future: PersonalContext model for structured demographic data
+class DependentModel(SQLModel, table=True):
+    """Minimal dependent info - financial details live in Graphiti"""
+    __tablename__ = "dependents"
+    
+    id: str = Field(primary_key=True, max_length=255)
+    user_id: str = Field(foreign_key="users.id")
+    relationship: str = Field(max_length=50)  # "child", "stepchild", "parent", "sibling", etc.
+    age: Optional[int] = Field(default=None, ge=0, le=120)
+    age_range: Optional[AgeRange] = None  # If exact age not disclosed
+    education_level: Optional[EducationLevel] = None  # Drives cost calculations
+    special_needs: bool = Field(default=False)  # Boolean flag affects planning complexity
+    
+    # Timestamps
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), 
+                        onupdate=lambda: datetime.now(timezone.utc))
+    )
+
+# PersonalContext model for structured demographic data
 class PersonalContextModel(SQLModel, table=True):
     """
-    Structured demographic data for the dual-storage architecture.
-    Stores PersonalContext information in SQLite for fast queries.
+    Core demographic and family structure - financial details in Graphiti.
+    Matches the architecture defined in data-models.md.
     """
     __tablename__ = "personal_context"
     
     user_id: str = Field(foreign_key="users.id", primary_key=True)
     
-    # Core demographic fields
+    # Basic Demographics (affect app routing and cost-of-living calculations)
     age_range: Optional[AgeRange] = None
     life_stage: Optional[LifeStage] = None
+    occupation_type: Optional[str] = Field(default=None, max_length=100)  # Basic categorization for context
+    location_context: Optional[str] = Field(default=None, max_length=500)  # Affects cost of living calculations
+    
+    # Family Structure (affects planning complexity and emergency fund needs)
+    family_structure: Optional[FamilyStructure] = None
     marital_status: Optional[MaritalStatus] = None
     
-    # Family structure
-    has_dependents: bool = Field(default=False)
-    dependent_count: int = Field(default=0, ge=0)
-    spouse_income: Optional[float] = Field(default=None, ge=0)
+    # Dependents (basic info for app logic) - relationships to other tables
+    total_dependents_count: int = Field(default=0, ge=0)  # Quick reference for calculations
+    children_count: int = Field(default=0, ge=0)  # Quick reference for calculations
     
-    # Location context
-    state: Optional[str] = Field(default=None, max_length=2)  # US state code
-    cost_of_living_index: Optional[float] = Field(default=None, ge=0)
+    # Caregiving responsibilities (affects available resources) - stored as JSON array
+    caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)  # JSON array of CaregivingResponsibility values
     
-    # Financial context flags
-    has_emergency_fund: bool = Field(default=False)
-    has_retirement_savings: bool = Field(default=False)
-    has_investment_experience: bool = Field(default=False)
+    # NOTE: Detailed financial info lives in Graphiti:
+    # - Housing costs and moving plans
+    # - Joint vs separate finances  
+    # - Life event planning and timelines
+    # - Dependent support amounts and education costs
     
     # Timestamps
     created_at: datetime = Field(
@@ -240,19 +281,16 @@ class PersonalContextModel(SQLModel, table=True):
             'user_id': self.user_id,
             'age_range': self.age_range.value if self.age_range else None,
             'life_stage': self.life_stage.value if self.life_stage else None,
+            'occupation_type': self.occupation_type,
+            'location_context': self.location_context,
+            'family_structure': self.family_structure.value if self.family_structure else None,
             'marital_status': self.marital_status.value if self.marital_status else None,
-            'has_dependents': self.has_dependents,
-            'dependent_count': self.dependent_count,
-            'spouse_income': self.spouse_income,
-            'state': self.state,
-            'cost_of_living_index': self.cost_of_living_index,
-            'has_emergency_fund': self.has_emergency_fund,
-            'has_retirement_savings': self.has_retirement_savings,
-            'has_investment_experience': self.has_investment_experience,
+            'total_dependents_count': self.total_dependents_count,
+            'children_count': self.children_count,
+            'caregiving_responsibilities': self.caregiving_responsibilities,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
-
 
 # API models for PersonalContext
 class PersonalContextRead(SQLModel):
@@ -260,44 +298,36 @@ class PersonalContextRead(SQLModel):
     user_id: str
     age_range: Optional[AgeRange] = None
     life_stage: Optional[LifeStage] = None
+    occupation_type: Optional[str] = None
+    location_context: Optional[str] = None
+    family_structure: Optional[FamilyStructure] = None
     marital_status: Optional[MaritalStatus] = None
-    has_dependents: bool
-    dependent_count: int
-    spouse_income: Optional[float] = None
-    state: Optional[str] = None
-    cost_of_living_index: Optional[float] = None
-    has_emergency_fund: bool
-    has_retirement_savings: bool
-    has_investment_experience: bool
+    total_dependents_count: int
+    children_count: int
+    caregiving_responsibilities: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-
 
 class PersonalContextCreate(SQLModel):
     """PersonalContext for creation requests."""
     age_range: Optional[AgeRange] = None
     life_stage: Optional[LifeStage] = None
+    occupation_type: Optional[str] = Field(default=None, max_length=100)
+    location_context: Optional[str] = Field(default=None, max_length=500)
+    family_structure: Optional[FamilyStructure] = None
     marital_status: Optional[MaritalStatus] = None
-    has_dependents: bool = False
-    dependent_count: int = Field(default=0, ge=0)
-    spouse_income: Optional[float] = Field(default=None, ge=0)
-    state: Optional[str] = Field(default=None, max_length=2)
-    cost_of_living_index: Optional[float] = Field(default=None, ge=0)
-    has_emergency_fund: bool = False
-    has_retirement_savings: bool = False
-    has_investment_experience: bool = False
-
+    total_dependents_count: int = Field(default=0, ge=0)
+    children_count: int = Field(default=0, ge=0)
+    caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)
 
 class PersonalContextUpdate(SQLModel):
     """PersonalContext for update requests."""
     age_range: Optional[AgeRange] = None
     life_stage: Optional[LifeStage] = None
+    occupation_type: Optional[str] = Field(default=None, max_length=100)
+    location_context: Optional[str] = Field(default=None, max_length=500)
+    family_structure: Optional[FamilyStructure] = None
     marital_status: Optional[MaritalStatus] = None
-    has_dependents: Optional[bool] = None
-    dependent_count: Optional[int] = Field(default=None, ge=0)
-    spouse_income: Optional[float] = Field(default=None, ge=0)
-    state: Optional[str] = Field(default=None, max_length=2)
-    cost_of_living_index: Optional[float] = Field(default=None, ge=0)
-    has_emergency_fund: Optional[bool] = None
-    has_retirement_savings: Optional[bool] = None
-    has_investment_experience: Optional[bool] = None
+    total_dependents_count: Optional[int] = Field(default=None, ge=0)
+    children_count: Optional[int] = Field(default=None, ge=0)
+    caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)

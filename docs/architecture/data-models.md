@@ -76,6 +76,11 @@ class AccountType(Enum):
     LOAN = "loan"
     MORTGAGE = "mortgage"
 
+# Note: Spending personality types, triggers, and budget alerts are stored in Graphiti
+# as contextual insights rather than rigid structured enums, allowing for nuanced
+# personality analysis like "mostly saver with planner tendencies" or complex
+# trigger patterns that evolve over time
+
 # ===== CORE USER MODEL =====
 
 @dataclass  
@@ -203,6 +208,15 @@ class Transaction:
     date: str  # ISO date string
     pending: bool = False
     auto_categorized: bool = False
+    user_feedback_category: Optional[str] = None  # User-corrected category for learning
+
+# Note: Spending triggers, anomaly detection, and behavioral insights
+# are stored in Graphiti as contextual analysis rather than structured fields
+
+# Note: Budget categories, personality profiles, and optimization opportunities
+# are stored in Graphiti as contextual insights and relationships rather than
+# structured database models. This allows for flexible, evolving analysis
+# that adapts to user behavior and preferences over time.
 
 # ===== NO SEPARATE FINANCIAL PROFILE NEEDED =====
 
@@ -236,11 +250,10 @@ class Transaction:
 
 **What Lives Where:**
 
-**Structured Storage (PostgreSQL/In-Memory):**
+**Structured Storage (SQLite):**
 - User identity & authentication
 - Personal context (family structure, dependents) - affects app routing
 - Account integration (Plaid tokens, balances) - external API contracts
-- Conversation metadata - for debugging and analytics
 
 **Graph Database (Graphiti + Neo4j):**
 - Financial goals and their relationships
@@ -249,6 +262,7 @@ class Transaction:
 - Values and investment preferences
 - Goal conflicts and prioritization
 - Behavioral patterns and insights
+- All spending analysis results and personality profiles
 
 **Benefits:**
 ✅ Natural conversational extraction
@@ -257,7 +271,7 @@ class Transaction:
 ✅ No forced schema constraints
 ✅ Better handles nuanced financial contexts
 
-**LangGraph + Graphiti Integration:**
+**LangGraph + Graphiti Integration via MCP Tools:**
 ```python
 # LangGraph manages conversation flow and state
 class FinancialAssistantState(BaseModel):
@@ -266,16 +280,22 @@ class FinancialAssistantState(BaseModel):
     user_id: str
     # LangGraph checkpointer persists this state automatically
 
-# Graphiti integration happens within agent nodes
-async def onboarding_agent(state: FinancialAssistantState):
-    # Store conversation in Graphiti for long-term learning
-    await graphiti.add_episode(state.user_id, state.user_message)
+# Graphiti integration happens within agent nodes via MCP tools
+async def spending_agent_node(state: FinancialAssistantState):
+    # Store conversation context in Graphiti via MCP tool
+    await mcp_client.call_tool("graphiti_store_context", {
+        "user_id": state.user_id,
+        "context": f"User spending inquiry: {state.user_message}"
+    })
     
-    # Query Graphiti for context
-    context = await graphiti.search(state.user_id, "financial goals and constraints")
+    # Query Graphiti for previous spending insights via MCP tool
+    context = await mcp_client.call_tool("graphiti_query_relationships", {
+        "user_id": state.user_id,
+        "query": "spending patterns personality insights"
+    })
     
-    # Generate response (LangGraph manages the conversation flow)
-    response = await llm.ainvoke([...])
+    # Generate response with context (LangGraph manages the conversation flow)
+    response = await llm.ainvoke([context, state.user_message])
     return {"agent_response": response}
 
 # LangGraph handles:
