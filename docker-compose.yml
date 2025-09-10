@@ -47,6 +47,33 @@ services:
       - "8080:8000" # Expose the MCP server via HTTP for SSE transport
     command: ["uv", "run", "graphiti_mcp_server.py", "--transport", "sse"]
 
+  financial-assistant:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000" # FastAPI application
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - PLAID_ENV=${PLAID_ENV}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - MCP_GRAPHITI_SERVER_URL=http://graphiti-mcp:8000
+    volumes:
+      - ./backend/data:/app/data  # SQLite database persistence
+    depends_on:
+      - graphiti-mcp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   neo4j_data:
   neo4j_logs:
