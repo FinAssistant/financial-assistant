@@ -1,38 +1,80 @@
 # Epic 2: Financial Data Integration & User Profiling
 
-**Epic Goal:** Implement AI-powered onboarding with guided financial data integration, capture user goals and values, and create comprehensive user financial profiles to establish the foundation for personalized AI recommendations.
+**Epic Goal:** Implement two-phase AI-powered onboarding: essential setup for immediate app usage, followed by ongoing conversational discovery that builds comprehensive user financial profiles for personalized AI recommendations. Integrate LangGraph agent architecture with SQLite persistence and Graphiti knowledge management.
 
-## Story 2.1: Two-Phase Onboarding - Essential Setup + Ongoing Discovery
+## Story 2.0: LLM Provider Integration & Agent Foundation
 
-As a user,I want to quickly complete essential onboarding to start using the app, then have the AI gradually learn my preferences through natural conversations,so that I get immediate value while building a deeper, personalized financial profile over time.
+As a system architect,
+I want LLM providers configured with LangGraph agent orchestration foundation,
+so that AI agents can process conversations and make intelligent routing decisions for all Epic 2 functionality.
+
+**Acceptance Criteria:**
+1. LLM API key configuration system supporting multiple providers (OpenAI, Anthropic)
+2. Core LangGraph workflow setup with GlobalState model for shared agent context
+3. Orchestrator Agent with LLM-powered intent recognition and agent routing
+4. Basic conversation state management with SQLite checkpointing for persistence
+5. MCP client integration for centralized tool access across all agents
+6. Integration with existing JWT authentication for user context in agent operations
+
+**Dependencies:** Requires completion of Epic 1 authentication and MCP server foundation.
+
+## Story 2.1a: Essential Onboarding Setup
+
+As a user,
+I want to complete essential setup information to start using the app immediately,
+so that I can access core functionality while the AI learns my preferences over time.
 
 **Acceptance Criteria:**
 
-**Phase 1: Essential Information Wizard (Single Session)**
-1.  Multi-step wizard interface with clear progress indicators leading to completion
-2.  Essential demographic information capture (age range, family structure, location)
-3.  Basic financial goal identification (retirement, house, emergency fund, etc.)
-4.  High-level risk comfort assessment (conservative, moderate, aggressive)
-5.  Account connection through Plaid integration
-6.  Clear "Profile Complete" state that enables core app functionality
-7.  Wizard state management and ability to resume if interrupted
-8.  Completion celebration and explanation of what happens next
+**Essential Information Capture:**
+1. Conversational onboarding flow guided by LangGraph Onboarding Agent with progress awareness
+2. Natural language extraction of demographic data into PersonalContextModel (age_range, marital_status, has_dependents)
+3. LLM-guided account connection process with contextual explanations and Plaid Link integration
+4. Clear "Ready to Use" completion state communicated conversationally and reflected in app functionality
+5. Conversation state persistence across sessions using LangGraph checkpointing and SQLite storage
 
-**Phase 2: Ongoing Conversational Discovery (Continuous)**
-9.  Natural conversation-based deepening of understanding (no progress bars)
-10. Gradual discovery of nuanced preferences and values through regular interactions
-11. Investment philosophy and ethical preferences revealed over time
-12. Complex family obligations and constraints learned through context
-13. Spending priorities and lifestyle values understood through discussion
-14. Risk tolerance refinement based on real scenarios and market conditions
-15. Financial behavior patterns observed and learned from user interactions
+**Technical Implementation (references architecture/data-models.md):**
+6. PersonalContextModel creation and SQLite persistence for structured data
+7. LangGraph Onboarding Agent initialization with user context
+8. Integration with existing authentication system and user profile
+9. Wizard completion triggers user.profile_complete = True update
 
-**Two-Phase Integration:**
-16. Clear distinction between "ready to use" (Phase 1) and "fully personalized" (Phase 2)
-17. Immediate value delivery after Phase 1 completion
-18. Progressive enhancement of recommendations as Phase 2 understanding deepens
-19. User awareness of ongoing learning without pressure to complete everything upfront
-20. Profile insights that show how understanding has evolved over time
+**User Experience:**
+10. Conversational completion celebration and seamless transition to main app
+11. Clear conversational indication that ongoing learning will enhance recommendations  
+12. Natural language ability to modify essential information through conversational profile updates
+
+**Dependencies:** Requires completion of Epic 1 authentication and MCP server foundation, AND Story 2.0 (LLM Provider Integration & Agent Foundation).
+    
+
+## Story 2.1b: Conversational Profile Discovery  
+
+As a user,
+I want the AI to gradually understand my financial preferences through natural conversations,
+so that recommendations become increasingly personalized without requiring lengthy forms.
+
+**Acceptance Criteria:**
+
+**Conversational Learning Implementation:**
+1. LangGraph agents capture financial context from natural conversations
+2. Automatic extraction and storage of financial goals in Graphiti knowledge graph
+3. Progressive discovery of risk tolerance through scenario-based discussions
+4. Investment philosophy and ethical preferences learned through conversation
+5. Complex family obligations and constraints understood through contextual discussion
+
+**Technical Implementation (references architecture/data-models.md):**
+6. Graphiti integration for relationship and preference storage
+7. LangGraph conversation state management with SQLite checkpointing
+8. Context queries enable agents to reference previously learned information  
+9. Conversation history persistence across sessions and agent handoffs
+
+**Ongoing Enhancement:**
+10. Profile insights dashboard showing how understanding has evolved
+11. User awareness of ongoing learning without pressure to complete everything
+12. Smooth integration with financial conversations across all app interactions
+13. Ability to explicitly correct or update learned preferences
+
+**Parallel Track:** Runs continuously alongside user interactions, enhancing all other Epic 2 stories over time.
     
 
 ## Story 2.2: Plaid Integration and Account Connection
@@ -54,6 +96,8 @@ As a user,I want to securely connect my bank accounts, credit cards, and loans w
 6.  Account disconnection capability
     
 7.  AI explanations for why each account type is beneficial to connect
+
+**Dependencies:** Requires Story 2.0 (LLM Provider Integration & Agent Foundation) and Story 2.1a (Essential Onboarding Setup) for user profile foundation and "Ready to Use" state.
     
 
 ## Story 2.3: Spending Agent - Transaction Analysis and Insights
@@ -90,6 +134,8 @@ As a user, I want my transactions automatically categorized, analyzed, and trans
 ### User Experience & Interface
 18. Conversational transaction queries with natural language processing
 19. Personality-aware communication with adaptive tone and messaging based on user insights stored in Graphiti
+
+**Dependencies:** Requires Story 2.0 (LLM Provider Integration & Agent Foundation), Story 2.1a completion for account access, AND meaningful Story 2.1b context accumulation for intelligent analysis.
     
 
 ## Story 2.4: Financial Profile Dashboard
@@ -111,3 +157,5 @@ As a user,I want to see my complete financial profile in one place,so that I can
 6.  Financial health score or indicator
     
 7.  Profile completeness status
+
+**Dependencies:** Requires Story 2.0 (LLM Provider Integration & Agent Foundation) for Orchestrator Agent functionality and all previous Epic 2 stories for comprehensive data aggregation.
