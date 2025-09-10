@@ -14,15 +14,14 @@ import json
 from app.services.user_context_dao import UserContextDAOSync
 from app.services.auth_service import AuthService
 
+logger = logging.getLogger(__name__)
+
 try:
     from langchain_mcp_adapters.client import MultiServerMCPClient
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
     logger.warning("langchain-mcp-adapters not available - MCP tools will be mocked")
-
-logger = logging.getLogger(__name__)
-
 
 class SpendingAgentState(MessagesState):
     """Extended state for Spending Agent with additional context."""

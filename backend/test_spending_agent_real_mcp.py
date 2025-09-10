@@ -11,8 +11,6 @@ Usage:
 
 import asyncio
 import logging
-import json
-from os import name
 from app.ai.spending_agent import SpendingAgent
 from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
 
