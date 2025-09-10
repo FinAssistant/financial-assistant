@@ -11,15 +11,18 @@ Usage:
 
 import asyncio
 import logging
+import json
+from os import name
 from app.ai.spending_agent import SpendingAgent
+from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
 
 # Set up logging to see what happens
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def test_spending_agent_real_mcp_integration():
-    """Test the SpendingAgent with real MCP integration."""
-    print("🚀 Testing SpendingAgent with Real MCP Integration")
+async def test_spending_agent_mcp_plaid_integration():
+    """Test the SpendingAgent with MCP Plaid integration."""
+    print("🚀 Testing SpendingAgent with MCP Plaid Integration")
     print("=" * 60)
     
     # Create SpendingAgent
@@ -27,7 +30,7 @@ async def test_spending_agent_real_mcp_integration():
     print("✅ SpendingAgent created successfully")
     
     # Test user
-    test_user_id = "spending_agent_real_mcp_test_user"
+    test_user_id = "test_user_123"
     
     try:
         # Test 1: Get MCP client with real JWT
@@ -47,14 +50,38 @@ async def test_spending_agent_real_mcp_integration():
             print(f"✅ SpendingAgent retrieved {len(tools)} tools from MCP server")
             
             # List available tools
-            for i, tool in enumerate(tools):
+            tool_dict = {}
+            plaid_tools = []
+            for _, tool in enumerate(tools):
                 tool_name = getattr(tool, 'name', 'Unknown')
-                print(f"   {i+1}. {tool_name}")
-            
+                description = getattr(tool, 'description', 'No description')
+                tool_dict[tool_name] = tool
+                if 'plaid' in tool_name.lower() or tool_name in ['create_link_token', 'exchange_public_token', 'get_accounts', 'get_all_transactions', 'get_balances', 'get_identity', 'get_liabilities', 'get_investments']:
+                    plaid_tools.append(tool_name)
+                print(f"  • {tool_name}: {description[:60]}...")
+
         except Exception as e:
             print(f"❌ SpendingAgent failed to get tools from MCP server: {str(e)}")
             print("💡 Make sure MCP server is running: uvicorn app.main:app --reload")
             return
+        
+        public_token = await test_plaid_sandbox_setup()
+        if not public_token:
+            print("\n❌ Failed to create sandbox public token. Cannot proceed with MCP tests.")
+            print("💡 Make sure Plaid credentials are set:")
+            print("   export PLAID_CLIENT_ID='your_client_id'")
+            print("   export PLAID_SECRET='your_secret'")
+            return
+        
+        print("\n💱 Exchange public token")
+        print("-" * 30)
+        exchange_success = await test_exchange_public_token(tool_dict, public_token)
+        if not exchange_success:
+            print("❌ Stopping tests: Public token exchange failed.")
+            return False
+
+        # Small delay to allow token storage
+        await asyncio.sleep(1)
         
         # Test 3: Fetch transactions via SpendingAgent
         print(f"\n📝 Test 3: Fetching transactions via SpendingAgent MCP integration")
@@ -117,4 +144,4 @@ async def test_spending_agent_real_mcp_integration():
         print("   3. All dependencies are installed")
 
 if __name__ == "__main__":
-    asyncio.run(test_spending_agent_real_mcp_integration())
+    asyncio.run(test_spending_agent_mcp_plaid_integration())

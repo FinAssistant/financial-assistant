@@ -211,7 +211,7 @@ async def test_all_tools(jwt_token: str):
     if 'create_link_token' in tool_dict:
         result = await tool_dict['create_link_token'].ainvoke({
             "user_id": "test_user_123", 
-            "products": ["transactions", "accounts"]
+            "products": ["transactions"]
         })
         print("📤 Testing create_link_token...")
         print(f"📥 Output: {json.dumps(result, indent=2)}")
