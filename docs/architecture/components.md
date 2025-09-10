@@ -49,19 +49,20 @@ class FinancialAssistantGraph:
 - Tool: plaid_get_transactions - Fetch transactions on-demand
 - Tool: graphiti_store_context - Store user context in graph database
 - Tool: graphiti_query_relationships - Query user financial relationships
-- Tool: graphiti_store_conversation - Store conversation context
 
 **MCP Architecture**:
 ```python
 class FinancialMCPServer:
     tools = {
+        # Plaid Integration Tools (External API Access)
         "plaid_get_link_token": PlaidLinkTokenTool,
         "plaid_exchange_token": PlaidExchangeTool,
         "plaid_get_accounts": PlaidAccountsTool,
         "plaid_get_transactions": PlaidTransactionsTool,
+        
+        # Graphiti General-Purpose Tools
         "graphiti_store_context": GraphitiStoreTool,
         "graphiti_query_relationships": GraphitiQueryTool,
-        "graphiti_store_conversation": GraphitiConversationTool
     }
 ```
 
@@ -92,53 +93,6 @@ class PlaidSyncService:
 **Dependencies**: Plaid Python client, secure token storage
 **Technology Stack**: Plaid Python SDK, encrypted token storage
 
-### Financial Analysis Service
-**Responsibility**: Real-time transaction categorization and cash flow analysis without persistent transaction storage
-
-**Key Interfaces**:
-- POST /api/analysis/categorize-transactions - Categorize transactions on-demand
-- GET /api/analysis/cash-flow/{user_id} - Generate cash flow from live Plaid data
-- POST /api/analysis/onboarding-profile - Generate initial financial profile
-- GET /api/analysis/spending-patterns/{user_id} - Analyze spending without storing transactions
-
-**Automatic Categorization Flow**:
-```python
-class FinancialAnalysisService:
-    async def categorize_user_transactions(self, user_id: str) -> Dict[str, Any]:
-        """Categorize transactions during onboarding or periodic sync"""
-        accounts = self.get_user_accounts(user_id)
-        all_categorized = []
-        
-        for account in accounts:
-            # Fetch fresh transactions from Plaid
-            transactions = await self.plaid_service.get_transactions(account.id)
-            
-            # Auto-categorize using simple rules + LLM for unclear cases
-            categorized = await self.auto_categorize_transactions(transactions)
-            all_categorized.extend(categorized)
-        
-        # Store insights in Graphiti, not raw transactions
-        await self.graphiti.store_spending_insights(user_id, all_categorized)
-        return self.generate_spending_insights(all_categorized)
-    
-    async def auto_categorize_transactions(self, transactions: List[Transaction]) -> List[Transaction]:
-        """Automatic categorization using rules + LLM fallback"""
-        for transaction in transactions:
-            # First: Rule-based categorization
-            category = self.rule_based_categorize(transaction.description)
-            
-            if not category:
-                # Fallback: LLM categorization for unclear transactions
-                category = await self.llm_categorize(transaction.description)
-            
-            transaction.category = category
-            transaction.auto_categorized = True
-            
-        return transactions
-```
-
-**Dependencies**: Transaction data, user profile data
-**Technology Stack**: Python data processing, basic ML for categorization
 
 ## Frontend Components
 
@@ -177,16 +131,20 @@ class FinancialAnalysisService:
 **Technology Stack**: Plaid React SDK, Redux state management
 
 ### Financial Dashboard Components
-**Responsibility**: Account overview, transaction display, and goal progress visualization
+**Responsibility**: Minimal dashboard for account overview with conversational-first approach
 
 **Key Interfaces**:
-- AccountCard for individual account display
-- TransactionList with categorization
-- GoalProgress indicators
-- SpendingChart visualization
+- AccountCard for basic account display with current balances
+- TransactionList for simple transaction history viewing
+- ChatInterface for AI-powered financial insights and analysis
 
-**Dependencies**: Redux state, chart libraries
-**Technology Stack**: React components with styled-components, chart libraries TBD
+**Design Approach**:
+- Conversational-first: Users get insights through AI chat, not complex visualizations
+- Minimal UI: Essential account and transaction data only
+- Analysis via conversation: Spending patterns, personality insights, and recommendations delivered through AI conversation
+
+**Dependencies**: Redux state, basic UI components, AI-SDK for conversational interface
+**Technology Stack**: React components with styled-components, minimal charting for basic summaries
 
 ## Agent Communication Patterns
 
