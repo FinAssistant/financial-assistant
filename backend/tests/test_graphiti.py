@@ -1,32 +1,40 @@
 #!/usr/bin/env python3
 """
-POC to test Graphit
+POC to test Graphiti using the shared GraphitiMCPClient
 """
 
 import asyncio
 import json
 from uuid import uuid4
-from langchain_mcp_adapters.client import MultiServerMCPClient
+import sys
+import os
 
-# Global variable to store tools
-graphiti_tools = None
+# Add the backend directory to the Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-async def initialize_mcp_tools(mcp_client):
-    """Initialize MCP tools from Graphiti server"""
-    global graphiti_tools
+from mcp_clients.graphiti_client import GraphitiMCPClient
+
+# Global client instance
+graphiti_client = None
+
+async def initialize_graphiti_client():
+    """Initialize GraphitiMCPClient"""
+    global graphiti_client
     try:
-        graphiti_tools = await mcp_client.get_tools()
-        print(f"Connected to Graphiti MCP server. Available tools:\n {[tool.name for tool in graphiti_tools]}")
+        graphiti_client = GraphitiMCPClient("http://localhost:8080/sse")
+        connected = await graphiti_client.connect()
+        if connected:
+            print(f"✅ Connected to Graphiti MCP server. Available tools: {graphiti_client.get_available_tools()}")
+            return True
+        else:
+            print("❌ Failed to connect to Graphiti MCP server")
+            return False
     except Exception as e:
-        print(f"Failed to connect to Graphiti MCP server: {e}")
-        graphiti_tools = []
+        print(f"❌ Exception connecting to Graphiti MCP server: {e}")
+        return False
 
 async def add_episode(conversation: str, group_id: str) -> tuple:
-    # Add an episode
-    add_episode_tool = next((t for t in graphiti_tools if t.name == "add_memory"), None)
-    if not add_episode_tool:
-        raise Exception("Add episode tool not found")
-
+    """Add an episode using GraphitiMCPClient"""
     try:
         # generate random UUID
         uuid = uuid4()
@@ -34,13 +42,15 @@ async def add_episode(conversation: str, group_id: str) -> tuple:
         
         import time
         creation_start = time.time()
-        response = await add_episode_tool.ainvoke({
-            "name": "Customer Conversation",
-            "episode_body": conversation,
-            "source": "message",
-            "source_description": f"integration test {uuid}",
-            "group_id": group_id,
-        })
+        
+        # Use GraphitiMCPClient add_episode method
+        response = await graphiti_client.add_episode(
+            user_id=group_id,
+            content=conversation,
+            name="Customer Conversation",
+            source_description=f"integration test {uuid}"
+        )
+        
         creation_end = time.time()
         creation_time = creation_end - creation_start
         
@@ -51,22 +61,26 @@ async def add_episode(conversation: str, group_id: str) -> tuple:
         return None, None
 
 async def search_memory_nodes(query: str, group_id: str) -> int:
-    """Search memory nodes and return count of found nodes"""
-    search_nodes_tool = next((t for t in graphiti_tools if t.name == "search_memory_nodes"), None)
-    if not search_nodes_tool:
-        raise Exception("Search memory nodes tool not found")
-
+    """Search memory nodes using GraphitiMCPClient and return count of found nodes"""
     try:
-        results = await search_nodes_tool.ainvoke({
-                "query": query,
-                "group_ids": [group_id],
-                "max_nodes": 10,
-                "center_node_uuid": None,
-            })
+        # Use GraphitiMCPClient search method
+        results = await graphiti_client.search(user_id=group_id, query=query)
         print(f"Search results for '{query}' in {group_id}: {results}")
 
-        result_dict = json.loads(results)
-        node_count = len(result_dict["nodes"])
+        # Handle different result formats
+        if isinstance(results, str):
+            result_dict = json.loads(results)
+        else:
+            result_dict = results
+            
+        # Count nodes if available
+        node_count = 0
+        if "nodes" in result_dict:
+            node_count = len(result_dict["nodes"])
+        elif "results" in result_dict:
+            # Handle alternative result format
+            node_count = len(result_dict["results"]) if isinstance(result_dict["results"], list) else 1
+        
         if node_count == 0:
             print(f"❌ Missing memories for '{query}' in {group_id}")
         else:
@@ -78,9 +92,8 @@ async def search_memory_nodes(query: str, group_id: str) -> int:
 
 async def wait_for_episode(group_id: str, episode_uuid: str, creation_start_time: float, timeout: int = 300) -> tuple:
     """Wait for an episode to be available in Graphiti, returns (found, ready_time)"""
-    get_episodes_tool = next((t for t in graphiti_tools if t.name == "get_episodes"), None)
-    if not get_episodes_tool:
-        raise Exception("Get episodes tool not found")
+    # Use direct tool access for get_episodes since it's not exposed in GraphitiMCPClient
+    get_episodes_tool = graphiti_client._get_tool("get_episodes")
 
     import time
     wait_start_time = asyncio.get_event_loop().time()
@@ -95,7 +108,7 @@ async def wait_for_episode(group_id: str, episode_uuid: str, creation_start_time
             if isinstance(episodes, list):
                 for ep in episodes:
                     ep_dict = json.loads(ep)
-                    if f"{episode_uuid}" in ep_dict["source_description"]:
+                    if f"{episode_uuid}" in ep_dict.get("source_description", ""):
                         ready_time = time.time()
                         time_to_ready = ready_time - creation_start_time
                         print(f"✅ Episode {episode_uuid} found after {time_to_ready:.2f}s")
@@ -120,20 +133,48 @@ async def wait_for_episode(group_id: str, episode_uuid: str, creation_start_time
     print(f"❌ Timeout waiting for episode {episode_uuid}")
     return False, timeout
 
-async def main():
-    try:
-        client = MultiServerMCPClient({
-            "graphiti": {
-                "transport": "sse",
-                "url": "http://localhost:8080/sse"
-            }
-        })
-        print("✅ MultiServerMCPClient initialized for Graphiti")
-    except Exception as e:
-        print(f"❌ Failed to initialize MCP client: {e}")
-        return False
+async def test_connection_to_tools():
+    """Test direct connection to add_episode and search tools"""
+    print("\n=== Testing GraphitiMCPClient Connection to Tools ===")
     
-    await initialize_mcp_tools(client)
+    test_user_id = "test_user_123"
+    test_content = "I want to test the Graphiti connection with a simple financial goal."
+    
+    try:
+        # Test add_episode
+        print("\n🧪 Testing add_episode tool...")
+        episode_response = await graphiti_client.add_episode(
+            user_id=test_user_id,
+            content=test_content,
+            name="Connection Test",
+            source_description="client_test"
+        )
+        print(f"✅ add_episode successful: {episode_response}")
+        
+        # Test search 
+        print("\n🧪 Testing search tool...")
+        search_response = await graphiti_client.search(
+            user_id=test_user_id,
+            query="financial goal"
+        )
+        # FIXME: wait for the 
+        print(f"✅ search successful: {search_response}")
+        
+        print("\n🎉 All tool connection tests passed!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Tool connection test failed: {e}")
+        return False
+
+async def main():
+    # Initialize GraphitiMCPClient
+    if not await initialize_graphiti_client():
+        return False
+        
+    # Test tool connections
+    if not await test_connection_to_tools():
+        return False
     
     group_id = "graphiti_poc"
     
