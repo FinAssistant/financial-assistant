@@ -33,12 +33,8 @@ def create_test_jwt_token() -> str:
         return "fake-jwt-token"
     
     auth_service = AuthService()
-    user_data = {
-        "user_id": "test_user_123",
-        "email": "test@example.com", 
-        "name": "Test User"
-    }
-    return auth_service.generate_access_token(user_data)
+    user_id = "test_user_123"
+    return auth_service.generate_access_token(user_id)
 
 
 async def test_authentication():
@@ -126,9 +122,10 @@ async def test_whoami(jwt_token: str):
         if isinstance(result, str):
             parsed = json.loads(result)
             print(f"📊 User info:")
-            print(f"   • User ID: {parsed.get('user_id')}")
-            print(f"   • Email: {parsed.get('email')}")
-            print(f"   • Name: {parsed.get('name')}")
+            print(f"   • User ID: {parsed.get('sub')}")
+            print(f"   • Expires At: {parsed.get('exp')}")
+            print(f"   • Issued At: {parsed.get('iat')}")
+            print(f"   • Type: {parsed.get('type')}")
             print(f"   • Authenticated: {parsed.get('authenticated')}")
             
             if parsed.get("authenticated", False):

@@ -34,14 +34,8 @@ def create_test_jwt_token() -> str:
         return "fake-jwt-token"
     
     auth_service = AuthService()
-    user_data = {
-        "user_id": "plaid_test_user_123",
-        "email": "plaid_test@example.com", 
-        "name": "Plaid Test User"
-    }
-    return auth_service.generate_access_token(user_data)
-
-
+    user_id = "plaid_test_user_123"
+    return auth_service.generate_access_token(user_id)
 
 
 async def test_plaid_sandbox_setup():
