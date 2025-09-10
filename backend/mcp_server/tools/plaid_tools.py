@@ -93,7 +93,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
@@ -130,7 +130,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
@@ -187,7 +187,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
@@ -257,7 +257,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
@@ -307,7 +307,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
@@ -357,7 +357,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
@@ -419,7 +419,7 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if not token:
                 return {"status": "error", "error": "Authentication required"}
             
-            user_id = token.claims.get("sub", {}).get("user_id")
+            user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
             
