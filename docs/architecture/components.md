@@ -149,33 +149,41 @@ class PlaidSyncService:
 ## Agent Communication Patterns
 
 ### Global State Management
-**Responsibility**: Shared state across all agent subgraphs in single LangGraph process
+**Responsibility**: Shared state across all agent subgraphs in single LangGraph process following LangGraph best practices
 
 ```python
 class GlobalState(BaseModel):
-    # User Context
-    user_id: str
-    session_id: str
-    conversation_history: List[Dict[str, Any]]
+    # Messages (LangGraph standard pattern with automatic management)
+    messages: Annotated[list[AnyMessage], add_messages]
     
-    # Current Request Processing
-    user_message: str
-    current_intent: Optional[str] = None
-    active_agent: Optional[str] = None
+    # Shared Data (lazy-loaded when needed)
+    connected_accounts: Optional[List[Dict[str, Any]]] = None  # Basic account info only
+    profile_context: Optional[str] = None  # Cached user profile context string for LLM
+    profile_context_timestamp: Optional[datetime] = None  # Cache invalidation tracking
+```
+
+**Key Architectural Decisions**:
+- **Messages over conversation_history**: Uses LangGraph's `add_messages` reducer for automatic message management
+- **Removed processing fields**: `user_message`, `current_intent`, `active_agent` - agents work directly from messages
+- **User context via config**: `user_id` and `session_id` passed via LangGraph config, not stored in state
+- **Checkpointer handles metadata**: LangGraph's SQLite checkpointer manages creation/update timestamps automatically
+- **Lazy-loaded profile context**: Profile data fetched from SQLite on first access, cached as formatted string for LLM system prompts
+- **Optional shared data**: All cached data fields use `Optional[T] = None` pattern for lazy loading
+- **No handoff context**: Agent coordination handled through LangGraph subgraph state sharing
+- **No MCP results caching**: MCP integration patterns to be determined
+
+**Usage Patterns**:
+```python
+# Nodes access user context from config
+def agent_node(state: GlobalState, config: dict) -> dict:
+    user_id = config["configurable"]["user_id"]
+    session_id = config["configurable"]["thread_id"]  # For checkpointer
     
-    # Shared Financial Data
-    user_profile: Optional[Dict[str, Any]] = None
-    connected_accounts: List[Dict[str, Any]] = []
+    # Lazy-load profile context (cached across runs via checkpointer)
+    profile_context = state.get_profile_context(user_id)
     
-    # Agent Coordination
-    agent_handoff_context: Optional[Dict[str, Any]] = None
-    
-    # Response Building
-    response_chunks: List[str] = []
-    final_response: Optional[str] = None
-    
-    # MCP Tool Results (shared across agents)
-    mcp_tool_results: Dict[str, Any] = {}
+    # Use in LLM system prompt
+    system_message = f"You are a financial assistant. {profile_context}"
 ```
 
 ### Agent Subgraph Patterns
