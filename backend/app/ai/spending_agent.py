@@ -10,6 +10,8 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END, START, MessagesState
 import logging
 
+from app.services.user_context_dao import UserContextDAOSync
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,30 +35,62 @@ class SpendingAgent:
     
     def __init__(self):
         self.graph = None
+        self._user_context_dao = UserContextDAOSync()
         self._setup_graph()
     
     def _setup_graph(self) -> None:
         """Create and configure the spending agent subgraph."""
         workflow = StateGraph(SpendingAgentState)
         
-        # Add nodes following the story requirements
+        # Add core nodes
         workflow.add_node("initialize", self._initialize_node)
-        workflow.add_node("route_intent", self._route_intent_node) 
-        workflow.add_node("generate_response", self._generate_response_node)
+        workflow.add_node("route_intent", self._route_intent_node)
         
-        # Define the graph flow - simple linear for now
-        # FIXME: Implement conditional edges for intent-based routing to specialized nodes
-        # Should route to: spending_analysis_node, budget_planning_node, optimization_node, etc.
-        # Instead of single generate_response_node handling all intents
+        # Add specialized intent-handling nodes
+        workflow.add_node("spending_analysis", self._spending_analysis_node)
+        workflow.add_node("budget_planning", self._budget_planning_node)
+        workflow.add_node("optimization", self._optimization_node)
+        workflow.add_node("transaction_query", self._transaction_query_node)
+        workflow.add_node("general_spending", self._general_spending_node)
+        
+        # Define the graph flow with conditional routing
         workflow.add_edge(START, "initialize")
         workflow.add_edge("initialize", "route_intent")
-        workflow.add_edge("route_intent", "generate_response")
-        workflow.add_edge("generate_response", END)
+        
+        # Add conditional edges based on detected intent
+        workflow.add_conditional_edges(
+            "route_intent",
+            self._route_to_intent_node,
+            {
+                "spending_analysis": "spending_analysis",
+                "budget_planning": "budget_planning", 
+                "optimization": "optimization",
+                "transaction_query": "transaction_query",
+                "general_spending": "general_spending"
+            }
+        )
+        
+        # All specialized nodes lead to END
+        workflow.add_edge("spending_analysis", END)
+        workflow.add_edge("budget_planning", END)
+        workflow.add_edge("optimization", END)
+        workflow.add_edge("transaction_query", END)
+        workflow.add_edge("general_spending", END)
         
         # Compile the graph
         self.graph = workflow.compile()
         
-        logger.info("SpendingAgent subgraph initialized")
+        logger.info("SpendingAgent subgraph initialized with conditional routing")
+    
+    def _route_to_intent_node(self, state: SpendingAgentState) -> str:
+        """
+        Router function to determine which intent-specific node to route to.
+        
+        Returns the name of the node to route to based on detected intent.
+        """
+        detected_intent = state.get("detected_intent", "general_spending")
+        logger.info(f"Routing to intent node: {detected_intent}")
+        return detected_intent
     
     def _initialize_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
@@ -64,26 +98,36 @@ class SpendingAgent:
         
         Subtask: Implement agent initialization node with SQLite context retrieval
         """
-        logger.info(f"Initializing SpendingAgent for user: {state.get('user_id', 'unknown')}")
+        user_id = state.get("user_id", "")
+        logger.info(f"Initializing SpendingAgent for user: {user_id}")
         
-        # FIXME: Implement actual SQLite service integration
-        # This is a mock implementation - replace with real SQLite service call
-        mock_user_context = {
-            "user_id": state.get("user_id", ""),
-            "demographics": {
-                "age_group": "25-34",
-                "income_level": "middle", 
-                "location": "urban"
-            },
-            "preferences": {
-                "communication_style": "friendly",
-                "financial_goals": ["save_money", "budget_better"]
+        try:
+            # Retrieve user context from SQLite via DAO
+            user_context = self._user_context_dao.get_user_context(user_id)
+            
+            if not user_context:
+                # User not found - return default context
+                logger.warning(f"User context not found for user_id: {user_id}")
+                user_context = {
+                    "user_id": user_id,
+                    "demographics": {},
+                    "financial_context": {}
+                }
+            else:
+                logger.info(f"Successfully retrieved user context for user: {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error retrieving user context for {user_id}: {str(e)}")
+            # Fallback to empty context on error
+            user_context = {
+                "user_id": user_id,
+                "demographics": {},
+                "financial_context": {}
             }
-        }
         
-        # Update state with context
+        # Update state with retrieved context
         return {
-            "user_context": mock_user_context,
+            "user_context": user_context,
             "spending_insights": {}  # Will be populated by Graphiti later
         }
     
@@ -122,88 +166,97 @@ class SpendingAgent:
             "detected_intent": detected_intent
         }
     
-    def _generate_response_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+    def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
-        Generate conversational response with personality awareness.
+        Specialized node for spending analysis intent.
         
-        Subtask: Implement conversational response generation node with personality awareness
+        FIXME: Implement real spending analysis with transaction data integration
+        and use LLM-based response generation with professional tone
         """
-        user_context = state.get("user_context", {})
-        detected_intent = state.get("detected_intent", "general_spending")
-        
-        # FIXME: Implement actual personality-aware response generation
-        # This is a mock implementation - replace with proper personality adaptation
-        communication_style = user_context.get("preferences", {}).get("communication_style", "professional")
-        
-        # Generate response based on intent and personality
-        if detected_intent == "spending_analysis":
-            response_content = self._generate_spending_analysis_response(communication_style)
-        elif detected_intent == "budget_planning":
-            response_content = self._generate_budget_response(communication_style)
-        elif detected_intent == "optimization":
-            response_content = self._generate_optimization_response(communication_style)
-        elif detected_intent == "transaction_query":
-            response_content = self._generate_transaction_response(communication_style)
-        else:
-            response_content = self._generate_default_response(communication_style)
-        
+        response_content = "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
-                "intent": detected_intent,
-                "personality_style": communication_style
+                "intent": "spending_analysis"
             }
         )
-        
         return {"messages": [response]}
     
-    def _generate_spending_analysis_response(self, style: str) -> str:
-        """Generate spending analysis response with personality adaptation."""
-        # FIXME: Implement real spending analysis with transaction data
-        if style == "friendly":
-            return "Hey! I'd love to help you understand your spending patterns! 🏦 Let me analyze your recent transactions and give you some personalized insights."
-        else:
-            return "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
+    def _budget_planning_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for budget planning intent.
+        
+        FIXME: Implement real budget planning algorithms
+        and use LLM-based response generation with professional tone
+        """
+        response_content = "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "budget_planning"
+            }
+        )
+        return {"messages": [response]}
     
-    def _generate_budget_response(self, style: str) -> str:
-        """Generate budget planning response with personality adaptation."""
-        # FIXME: Implement real budget analysis
-        if style == "friendly":
-            return "Great question about budgeting! 💰 I can help you create a personalized budget based on your spending habits and goals."
-        else:
-            return "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
+    def _optimization_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for spending optimization intent.
+        
+        FIXME: Implement real optimization algorithms and recommendations
+        and use LLM-based response generation with professional tone
+        """
+        response_content = "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "optimization"
+            }
+        )
+        return {"messages": [response]}
     
-    def _generate_optimization_response(self, style: str) -> str:
-        """Generate optimization recommendations response."""
-        # FIXME: Implement real optimization algorithms
-        if style == "friendly":
-            return "I love helping people save money! ✨ Let me look for opportunities to optimize your spending and boost your savings."
-        else:
-            return "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
+    def _transaction_query_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for transaction query intent.
+        
+        FIXME: Implement real transaction querying with database integration
+        and use LLM-based response generation with professional tone
+        """
+        response_content = "I can help you query and analyze your transaction data. Please specify what information you're looking for."
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "transaction_query"
+            }
+        )
+        return {"messages": [response]}
     
-    def _generate_transaction_response(self, style: str) -> str:
-        """Generate transaction query response."""
-        # FIXME: Implement real transaction querying
-        if style == "friendly":
-            return "Sure thing! I can help you find and understand any transaction. What would you like to know? 🔍"
-        else:
-            return "I can help you query and analyze your transaction data. Please specify what information you're looking for."
-    
-    def _generate_default_response(self, style: str) -> str:
-        """Generate default spending agent response."""
-        if style == "friendly":
-            return "Hi there! I'm your spending assistant! 😊 I can help analyze your spending, create budgets, find ways to save money, and answer questions about your transactions. What would you like to explore today?"
-        else:
-            return "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
+    def _general_spending_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+        """
+        Specialized node for general spending inquiries (default).
+        
+        FIXME: Implement context-aware general responses
+        and use LLM-based response generation with professional tone
+        """
+        response_content = "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
+        response = AIMessage(
+            content=response_content,
+            additional_kwargs={
+                "agent": "spending_agent",
+                "intent": "general_spending"
+            }
+        )
+        return {"messages": [response]}
     
     def invoke_spending_conversation(self, user_message: str, user_id: str, session_id: str) -> Dict[str, Any]:
         """
         Process a user message through the spending agent subgraph.
         
-        FIXME: This method is not yet integrated - will be called by orchestrator_node
-        in LangGraphConfig when routing spending-related queries to this subgraph.
-        Integration happens in later subtask: "Integrate Spending Agent with existing /conversation/send API endpoint"
+        FIXME: Integrate with main orchestrator in /conversation/send API endpoint
+        Currently used for testing - needs integration with LangGraphConfig orchestrator_node
         
         Args:
             user_message: The user's input message
@@ -243,7 +296,6 @@ class SpendingAgent:
                 "content": ai_message.content,
                 "agent": ai_message.additional_kwargs.get("agent", "spending_agent"),
                 "intent": ai_message.additional_kwargs.get("intent", "general_spending"),
-                "personality_style": ai_message.additional_kwargs.get("personality_style", "professional"),
                 "session_id": session_id,
                 "user_id": user_id,
                 "message_type": "ai_response"
@@ -263,7 +315,6 @@ class SpendingAgent:
 
 # Global instance - following the established pattern
 _spending_agent = None
-
 
 def get_spending_agent() -> SpendingAgent:
     """Get or create the global SpendingAgent instance."""

@@ -206,7 +206,7 @@ class SQLiteUserStorage:
             result = await session.execute(stmt)
             users = result.fetchall()
             return [user[0].to_dict() for user in users]
-    
+
     # PersonalContext operations
     async def get_personal_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get personal context data for user. Returns context dict or None if not found."""

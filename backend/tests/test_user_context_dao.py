@@ -39,34 +39,30 @@ class TestUserContextDAO:
         """Mock PersonalContextModel for testing."""
         context = Mock(spec=PersonalContextModel)
         context.user_id = "user-123"
-        context.age_range = AgeRange.RANGE_25_34
+        context.age_range = AgeRange.RANGE_26_35
         context.life_stage = LifeStage.EARLY_CAREER
         context.marital_status = MaritalStatus.SINGLE
-        context.has_dependents = False
-        context.dependent_count = 0
-        context.spouse_income = None
-        context.state = "CA"
-        context.cost_of_living_index = 120.5
-        context.has_emergency_fund = True
-        context.has_retirement_savings = False
-        context.has_investment_experience = True
+        context.total_dependents_count = 0
+        context.children_count = 0
+        context.occupation_type = "Software Engineer"
+        context.location_context = "California, USA"
+        context.family_structure = None
+        context.caregiving_responsibilities = None
         context.created_at = datetime.now(timezone.utc)
         context.updated_at = None
         
-        # Mock the to_dict method
+        # Mock the to_dict method (updated for new PersonalContextModel schema)
         context.to_dict.return_value = {
             'user_id': 'user-123',
-            'age_range': '25_34',
+            'age_range': '26_35',
             'life_stage': 'early_career',
             'marital_status': 'single',
-            'has_dependents': False,
-            'dependent_count': 0,
-            'spouse_income': None,
-            'state': 'CA',
-            'cost_of_living_index': 120.5,
-            'has_emergency_fund': True,
-            'has_retirement_savings': False,
-            'has_investment_experience': True,
+            'total_dependents_count': 0,
+            'children_count': 0,
+            'occupation_type': 'Software Engineer',
+            'location_context': 'California, USA',
+            'family_structure': None,
+            'caregiving_responsibilities': None,
             'created_at': context.created_at,
             'updated_at': None
         }
@@ -100,18 +96,15 @@ class TestUserContextDAO:
             assert result["profile_complete"] == True
             
             # Check demographics mapping
-            assert result["demographics"]["age_range"] == "25_34"
+            assert result["demographics"]["age_range"] == "26_35"
             assert result["demographics"]["life_stage"] == "early_career"
             assert result["demographics"]["marital_status"] == "single"
-            assert result["demographics"]["location"] == "CA"
-            assert result["demographics"]["cost_of_living_index"] == 120.5
+            assert result["demographics"]["location"] == "California, USA"
             
-            # Check financial context mapping
-            assert result["financial_context"]["has_emergency_fund"] == True
-            assert result["financial_context"]["has_retirement_savings"] == False
-            assert result["financial_context"]["has_investment_experience"] == True
+            # Check financial context mapping (updated for new schema)
             assert result["financial_context"]["has_dependents"] == False
             assert result["financial_context"]["dependent_count"] == 0
+            assert result["financial_context"]["children_count"] == 0
     
     @pytest.mark.asyncio
     async def test_get_user_context_user_only(self, dao, mock_user_model):
@@ -305,17 +298,13 @@ class TestIntegration:
             # Create personal context
             personal_context = PersonalContextModel(
                 user_id="test-user-123",
-                age_range=AgeRange.RANGE_25_34,
+                age_range=AgeRange.RANGE_26_35,
                 life_stage=LifeStage.EARLY_CAREER,
                 marital_status=MaritalStatus.SINGLE,
-                has_dependents=False,
-                dependent_count=0,
-                spouse_income=None,
-                state="CA",
-                cost_of_living_index=120.5,
-                has_emergency_fund=True,
-                has_retirement_savings=False,
-                has_investment_experience=True
+                total_dependents_count=0,
+                children_count=0,
+                occupation_type="Software Engineer",
+                location_context="California, USA"
             )
             session.add(personal_context)
             
@@ -453,18 +442,15 @@ class TestIntegration:
         assert result["profile_complete"] == True
         
         # Verify demographics
-        assert result["demographics"]["age_range"] == "25_34"
+        assert result["demographics"]["age_range"] == "26_35"
         assert result["demographics"]["life_stage"] == "early_career"
         assert result["demographics"]["marital_status"] == "single"
-        assert result["demographics"]["location"] == "CA"
-        assert result["demographics"]["cost_of_living_index"] == 120.5
+        assert result["demographics"]["location"] == "California, USA"
         
-        # Verify financial context
-        assert result["financial_context"]["has_emergency_fund"] == True
-        assert result["financial_context"]["has_retirement_savings"] == False
-        assert result["financial_context"]["has_investment_experience"] == True
+        # Verify financial context (updated for new schema)
         assert result["financial_context"]["has_dependents"] == False
         assert result["financial_context"]["dependent_count"] == 0
+        assert result["financial_context"]["children_count"] == 0
     
     @pytest.mark.asyncio
     async def test_get_user_context_without_personal_context(self, populated_database):
@@ -521,8 +507,9 @@ class TestIntegration:
         assert result["user_id"] == "test-user-123"
         assert result["name"] == "John Doe"
         assert result["email"] == "testuser@example.com"
-        assert result["demographics"]["age_range"] == "25_34"
-        assert result["financial_context"]["has_emergency_fund"] == True
+        assert result["demographics"]["age_range"] == "26_35"
+        assert result["financial_context"]["has_dependents"] == False
+        assert result["financial_context"]["dependent_count"] == 0
     
     @pytest.mark.asyncio
     async def test_minimal_data_handling(self, edge_case_database):
@@ -546,10 +533,7 @@ class TestIntegration:
         # Demographics should be empty for null values
         assert result["demographics"] == {}
         
-        # Financial context should still include boolean fields
-        assert result["financial_context"]["has_emergency_fund"] == False
-        assert result["financial_context"]["has_retirement_savings"] == False
-        assert result["financial_context"]["has_investment_experience"] == False
+        # Financial context should still include boolean fields (updated for new schema)
         assert result["financial_context"]["has_dependents"] == False
         assert result["financial_context"]["dependent_count"] == 0
     

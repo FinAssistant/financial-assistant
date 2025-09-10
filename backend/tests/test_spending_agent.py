@@ -42,7 +42,7 @@ class TestSpendingAgent:
         assert "spending_insights" in result
         assert result["user_context"]["user_id"] == "test_user_123"
         assert "demographics" in result["user_context"]
-        assert "preferences" in result["user_context"]
+        assert "financial_context" in result["user_context"]
     
     def test_route_intent_node_spending_keywords(self):
         """Test _route_intent_node detects spending-related intents."""
@@ -76,65 +76,57 @@ class TestSpendingAgent:
         result = self.agent._route_intent_node(state)
         assert result == {}
     
-    def test_generate_response_node_personality_styles(self):
-        """Test _generate_response_node adapts to different personality styles."""
-        # Test friendly style
-        friendly_state = {
+    def test_route_to_intent_node(self):
+        """Test _route_to_intent_node returns correct intent."""
+        test_state = {"detected_intent": "spending_analysis"}
+        result = self.agent._route_to_intent_node(test_state)
+        assert result == "spending_analysis"
+        
+        # Test default case
+        empty_state = {}
+        result = self.agent._route_to_intent_node(empty_state)
+        assert result == "general_spending"
+    
+    def test_spending_analysis_node(self):
+        """Test _spending_analysis_node generates appropriate responses."""
+        test_state = {
             "messages": [HumanMessage(content="Tell me about my spending")],
-            "user_context": {
-                "preferences": {"communication_style": "friendly"}
-            },
             "detected_intent": "spending_analysis"
         }
         
-        result = self.agent._generate_response_node(friendly_state)
+        result = self.agent._spending_analysis_node(test_state)
         assert "messages" in result
         assert len(result["messages"]) == 1
         
         ai_message = result["messages"][0]
         assert isinstance(ai_message, AIMessage)
-        assert "🏦" in ai_message.content or "Hey!" in ai_message.content
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "spending_analysis"
-        assert ai_message.additional_kwargs["personality_style"] == "friendly"
-        
-        # Test professional style
-        professional_state = {
-            "messages": [HumanMessage(content="Tell me about my spending")],
-            "user_context": {
-                "preferences": {"communication_style": "professional"}
-            },
-            "detected_intent": "spending_analysis"
-        }
-        
-        result = self.agent._generate_response_node(professional_state)
-        ai_message = result["messages"][0]
         assert "analyze" in ai_message.content.lower()
-        assert ai_message.additional_kwargs["personality_style"] == "professional"
     
-    def test_generate_response_node_different_intents(self):
-        """Test _generate_response_node handles different intents correctly."""
-        intents_to_test = [
-            "spending_analysis",
-            "budget_planning", 
-            "optimization",
-            "transaction_query",
-            "general_spending"
+    def test_specialized_intent_nodes(self):
+        """Test all specialized intent nodes work correctly."""
+        intent_nodes = [
+            ("spending_analysis", self.agent._spending_analysis_node),
+            ("budget_planning", self.agent._budget_planning_node),
+            ("optimization", self.agent._optimization_node),
+            ("transaction_query", self.agent._transaction_query_node),
+            ("general_spending", self.agent._general_spending_node)
         ]
         
-        for intent in intents_to_test:
+        for intent, node_method in intent_nodes:
             state = {
                 "messages": [HumanMessage(content="Test message")],
-                "user_context": {"preferences": {"communication_style": "professional"}},
                 "detected_intent": intent
             }
             
-            result = self.agent._generate_response_node(state)
+            result = node_method(state)
             assert "messages" in result
             assert len(result["messages"]) == 1
             
             ai_message = result["messages"][0]
             assert isinstance(ai_message, AIMessage)
+            assert ai_message.additional_kwargs["agent"] == "spending_agent"
             assert ai_message.additional_kwargs["intent"] == intent
     
     def test_invoke_spending_conversation_success(self):
@@ -148,7 +140,6 @@ class TestSpendingAgent:
         assert "content" in result
         assert "agent" in result
         assert "intent" in result
-        assert "personality_style" in result
         assert result["agent"] == "spending_agent"
         assert result["user_id"] == user_id
         assert result["session_id"] == session_id
@@ -186,57 +177,6 @@ class TestSpendingAgent:
         assert state["user_context"]["test"] == "data"
         assert state["spending_insights"]["insights"] == "data"
 
-class TestSpendingAgentResponseGeneration:
-    """Separate test class for response generation methods."""
-    
-    def setup_method(self):
-        """Setup method called before each test."""
-        self.agent = SpendingAgent()
-    
-    def test_generate_spending_analysis_response_styles(self):
-        """Test spending analysis response generation with different styles."""
-        friendly_response = self.agent._generate_spending_analysis_response("friendly")
-        professional_response = self.agent._generate_spending_analysis_response("professional")
-        
-        assert "🏦" in friendly_response or "Hey!" in friendly_response
-        assert "analyze" in professional_response.lower()
-        assert friendly_response != professional_response
-    
-    def test_generate_budget_response_styles(self):
-        """Test budget response generation with different styles."""
-        friendly_response = self.agent._generate_budget_response("friendly")
-        professional_response = self.agent._generate_budget_response("professional")
-        
-        assert "💰" in friendly_response or "Great" in friendly_response
-        assert "budget" in professional_response.lower()
-        assert friendly_response != professional_response
-    
-    def test_generate_optimization_response_styles(self):
-        """Test optimization response generation with different styles."""
-        friendly_response = self.agent._generate_optimization_response("friendly")
-        professional_response = self.agent._generate_optimization_response("professional")
-        
-        assert "✨" in friendly_response or "love" in friendly_response.lower()
-        assert "optimization" in professional_response.lower()
-        assert friendly_response != professional_response
-    
-    def test_generate_transaction_response_styles(self):
-        """Test transaction response generation with different styles."""
-        friendly_response = self.agent._generate_transaction_response("friendly")
-        professional_response = self.agent._generate_transaction_response("professional")
-        
-        assert "🔍" in friendly_response or "Sure" in friendly_response
-        assert "transaction" in professional_response.lower()
-        assert friendly_response != professional_response
-    
-    def test_generate_default_response_styles(self):
-        """Test default response generation with different styles."""
-        friendly_response = self.agent._generate_default_response("friendly")
-        professional_response = self.agent._generate_default_response("professional")
-        
-        assert "😊" in friendly_response or "Hi there" in friendly_response
-        assert "analysis agent" in professional_response
-        assert friendly_response != professional_response
 
 
 if __name__ == "__main__":
