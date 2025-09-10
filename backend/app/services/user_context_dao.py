@@ -58,7 +58,7 @@ class UserContextDAO:
             if personal_context_model:
                 pc_dict = personal_context_model.to_dict()
                 
-                # Map demographics
+                # Map demographics (updated for new PersonalContextModel schema)
                 demographics = {}
                 if pc_dict.get("age_range"):
                     demographics["age_range"] = pc_dict["age_range"]
@@ -66,26 +66,24 @@ class UserContextDAO:
                     demographics["life_stage"] = pc_dict["life_stage"]
                 if pc_dict.get("marital_status"):
                     demographics["marital_status"] = pc_dict["marital_status"]
-                if pc_dict.get("state"):
-                    demographics["location"] = pc_dict["state"]
-                if pc_dict.get("cost_of_living_index"):
-                    demographics["cost_of_living_index"] = pc_dict["cost_of_living_index"]
+                if pc_dict.get("occupation_type"):
+                    demographics["occupation_type"] = pc_dict["occupation_type"]
+                if pc_dict.get("location_context"):
+                    demographics["location"] = pc_dict["location_context"]
                 
                 context["demographics"] = demographics
                 
-                # Map financial context
+                # Map financial context (updated for new PersonalContextModel schema)
                 financial_context = {}
-                if pc_dict.get("has_emergency_fund") is not None:
-                    financial_context["has_emergency_fund"] = pc_dict["has_emergency_fund"]
-                if pc_dict.get("has_retirement_savings") is not None:
-                    financial_context["has_retirement_savings"] = pc_dict["has_retirement_savings"]
-                if pc_dict.get("has_investment_experience") is not None:
-                    financial_context["has_investment_experience"] = pc_dict["has_investment_experience"]
-                if pc_dict.get("has_dependents") is not None:
-                    financial_context["has_dependents"] = pc_dict["has_dependents"]
-                    financial_context["dependent_count"] = pc_dict.get("dependent_count", 0)
-                if pc_dict.get("spouse_income") is not None:
-                    financial_context["spouse_income"] = pc_dict["spouse_income"]
+                if pc_dict.get("family_structure"):
+                    financial_context["family_structure"] = pc_dict["family_structure"]
+                if pc_dict.get("total_dependents_count") is not None:
+                    financial_context["has_dependents"] = pc_dict["total_dependents_count"] > 0
+                    financial_context["dependent_count"] = pc_dict["total_dependents_count"]
+                if pc_dict.get("children_count") is not None:
+                    financial_context["children_count"] = pc_dict["children_count"]
+                if pc_dict.get("caregiving_responsibilities"):
+                    financial_context["caregiving_responsibilities"] = pc_dict["caregiving_responsibilities"]
                 
                 context["financial_context"] = financial_context
             
