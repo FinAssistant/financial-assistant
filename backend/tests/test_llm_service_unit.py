@@ -98,7 +98,7 @@ class TestLLMFactory:
         """Test successful Google LLM creation (mocked)."""
         mock_settings.default_llm_provider = "google"
         mock_settings.google_api_key = "test_google_key"
-        mock_settings.google_model = "gemini-2.5-pro"
+        mock_settings.google_model = "gemini-2.5-flash"
         mock_settings.llm_temperature = 0.7
         mock_settings.llm_max_tokens = 4096
         mock_settings.llm_request_timeout = 60
@@ -108,7 +108,7 @@ class TestLLMFactory:
         
         assert llm is not None
         assert hasattr(llm, 'invoke')
-        assert llm.model == "models/gemini-2.5-pro"
+        assert llm.model == "models/gemini-2.5-flash"
 
     @patch("langchain_google_genai.ChatGoogleGenerativeAI.invoke")
     @patch('app.services.llm_service.settings')
@@ -116,7 +116,7 @@ class TestLLMFactory:
         """Test Google LLM invocation with mocked response."""
         mock_settings.default_llm_provider = "google"
         mock_settings.google_api_key = "test_google_key"
-        mock_settings.google_model = "gemini-2.5-pro"
+        mock_settings.google_model = "gemini-2.5-flash"
         mock_settings.llm_temperature = 0.7
         mock_settings.llm_max_tokens = 4096
         mock_settings.llm_request_timeout = 60
@@ -138,7 +138,7 @@ class TestLLMFactory:
         """Test LLM creation with explicit Google provider."""
         mock_settings.default_llm_provider = "openai"  # Set a valid default
         mock_settings.google_api_key = "test_google_key"
-        mock_settings.google_model = "gemini-2.5-pro"
+        mock_settings.google_model = "gemini-2.5-flash"
         mock_settings.llm_temperature = 0.7
         mock_settings.llm_max_tokens = 4096
         mock_settings.llm_request_timeout = 60
@@ -147,7 +147,7 @@ class TestLLMFactory:
         llm = factory.create_llm(provider=LLMProvider.GOOGLE)
         
         assert llm is not None
-        assert llm.model == "models/gemini-2.5-pro"
+        assert llm.model == "models/gemini-2.5-flash"
 
 
 class TestLLMProviderEnum:

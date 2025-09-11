@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     default_llm_provider: str = Field(default="openai", description="Default LLM provider (openai|anthropic|google)")
     openai_model: str = Field(default="gpt-4o", description="OpenAI model to use")
     anthropic_model: str = Field(default="claude-sonnet-4-20250514", description="Anthropic model to use")
-    google_model: str = Field(default="gemini-2.5-pro", description="Google Gemini model to use")
+    google_model: str = Field(default="gemini-2.5-flash", description="Google Gemini model to use")
     llm_max_tokens: int = Field(default=4096, description="Maximum tokens for LLM responses")
     llm_temperature: float = Field(default=0.7, description="LLM response temperature")
     llm_request_timeout: int = Field(default=60, description="LLM request timeout in seconds")

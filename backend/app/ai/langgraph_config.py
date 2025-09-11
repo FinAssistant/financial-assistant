@@ -250,42 +250,48 @@ class LangGraphConfig:
         Demonstrates proper LangGraph pattern with config usage.
         """
         # Get user context from config (standard LangGraph pattern)
-        user_id = config["configurable"]["user_id"]
+        # user_id = config["configurable"]["user_id"]
         
         # Get profile context (lazy loaded and cached)
         # profile_context = state.get_profile_context(user_id)
         
-        # Setup the system prompt for the orchestrator
-        system_prompt = """ 
-        You are an Orchestrator for a financial assistant agent.
-        Your job is to analyze the input query and choose one of 4 options:
-
-        SMALLTALK: If the user input is small talk, like greetings and good byes, or
-        any other query unrelated to personal finance, regardless of whether the user's
-        profile is complete or not.
+        # Build consolidated system prompt with all context
+        profile_status = "complete" if state.profile_complete else "incomplete"
+        profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"
         
-        SPENDING: If the user profile is complete AND the query if about spending, accounts,
-        balances and other queries related to personal finance except for investments.
-        
-        INVESTMENT: If the user profile is complete AND the query is related to investments.
-        
-        ONBOARDING: If the user profile is incomplete.
+        system_prompt = f"""You are an Orchestrator for a financial assistant agent.
+Your job is to analyze the input query and choose exactly one of 4 routing options.
 
-        The output should only be just one word out of the possible 4 : SMALLTALK, SPENDING,
-        INVESTMENT, ONBOARDING.
-        """
-        last_message = state.messages[-1]
-        messages = state.messages
+USER PROFILE STATUS: {profile_status}
+USER PROFILE: {profile_info}
 
-        if state.profile_complete:
-            # add the completion prompt and the profile to the system prompt
-            messages = [SystemMessage(content=system_prompt)] + \
-                [SystemMessage(content=state.profile_context)] + \
-                [SystemMessage(content="User's profile is now complete")] + messages
-        else:
-            # indicate incomplete profile
-            messages = [SystemMessage(content=system_prompt)] + \
-                [SystemMessage(content="User's profile is incomplete")] + messages
+ROUTING RULES:
+1. SMALLTALK: If the user input is small talk (greetings, goodbyes, casual conversation) or any query unrelated to personal finance, regardless of profile status.
+
+2. SPENDING: If the user profile is COMPLETE and the query is about:
+   - Budgeting, expenses, spending tracking
+   - Account balances, transactions
+   - Personal finance management (non-investment)
+   - Financial planning and cash flow
+
+3. INVESTMENT: If the user profile is COMPLETE and the query is about:
+   - Investment strategies, portfolio management
+   - Stocks, bonds, mutual funds, ETFs
+   - Retirement planning, 401k, IRA
+   - Asset allocation and investment advice
+
+4. ONBOARDING: If the user profile is INCOMPLETE, route ALL financial questions here.
+
+CRITICAL: You must respond with exactly ONE word: SMALLTALK, SPENDING, INVESTMENT, or ONBOARDING.
+
+Examples:
+- "Hello!" → SMALLTALK
+- "How should I budget?" (profile incomplete) → ONBOARDING  
+- "How should I budget?" (profile complete) → SPENDING
+- "What stocks should I buy?" (profile incomplete) → ONBOARDING
+- "What stocks should I buy?" (profile complete) → INVESTMENT"""
+
+        messages = [SystemMessage(content=system_prompt)] + state.messages
 
         if self.llm is None:
             from app.services.llm_service import LLMError

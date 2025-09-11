@@ -51,7 +51,7 @@ def test_llm_provider_defaults():
     assert settings.default_llm_provider == "openai"
     assert settings.openai_model == "gpt-4o"
     assert settings.anthropic_model == "claude-sonnet-4-20250514"
-    assert settings.google_model == "gemini-2.5-pro"
+    assert settings.google_model == "gemini-2.5-flash"
     assert settings.llm_max_tokens == 4096
     assert settings.llm_temperature == 0.7
     assert settings.llm_request_timeout == 60

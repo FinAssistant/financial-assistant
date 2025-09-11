@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional, Annotated
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, AnyMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
@@ -16,12 +16,34 @@ from app.core.sqlmodel_models import (
 # Structured output model for LLM responses
 class ProfileDataExtraction(BaseModel):
     """Structured model for LLM to extract profile data from conversation."""
-    model_config = ConfigDict(extra="forbid")  # Required for OpenAI structured output
+    
+    def __init_subclass__(cls, **kwargs):
+        """Configure model based on LLM provider."""
+        super().__init_subclass__(**kwargs)
+        from app.core.config import settings
+        
+        # Only use extra="forbid" for OpenAI structured output
+        if settings.default_llm_provider == "openai":
+            cls.model_config = ConfigDict(extra="forbid")
+        else:
+            cls.model_config = ConfigDict(extra="allow")
     
     extracted_data: Dict[str, Any] = Field(default_factory=dict, description="Profile data extracted from user input")
     next_questions: list[str] = Field(default_factory=list, description="Follow-up questions to ask user")
     completion_status: str = Field(default="incomplete", description="Profile completion status: incomplete, partial, complete")
     user_response: str = Field(description="Natural response to user - REQUIRED field, must always provide a helpful response")
+    
+    @field_validator('extracted_data', mode='before')
+    @classmethod
+    def parse_extracted_data(cls, v):
+        """Parse extracted_data if it comes as a string."""
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v) if v.strip() else {}
+            except json.JSONDecodeError:
+                return {}
+        return v if isinstance(v, dict) else {}
 
 
 class OnboardingState(BaseModel):

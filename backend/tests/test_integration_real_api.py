@@ -1,11 +1,25 @@
 """
 Integration tests with REAL API calls.
 These tests are SKIPPED in CI and only run locally when:
-1. OPENAI_API_KEY is available
+1. At least one LLM provider API key is available (OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY)
 2. RUN_REAL_TESTS environment variable is set to 'true'
 
 To run these tests locally:
+# Test with OpenAI (default)
 export RUN_REAL_TESTS=true
+export OPENAI_API_KEY=sk-your-openai-key-here
+pytest tests/test_integration_real_api.py -v
+
+# Test with Anthropic Claude
+export RUN_REAL_TESTS=true
+export DEFAULT_LLM_PROVIDER=anthropic
+export ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
+pytest tests/test_integration_real_api.py -v
+
+# Test with Google Gemini
+export RUN_REAL_TESTS=true
+export DEFAULT_LLM_PROVIDER=google
+export GOOGLE_API_KEY=your-google-api-key-here
 pytest tests/test_integration_real_api.py -v
 """
 import pytest
@@ -99,7 +113,7 @@ def clean_database():
     created_user_ids = []
     for user_data in test_users:
         try:
-            created_user = user_storage.create_user(user_data)
+            user_storage.create_user(user_data)
             created_user_ids.append(user_data['id'])
             print(f"Created test user: {user_data['id']}")
         except Exception as e:
@@ -113,9 +127,17 @@ def clean_database():
 
 
 # Skip entire module if conditions not met
+def has_any_llm_key():
+    """Check if any LLM provider API key is available."""
+    return any([
+        os.getenv('OPENAI_API_KEY'),
+        os.getenv('ANTHROPIC_API_KEY'), 
+        os.getenv('GOOGLE_API_KEY')
+    ])
+
 pytestmark = pytest.mark.skipif(
-    not os.getenv('OPENAI_API_KEY') or os.getenv('RUN_REAL_TESTS') != 'true',
-    reason="Real API tests require OPENAI_API_KEY and RUN_REAL_TESTS=true"
+    not has_any_llm_key() or os.getenv('RUN_REAL_TESTS') != 'true',
+    reason="Real API tests require at least one LLM provider API key (OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY) and RUN_REAL_TESTS=true"
 )
 
 
@@ -207,7 +229,7 @@ class TestRealConversationFlow:
             assert result is not None
             assert result["agent"] == "small_talk"  # Should route to small talk
             assert len(result["content"]) > 10  # Real response should be substantial
-            assert "hello" in result["content"].lower() or "hi" in result["content"].lower()
+            assert any(greet in result["content"].lower() for greet in ["hello", "hi", "hey", "greetings"])
     
     def test_real_conversation_financial_question(self):
         """Test real conversation with financial question."""
@@ -292,7 +314,7 @@ class TestRealOnboardingDatabase:
             user_id = "database_test_user"
             session_id = "database_test_session"
             
-            print(f"\n--- Database Setup via Fixture ---")
+            print("\n--- Database Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
             
@@ -331,7 +353,7 @@ class TestRealOnboardingDatabase:
             print(f"\nCompletion result: {result3['agent']}")
             
             # Now verify database was updated
-            print(f"\n--- Database Verification ---")
+            print("\n--- Database Verification ---")
             
             # Check personal context was saved
             personal_context = user_storage.get_personal_context(user_id)
@@ -371,7 +393,7 @@ class TestRealOnboardingDatabase:
             user_id = "profile_context_test_user"
             session_id = "profile_context_test_session"
 
-            print(f"\n--- Profile Context Test Setup via Fixture ---")
+            print("\n--- Profile Context Test Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
 
@@ -402,20 +424,18 @@ class TestRealOnboardingDatabase:
                 session_id=session_id
             )
 
-            print(f"\n--- Post-Onboarding Agent ---")
+            print("\n--- Post-Onboarding Agent ---")
             print(f"Routed to agent: {result3['agent']}")
-            print(f"Response content: {result3['content'][:200]}...")
+            print(f"Response content: {result3['content']}...")
 
             # Verify it routed to a financial agent (not onboarding)
             assert result3["agent"] != "onboarding", f"Should not route to onboarding anymore, got {result3['agent']}"
             assert result3["agent"] in ["investment", "spending"], f"Should route to investment or spending agent, got {result3['agent']}"
 
             # Test the _update_main_graph method by checking profile context in the conversation thread
-            print(f"\n--- Testing Profile Context from Conversation Thread ---")
+            print("\n--- Testing Profile Context from Conversation Thread ---")
             
             # Access the actual GlobalState from the conversation thread
-            thread_config = {"configurable": {"user_id": user_id, "session_id": session_id}}
-            
             # Try to get the current state from the checkpointer
             current_state = None
             if hasattr(config, 'checkpointer') and config.checkpointer:
@@ -472,7 +492,7 @@ class TestRealOnboardingDatabase:
             assert personal_context.get("marital_status") == "married", f"Expected married status, got {personal_context.get('marital_status')}"
             assert personal_context.get("children_count") == 2, f"Expected 2 children, got {personal_context.get('children_count')}"
 
-            print(f"✅ Profile context integration verified!")
+            print("✅ Profile context integration verified!")
 
 
 class TestRealOnboardingComplete:
@@ -487,7 +507,7 @@ class TestRealOnboardingComplete:
             user_id = "complete_onboard_test_user"
             session_id = "complete_onboard_session"
             
-            print(f"\n--- Investment Test Setup via Fixture ---")
+            print("\n--- Investment Test Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
             
@@ -591,7 +611,7 @@ class TestRealOnboardingComplete:
             user_id = "complete_onboard_spending_user"
             session_id = "complete_onboard_spending_session"
             
-            print(f"\n--- Spending Test Setup via Fixture ---")
+            print("\n--- Spending Test Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
             
@@ -660,9 +680,16 @@ class TestRealLLMProviders:
         factory = LLMFactory()
         providers = factory.get_available_providers()
         
-        # Should have at least OpenAI if API key is set
-        assert LLMProvider.OPENAI in providers
+        # Should have at least one provider if any API key is set
         assert len(providers) >= 1
+        
+        # Check which specific providers are available
+        if os.getenv('OPENAI_API_KEY'):
+            assert LLMProvider.OPENAI in providers
+        if os.getenv('ANTHROPIC_API_KEY'):
+            assert LLMProvider.ANTHROPIC in providers
+        if os.getenv('GOOGLE_API_KEY'):
+            assert LLMProvider.GOOGLE in providers
     
     def test_real_configuration_validation(self):
         """Test real configuration validation."""
@@ -687,3 +714,240 @@ class TestRealLLMProviders:
         except Exception as e:
             # If it fails due to length limits, that's expected
             assert "token" in str(e).lower() or "length" in str(e).lower() or "limit" in str(e).lower()
+
+
+class TestRealMultiProviderLLM:
+    """Test real LLM functionality across all available providers."""
+    
+    @pytest.mark.parametrize("provider,env_key", [
+        (LLMProvider.OPENAI, "OPENAI_API_KEY"),
+        (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
+        (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
+    ])
+    def test_real_provider_basic_call(self, provider, env_key):
+        """Test basic LLM call for each available provider."""
+        if not os.getenv(env_key):
+            pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
+        
+        factory = LLMFactory()
+        llm = factory.create_llm(provider=provider)
+        
+        assert llm is not None, f"Failed to create {provider.value} LLM instance"
+        
+        messages = [{"role": "user", "content": "Say exactly: TEST_RESPONSE"}]
+        response = llm.invoke(messages)
+        
+        assert response is not None
+        assert hasattr(response, 'content')
+        assert len(response.content) > 0
+        assert "TEST_RESPONSE" in response.content
+        
+        print(f"✅ {provider.value} provider test passed")
+    
+    @pytest.mark.parametrize("provider,env_key", [
+        (LLMProvider.OPENAI, "OPENAI_API_KEY"),
+        (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
+        (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
+    ])
+    def test_real_provider_system_prompt(self, provider, env_key):
+        """Test system prompt functionality for each available provider."""
+        if not os.getenv(env_key):
+            pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
+        
+        factory = LLMFactory()
+        llm = factory.create_llm(provider=provider)
+        
+        messages = [
+            {"role": "system", "content": "You are a math tutor. Answer only with numbers."},
+            {"role": "user", "content": "What is 2+2?"}
+        ]
+        response = llm.invoke(messages)
+        
+        assert response is not None
+        assert "4" in response.content
+        
+        print(f"✅ {provider.value} system prompt test passed")
+    
+    @pytest.mark.parametrize("provider,env_key", [
+        (LLMProvider.OPENAI, "OPENAI_API_KEY"),
+        (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
+        (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
+    ])
+    def test_real_provider_financial_context(self, provider, env_key):
+        """Test financial domain responses for each available provider."""
+        if not os.getenv(env_key):
+            pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
+        
+        factory = LLMFactory()
+        llm = factory.create_llm(provider=provider)
+        
+        messages = [
+            {"role": "system", "content": "You are a financial advisor. Provide brief, helpful advice."},
+            {"role": "user", "content": "What are the basics of emergency fund planning?"}
+        ]
+        response = llm.invoke(messages)
+        
+        assert response is not None
+        assert len(response.content) > 50  # Should be a substantial response
+        
+        # Check for financial keywords (flexible matching)
+        content_lower = response.content.lower()
+        financial_keywords = ["emergency", "fund", "savings", "money", "expenses", "months", "income"]
+        found_keywords = [kw for kw in financial_keywords if kw in content_lower]
+        
+        assert len(found_keywords) >= 2, f"Expected financial keywords in response, found: {found_keywords}"
+        
+        print(f"✅ {provider.value} financial context test passed")
+    
+    def test_real_provider_switching(self):
+        """Test switching between different providers dynamically."""
+        available_providers = []
+        
+        if os.getenv('OPENAI_API_KEY'):
+            available_providers.append(LLMProvider.OPENAI)
+        if os.getenv('ANTHROPIC_API_KEY'):
+            available_providers.append(LLMProvider.ANTHROPIC)
+        if os.getenv('GOOGLE_API_KEY'):
+            available_providers.append(LLMProvider.GOOGLE)
+        
+        if len(available_providers) < 2:
+            pytest.skip("Need at least 2 providers configured to test switching")
+        
+        factory = LLMFactory()
+        
+        # Test creating LLMs with different providers
+        test_message = [{"role": "user", "content": "Hello, respond with your provider name if you know it, otherwise just say 'Hello'"}]
+        
+        responses = {}
+        for provider in available_providers:
+            llm = factory.create_llm(provider=provider)
+            response = llm.invoke(test_message)
+            responses[provider.value] = response.content
+            
+            assert response is not None
+            assert len(response.content) > 0
+        
+        print(f"✅ Provider switching test passed with {len(available_providers)} providers")
+        for provider, response in responses.items():
+            print(f"  {provider}: {response[:100]}...")
+
+
+class TestRealMultiProviderConversationFlow:
+    """Test real conversation flow across all available providers."""
+    
+    @pytest.mark.parametrize("provider,env_key", [
+        (LLMProvider.OPENAI, "OPENAI_API_KEY"),
+        (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
+        (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
+    ])
+    def test_real_provider_orchestrator_routing(self, provider, env_key):
+        """Test orchestrator routing decisions for each provider."""
+        if not os.getenv(env_key):
+            pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
+        
+        factory = LLMFactory()
+        llm = factory.create_llm(provider=provider)
+        
+        # Test orchestrator-style routing prompt
+        system_prompt = """You must respond with exactly one word: SMALLTALK, SPENDING, INVESTMENT, or ONBOARDING.
+        
+        User input: Hello there!
+        Response:"""
+        
+        messages = [{"role": "user", "content": system_prompt}]
+        response = llm.invoke(messages)
+        
+        # Should route to SMALLTALK for greeting
+        valid_routes = ["SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"]
+        assert response.content.strip() in valid_routes, f"Expected one of {valid_routes}, got: {response.content}"
+        # Greeting should typically route to SMALLTALK
+        assert "SMALLTALK" in response.content
+        
+        print(f"✅ {provider.value} orchestrator routing test passed")
+    
+    @pytest.mark.parametrize("provider,env_key", [
+        (LLMProvider.OPENAI, "OPENAI_API_KEY"),
+        (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
+        (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
+    ])
+    def test_real_provider_conversation_greeting(self, provider, env_key):
+        """Test real conversation greeting for each provider."""
+        if not os.getenv(env_key):
+            pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
+        
+        # Temporarily override the default provider for this test
+        original_provider = os.getenv('DEFAULT_LLM_PROVIDER')
+        
+        try:
+            # Set the provider for this test
+            os.environ['DEFAULT_LLM_PROVIDER'] = provider.value
+            
+            with pytest.MonkeyPatch().context() as m:
+                # Remove any existing patches
+                m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
+                
+                config = get_langgraph_config()
+                
+                result = config.invoke_conversation(
+                    user_message="Hello there!",
+                    user_id=f"real_test_user_{provider.value}",
+                    session_id=f"real_test_session_{provider.value}"
+                )
+                
+                assert result is not None
+                assert result["agent"] == "small_talk"  # Should route to small talk
+                assert len(result["content"]) > 10  # Real response should be substantial
+                assert "hello" in result["content"].lower() or "hi" in result["content"].lower()
+                
+                print(f"✅ {provider.value} conversation greeting test passed")
+                
+        finally:
+            # Restore original provider
+            if original_provider:
+                os.environ['DEFAULT_LLM_PROVIDER'] = original_provider
+            elif 'DEFAULT_LLM_PROVIDER' in os.environ:
+                del os.environ['DEFAULT_LLM_PROVIDER']
+    
+    @pytest.mark.parametrize("provider,env_key", [
+        (LLMProvider.OPENAI, "OPENAI_API_KEY"),
+        (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
+        (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
+    ])
+    def test_real_provider_financial_question(self, provider, env_key):
+        """Test real conversation with financial question for each provider."""
+        if not os.getenv(env_key):
+            pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
+        
+        # Temporarily override the default provider for this test
+        original_provider = os.getenv('DEFAULT_LLM_PROVIDER')
+        
+        try:
+            # Set the provider for this test
+            os.environ['DEFAULT_LLM_PROVIDER'] = provider.value
+            
+            with pytest.MonkeyPatch().context() as m:
+                m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
+                
+                config = get_langgraph_config()
+                
+                result = config.invoke_conversation(
+                    user_message="How should I invest my money?",
+                    user_id=f"real_test_user_2_{provider.value}",
+                    session_id=f"real_test_session_2_{provider.value}"
+                )
+                
+                assert result is not None
+                # Should route to onboarding (profile incomplete by default)
+                assert result["agent"] == "onboarding"
+                # Should ask for personal information (flexible wording)
+                content_lower = result["content"].lower()
+                assert any(word in content_lower for word in ["profile", "age", "occupation", "about", "share", "tell", "help", "information"])
+                
+                print(f"✅ {provider.value} financial question test passed")
+                
+        finally:
+            # Restore original provider
+            if original_provider:
+                os.environ['DEFAULT_LLM_PROVIDER'] = original_provider
+            elif 'DEFAULT_LLM_PROVIDER' in os.environ:
+                del os.environ['DEFAULT_LLM_PROVIDER']
