@@ -94,6 +94,24 @@ class GraphitiMCPClient:
             Response from Graphiti add_memory tool
         """
         add_memory_tool = self._get_tool("add_memory")
+
+              # Build enhanced episode content with extraction guidance
+        enhanced_content = f"""
+            FINANCIAL CONVERSATION CONTEXT:
+            User Message: {content}
+
+            EXTRACTION PRIORITIES:
+            - Financial goals (saving, investing, debt payoff, retirement)
+            - Risk tolerance and concerns
+            - Dollar amounts and timeframes
+            - Family situation affecting finances
+            - Values and priorities expressed
+            - Constraints or limitations mentioned
+            - Personal info: income range, net worth, major assets/liabilities
+            - Geographic context: city/state, cost of living
+            - Demographic context: age range, life stage, occupation type
+            - Any other details relevant to financial planning
+            """
         
         try:
             response = await add_memory_tool.ainvoke({
