@@ -43,9 +43,16 @@ services:
       - MODEL_NAME=${MODEL_NAME}
       - PATH=/root/.local/bin:${PATH}
       - SEMAPHORE_LIMIT=${SEMAPHORE_LIMIT:-10}
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
     ports:
       - "8080:8000" # Expose the MCP server via HTTP for SSE transport
     command: ["uv", "run", "graphiti_mcp_server.py", "--transport", "sse"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   financial-assistant:
     build: .
@@ -62,7 +69,10 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - MCP_GRAPHITI_SERVER_URL=http://graphiti-mcp:8000
+      - MCP_GRAPHITI_SERVER_URL=http://graphiti-mcp:8000/sse
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - FASTAPI_LOG_LEVEL=debug
     volumes:
       - ./backend/data:/app/data  # SQLite database persistence
     depends_on:
@@ -74,6 +84,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
 volumes:
   neo4j_data:

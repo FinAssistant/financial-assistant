@@ -68,6 +68,12 @@ class Settings(BaseSettings):
         default_factory=lambda: ["identity", "transactions", "liabilities", "investments"],
         description="Plaid products to use"
     )
+    
+    # MCP settings
+    mcp_graphiti_server_url: str = Field(
+        default="http://localhost:8080/sse", 
+        description="Graphiti MCP server URL"
+    )
 
     @field_validator('default_llm_provider')
     @classmethod

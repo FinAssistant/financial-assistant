@@ -8,6 +8,7 @@ and accessing its tools for storing and querying financial context and relations
 import logging
 from typing import Dict, Any, Optional, List
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -154,20 +155,23 @@ class GraphitiMCPClient:
 _graphiti_client: Optional[GraphitiMCPClient] = None
 
 
-async def get_graphiti_client(graphiti_url: str = "http://localhost:8080/sse") -> GraphitiMCPClient:
+async def get_graphiti_client(graphiti_url: Optional[str] = None) -> GraphitiMCPClient:
     """
     Get or create shared Graphiti MCP client instance.
     
     Args:
-        graphiti_url: URL of Graphiti MCP server
+        graphiti_url: URL of Graphiti MCP server (defaults to config value)
         
     Returns:
         Connected GraphitiMCPClient instance
     """
     global _graphiti_client
     
+    # Use config URL if not provided
+    url = graphiti_url or settings.mcp_graphiti_server_url
+    
     if _graphiti_client is None or not _graphiti_client.is_connected():
-        _graphiti_client = GraphitiMCPClient(graphiti_url)
+        _graphiti_client = GraphitiMCPClient(url)
         await _graphiti_client.connect()
     
     return _graphiti_client
