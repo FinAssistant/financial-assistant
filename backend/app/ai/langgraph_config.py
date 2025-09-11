@@ -370,7 +370,9 @@ Examples:
         input_data = {
             "messages": [HumanMessage(content=user_message)]
         }
-        
+
+        self.logger.info(f"Invoking graph for user_id={user_id}, session_id={session_id} with message: {user_message}")
+
         # Process through graph - checkpointer automatically manages state persistence
         result = await self.graph.ainvoke(input_data, config)
         

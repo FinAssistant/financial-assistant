@@ -79,6 +79,8 @@ class OnboardingAgent:
     def __init__(self):
         """Initialize the onboarding agent."""
         self._graph = None
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("OnboardingAgent initialized")
     
     def _read_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Read user and personal context data from SQLite database."""
@@ -127,6 +129,8 @@ class OnboardingAgent:
         # Bind Graphiti MCP tools to LLM (tools are guaranteed to be available)
         graphiti_tools = get_graphiti_tools()
         llm = llm.bind_tools(graphiti_tools)
+
+        self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
         
         # Tool instructions for financial context storage
         tool_instructions = """
@@ -134,14 +138,18 @@ class OnboardingAgent:
         ADDITIONAL CAPABILITY - Financial Context Storage:
         - If the user mentions financial goals, concerns, or preferences, use the add_memory tool to store this rich context
         - Store context that would be valuable for future financial planning conversations
+        - Store personal information such as income range, net worth, major assets/liabilities if mentioned
+        - Store geographic context such as city/state and cost of living if mentioned
+        - Store demographic context such as age range, life stage, occupation type if mentioned
+        - Examples: "I make around $80,000 a year", "My net worth is about $250,000", "I own a house and a car"
         - Examples: "I want to save for a house", "I'm worried about retirement", "I prefer low-risk investments"
         """
         
         # Build system prompt for structured data extraction
-        system_prompt = f"""You are an onboarding assistant with TWO important jobs:
+        system_prompt = """You are an onboarding assistant with TWO important jobs:
         1. Extract profile data from user messages into the extracted_data field
         2. Generate a helpful response to the user in the user_response field
-        {tool_instructions}
+        """ + tool_instructions + """
 
         CRITICAL REQUIREMENTS:
         - ALWAYS provide a helpful, natural response to the user in user_response field
@@ -174,8 +182,8 @@ class OnboardingAgent:
         
         Example 1 - User provides profile data:
         User: "I'm 30 years old, work as a nurse in Florida, single with no kids"
-        Response: {{
-          "extracted_data": {{
+        Response: {
+          "extracted_data": {
             "age_range": "26_35",
             "life_stage": "early_career", 
             "occupation_type": "healthcare",
@@ -185,18 +193,18 @@ class OnboardingAgent:
             "total_dependents_count": 0,
             "children_count": 0,
             "caregiving_responsibilities": "none"
-          }},
+          },
           "completion_status": "complete",
           "user_response": "Your profile is now complete! Our financial advisors can help with your specific needs."
-        }}
+        }
         
         Example 2 - User asks question but provides NO profile data:
         User: "How should I invest my money?"
-        Response: {{
-          "extracted_data": {{}},
+        Response: {
+          "extracted_data": {},
           "completion_status": "incomplete",
           "user_response": "I'd be happy to help with investment advice! First, I need to understand your personal situation. Could you tell me your age range and occupation?"
-        }}
+        }
         
         REMEMBER: Always provide a helpful user_response. Never echo the user's message."""
         
@@ -332,6 +340,7 @@ class OnboardingAgent:
         
         # Check if the LLM made tool calls
         if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            self.logger.info("LLM requested tool usage")
             return "tools"
         else:
             return "update_database"
