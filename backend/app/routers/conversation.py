@@ -52,10 +52,8 @@ class ConversationHealthResponse(BaseModel):
     status: str
     graph_initialized: bool
     llm_available: bool
-    graphiti_available: bool
     test_response_received: bool
     error: Optional[str] = None
-    graphiti_error: Optional[str] = None
 
 
 # Create router
@@ -244,10 +242,8 @@ async def health_check(
             status=health_result["status"],
             graph_initialized=health_result["graph_initialized"],
             llm_available=health_result["llm_available"],
-            graphiti_available=health_result["graphiti_available"],
             test_response_received=health_result["test_response_received"],
-            error=health_result.get("error"),
-            graphiti_error=health_result.get("graphiti_error")
+            error=health_result.get("error")
         )
         
     except Exception as e:
@@ -255,8 +251,6 @@ async def health_check(
             status="unhealthy",
             graph_initialized=False,
             llm_available=False,
-            graphiti_available=False,
             test_response_received=False,
-            error=str(e),
-            graphiti_error=None
+            error=str(e)
         )

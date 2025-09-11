@@ -1,8 +1,6 @@
 from typing import Dict, Any, Optional
 import logging
 from .langgraph_config import get_langgraph_config
-from .financial_keywords import contains_financial_keywords
-from .mcp_clients.graphiti_client import get_graphiti_client
 
 
 class OrchestratorAgent:
@@ -54,13 +52,6 @@ class OrchestratorAgent:
                 session_id=effective_session_id
             )
             
-            # Check for financial keywords and store in Graphiti if detected
-            await self._store_financial_context_if_relevant(
-                user_message=user_message.strip(),
-                user_id=user_id,
-                session_id=effective_session_id,
-                agent_response=result.get("agent", "orchestrator")
-            )
             
             return result
             
@@ -149,16 +140,6 @@ class OrchestratorAgent:
             # Check if LLM is available
             llm_available = self.langgraph_config.llm is not None
             
-            # Check Graphiti MCP server connectivity
-            graphiti_available = False
-            graphiti_error = None
-            try:
-                graphiti_client = await get_graphiti_client()
-                graphiti_available = graphiti_client.is_connected()
-                if not graphiti_available:
-                    graphiti_error = "Graphiti MCP server not connected"
-            except Exception as e:
-                graphiti_error = f"Graphiti MCP server error: {str(e)}"
             
             if llm_available:
                 # Test basic functionality if LLM is available
@@ -174,15 +155,13 @@ class OrchestratorAgent:
                 test_response_received = False
                 error = "LLM not configured - API key missing"
             
-            # System is healthy if graph is initialized, regardless of LLM/Graphiti availability
+            # System is healthy if graph is initialized, regardless of LLM availability
             return {
                 "status": "healthy" if graph_initialized else "unhealthy",
                 "graph_initialized": graph_initialized,
                 "llm_available": llm_available,
-                "graphiti_available": graphiti_available,
                 "test_response_received": test_response_received,
-                "error": error,
-                "graphiti_error": graphiti_error
+                "error": error
             }
             
         except Exception as e:
@@ -192,52 +171,3 @@ class OrchestratorAgent:
                 "test_response_received": False,
                 "error": str(e)
             }
-    
-    async def _store_financial_context_if_relevant(
-        self,
-        user_message: str,
-        user_id: str,
-        session_id: str,
-        agent_response: str
-    ) -> None:
-        """
-        Store user message in Graphiti if it contains financial keywords.
-        
-        CRITICAL: Uses user_id as group_id for user data isolation.
-        Handles Graphiti storage errors gracefully without breaking conversation flow.
-        
-        Args:
-            user_message: The user's message to analyze
-            user_id: Authenticated user ID (used as group_id for isolation)
-            session_id: Conversation session identifier  
-            agent_response: The responding agent name
-        """
-        try:
-            # Check if message contains financial keywords
-            if not contains_financial_keywords(user_message):
-                self.logger.debug(f"No financial keywords detected in message from user {user_id}")
-                return
-            
-            # Get Graphiti client
-            graphiti_client = await get_graphiti_client()
-            
-            if not graphiti_client.is_connected():
-                self.logger.warning("Graphiti client not connected - skipping context storage")
-                return
-            
-            # Store episode with conversation context metadata
-            episode_metadata = f"agent_conversation | agent: {agent_response} | session: {session_id}"
-            
-            await graphiti_client.add_episode(
-                user_id=user_id,  # CRITICAL: user_id also used as group_id for data isolation
-                content=user_message,
-                name="Financial Conversation Context",
-                source_description=episode_metadata
-            )
-            
-            self.logger.info(f"Stored financial context for user {user_id} in session {session_id}")
-            
-        except Exception as e:
-            # Log error but don't break conversation flow
-            self.logger.error(f"Failed to store financial context for user {user_id}: {e}")
-            # Gracefully continue - Graphiti storage failure shouldn't break conversations
