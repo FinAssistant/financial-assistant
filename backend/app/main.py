@@ -22,6 +22,10 @@ async def app_lifespan(app: FastAPI):
     from app.ai.langgraph_config import setup_checkpointer
     await setup_checkpointer()
     
+    # Initialize Graphiti MCP tools for onboarding agent
+    from app.ai.onboarding import setup_graphiti_tools
+    await setup_graphiti_tools()
+    
     yield
     
     # Shutdown

@@ -4,8 +4,11 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
+from langgraph.prebuilt import ToolNode
+import logging
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
+from .mcp_clients.graphiti_client import get_graphiti_client
 
 
 # Structured output model for LLM responses
@@ -336,6 +339,49 @@ class OnboardingAgent:
         return self._graph
 
     
+
+
+# Global Graphiti tool node state
+_graphiti_tools = None
+_graphiti_tool_node = None
+
+
+async def setup_graphiti_tools() -> Optional[ToolNode]:
+    """Setup Graphiti MCP tools during FastAPI startup."""
+    global _graphiti_tools, _graphiti_tool_node
+    
+    try:
+        # Get Graphiti MCP client and tools
+        graphiti_client = await get_graphiti_client()
+        
+        if graphiti_client and graphiti_client.is_connected():
+            _graphiti_tools = graphiti_client.tools
+            if _graphiti_tools:
+                _graphiti_tool_node = ToolNode(_graphiti_tools)
+                logging.getLogger(__name__).info(f"Graphiti ToolNode initialized with tools: {[tool.name for tool in _graphiti_tools]}")
+                return _graphiti_tool_node
+            else:
+                logging.getLogger(__name__).warning("No Graphiti tools available")
+                return None
+        else:
+            logging.getLogger(__name__).warning("Graphiti MCP client not connected - no tools available")
+            return None
+            
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to setup Graphiti tools: {e}")
+        _graphiti_tools = None
+        _graphiti_tool_node = None
+        return None
+
+
+def get_graphiti_tool_node() -> Optional[ToolNode]:
+    """Get the initialized Graphiti ToolNode."""
+    return _graphiti_tool_node
+
+
+def get_graphiti_tools() -> Optional[list]:
+    """Get the Graphiti MCP tools list."""
+    return _graphiti_tools
 
 
 def create_onboarding_node():
