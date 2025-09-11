@@ -124,10 +124,24 @@ class OnboardingAgent:
         """Call LLM to process user message and extract profile data."""
         llm = llm_factory.create_llm()
         
+        # Bind Graphiti MCP tools to LLM (tools are guaranteed to be available)
+        graphiti_tools = get_graphiti_tools()
+        llm = llm.bind_tools(graphiti_tools)
+        
+        # Tool instructions for financial context storage
+        tool_instructions = """
+        
+        ADDITIONAL CAPABILITY - Financial Context Storage:
+        - If the user mentions financial goals, concerns, or preferences, use the add_memory tool to store this rich context
+        - Store context that would be valuable for future financial planning conversations
+        - Examples: "I want to save for a house", "I'm worried about retirement", "I prefer low-risk investments"
+        """
+        
         # Build system prompt for structured data extraction
-        system_prompt = """You are an onboarding assistant with TWO important jobs:
+        system_prompt = f"""You are an onboarding assistant with TWO important jobs:
         1. Extract profile data from user messages into the extracted_data field
         2. Generate a helpful response to the user in the user_response field
+        {tool_instructions}
 
         CRITICAL REQUIREMENTS:
         - ALWAYS provide a helpful, natural response to the user in user_response field
@@ -160,8 +174,8 @@ class OnboardingAgent:
         
         Example 1 - User provides profile data:
         User: "I'm 30 years old, work as a nurse in Florida, single with no kids"
-        Response: {
-          "extracted_data": {
+        Response: {{
+          "extracted_data": {{
             "age_range": "26_35",
             "life_stage": "early_career", 
             "occupation_type": "healthcare",
@@ -171,18 +185,18 @@ class OnboardingAgent:
             "total_dependents_count": 0,
             "children_count": 0,
             "caregiving_responsibilities": "none"
-          },
+          }},
           "completion_status": "complete",
           "user_response": "Your profile is now complete! Our financial advisors can help with your specific needs."
-        }
+        }}
         
         Example 2 - User asks question but provides NO profile data:
         User: "How should I invest my money?"
-        Response: {
-          "extracted_data": {},
+        Response: {{
+          "extracted_data": {{}},
           "completion_status": "incomplete",
           "user_response": "I'd be happy to help with investment advice! First, I need to understand your personal situation. Could you tell me your age range and occupation?"
-        }
+        }}
         
         REMEMBER: Always provide a helpful user_response. Never echo the user's message."""
         
@@ -312,23 +326,47 @@ class OnboardingAgent:
         else:
             return "end"
     
+    def _should_use_tools(self, state: OnboardingState) -> str:
+        """Determine if the LLM wants to use tools based on the last message."""
+        last_message = state.messages[-1]
+        
+        # Check if the LLM made tool calls
+        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            return "tools"
+        else:
+            return "update_database"
+    
     def graph_compile(self) -> StateGraph:
         """Compile and return the onboarding subgraph."""
         if self._graph is None:
             onb_builder = StateGraph(OnboardingState)
             
+            # Get pre-initialized Graphiti ToolNode (guaranteed to be available)
+            graphiti_tool_node = get_graphiti_tool_node()
+            
             # Add nodes
             onb_builder.add_node("read_database", self._read_db)
             onb_builder.add_node("call_llm", self._call_llm)
+            onb_builder.add_node("tools", graphiti_tool_node)
             onb_builder.add_node("update_database", self._update_db)
             onb_builder.add_node("update_global_state", self._update_main_graph)
 
-            # Add edges - always update database first, then check completion
+            # Add edges with tool routing
             onb_builder.add_edge(START, "read_database")
             onb_builder.add_edge("read_database", "call_llm")
-            onb_builder.add_edge("call_llm", "update_database")  # Always update DB first
+            
+            # Route from call_llm based on whether tools are needed
             onb_builder.add_conditional_edges(
-                "update_database",  # Check completion AFTER database update
+                "call_llm",
+                self._should_use_tools,
+                {"tools": "tools", "update_database": "update_database"}
+            )
+            # After tools execution, go to database update
+            onb_builder.add_edge("tools", "update_database")
+            
+            # Check completion after database update
+            onb_builder.add_conditional_edges(
+                "update_database",
                 self._check_profile_complete, 
                 {"update_global_state": "update_global_state", "end": END}
             )
@@ -346,7 +384,7 @@ _graphiti_tools = None
 _graphiti_tool_node = None
 
 
-async def setup_graphiti_tools() -> Optional[ToolNode]:
+async def setup_graphiti_tools() -> ToolNode:
     """Setup Graphiti MCP tools during FastAPI startup."""
     global _graphiti_tools, _graphiti_tool_node
     
@@ -354,33 +392,35 @@ async def setup_graphiti_tools() -> Optional[ToolNode]:
         # Get Graphiti MCP client and tools
         graphiti_client = await get_graphiti_client()
         
-        if graphiti_client and graphiti_client.is_connected():
-            _graphiti_tools = graphiti_client.tools
-            if _graphiti_tools:
-                _graphiti_tool_node = ToolNode(_graphiti_tools)
-                logging.getLogger(__name__).info(f"Graphiti ToolNode initialized with tools: {[tool.name for tool in _graphiti_tools]}")
-                return _graphiti_tool_node
-            else:
-                logging.getLogger(__name__).warning("No Graphiti tools available")
-                return None
-        else:
-            logging.getLogger(__name__).warning("Graphiti MCP client not connected - no tools available")
-            return None
+        if not graphiti_client or not graphiti_client.is_connected():
+            raise RuntimeError("Graphiti MCP client not connected - Graphiti is required for financial assistant")
+        
+        _graphiti_tools = graphiti_client.tools
+        if not _graphiti_tools:
+            raise RuntimeError("No Graphiti tools available - Graphiti tools are required for financial context storage")
+        
+        _graphiti_tool_node = ToolNode(_graphiti_tools)
+        logging.getLogger(__name__).info(f"Graphiti ToolNode initialized with tools: {[tool.name for tool in _graphiti_tools]}")
+        return _graphiti_tool_node
             
     except Exception as e:
         logging.getLogger(__name__).error(f"Failed to setup Graphiti tools: {e}")
         _graphiti_tools = None
         _graphiti_tool_node = None
-        return None
+        raise RuntimeError(f"Graphiti tools setup failed - this is a critical error: {e}") from e
 
 
-def get_graphiti_tool_node() -> Optional[ToolNode]:
+def get_graphiti_tool_node() -> ToolNode:
     """Get the initialized Graphiti ToolNode."""
+    if _graphiti_tool_node is None:
+        raise RuntimeError("Graphiti ToolNode not initialized - setup_graphiti_tools() must be called during startup")
     return _graphiti_tool_node
 
 
-def get_graphiti_tools() -> Optional[list]:
+def get_graphiti_tools() -> list:
     """Get the Graphiti MCP tools list."""
+    if _graphiti_tools is None:
+        raise RuntimeError("Graphiti tools not initialized - setup_graphiti_tools() must be called during startup")
     return _graphiti_tools
 
 
