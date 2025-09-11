@@ -18,10 +18,16 @@ async def app_lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up FastAPI application...")
     
+    # Initialize AsyncSqliteSaver checkpointer
+    from app.ai.langgraph_config import setup_checkpointer
+    await setup_checkpointer()
+    
     yield
     
     # Shutdown
     logger.info("Shutting down FastAPI application...")
+    from app.ai.langgraph_config import cleanup_checkpointer
+    await cleanup_checkpointer()
 
 
 

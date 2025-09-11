@@ -6,9 +6,7 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
-from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
-
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from app.core.config import settings
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
@@ -167,14 +165,13 @@ class LangGraphConfig:
     using GlobalState for cross-agent data sharing.
     """
     
-    def __init__(self):
+    def __init__(self, checkpointer: Optional[AsyncSqliteSaver] = None):
         """Initialize LangGraph configuration."""
         self.logger = logging.getLogger(__name__)
-        self.checkpointer: Optional[SqliteSaver] = None
+        self.checkpointer = checkpointer
         self.graph = None
         self.compiled_graph = None
         
-        self._initialize_checkpointer()
         self.onb_agent = create_onboarding_node()
         self._setup_graph()
         self.llm = llm_factory.create_llm()
@@ -182,20 +179,6 @@ class LangGraphConfig:
         if self.llm is None:
             self.logger.warning("LLM not available - no API key configured. Graph will fail on LLM calls.")
     
-    def _initialize_checkpointer(self) -> None:
-        """Initialize SQLite checkpointer for conversation persistence."""
-        if settings.langgraph_memory_type == "sqlite":
-            try:
-                # Create a SQLite connection and SqliteSaver
-                conn = sqlite3.connect(settings.langgraph_db_path, check_same_thread=False)
-                self.checkpointer = SqliteSaver(conn)
-                self.logger.info(f"SQLite checkpointer initialized at {settings.langgraph_db_path}")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize SQLite checkpointer: {e}")
-                self.logger.info("Falling back to in-memory conversation storage")
-                self.checkpointer = None
-        else:
-            self.logger.info("Using in-memory conversation storage")
     
     
     def _setup_graph(self) -> None:
@@ -360,7 +343,7 @@ Examples:
         
         return destination
     
-    def invoke_conversation(self, user_message: str, user_id: str, session_id: str) -> dict:
+    async def invoke_conversation(self, user_message: str, user_id: str, session_id: str) -> dict:
         """
         Process a user message through the conversation graph.
         
@@ -389,7 +372,7 @@ Examples:
         }
         
         # Process through graph - checkpointer automatically manages state persistence
-        result = self.graph.invoke(input_data, config)
+        result = await self.graph.ainvoke(input_data, config)
         
         # Extract the AI response
         ai_message = result["messages"][-1]
@@ -456,11 +439,50 @@ Examples:
 
 # Global instance
 _langgraph_config = None
+_checkpointer = None
+_checkpointer_context = None
+
+
+async def setup_checkpointer() -> Optional[AsyncSqliteSaver]:
+    """Setup AsyncSqliteSaver during FastAPI startup."""
+    global _checkpointer, _checkpointer_context
+    
+    if settings.langgraph_memory_type == "sqlite":
+        try:
+            # Create AsyncSqliteSaver from connection string and enter context
+            _checkpointer_context = AsyncSqliteSaver.from_conn_string(settings.langgraph_db_path)
+            _checkpointer = await _checkpointer_context.__aenter__()
+            logging.getLogger(__name__).info(f"AsyncSqliteSaver initialized at {settings.langgraph_db_path}")
+            return _checkpointer
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Failed to initialize AsyncSqliteSaver: {e}")
+            logging.getLogger(__name__).info("Falling back to in-memory conversation storage")
+            _checkpointer = None
+            _checkpointer_context = None
+            return None
+    else:
+        logging.getLogger(__name__).info("Using in-memory conversation storage")
+        return None
+
+
+async def cleanup_checkpointer() -> None:
+    """Cleanup AsyncSqliteSaver during FastAPI shutdown."""
+    global _checkpointer, _checkpointer_context
+    if _checkpointer_context:
+        try:
+            await _checkpointer_context.__aexit__(None, None, None)
+            logging.getLogger(__name__).info("AsyncSqliteSaver cleaned up")
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Error cleaning up AsyncSqliteSaver: {e}")
+        finally:
+            _checkpointer = None
+            _checkpointer_context = None
 
 
 def get_langgraph_config() -> LangGraphConfig:
     """Get or create the global LangGraph configuration instance."""
-    global _langgraph_config
+    logging.getLogger(__name__).info("Getting LangGraph configuration")
+    global _langgraph_config, _checkpointer
     if _langgraph_config is None:
-        _langgraph_config = LangGraphConfig()
+        _langgraph_config = LangGraphConfig(checkpointer=_checkpointer)
     return _langgraph_config
