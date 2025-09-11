@@ -13,6 +13,8 @@ import json
 
 from app.services.user_context_dao import UserContextDAOSync
 from app.services.auth_service import AuthService
+from app.services.llm_service import llm_factory
+from langchain_core.messages import SystemMessage
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,15 @@ class SpendingAgent:
         self._user_context_dao = UserContextDAOSync()
         self._auth_service = AuthService()
         self._mcp_clients = {}  # Cache MCP clients per user_id
+        
+        # Initialize LLM client for intelligent responses and analysis
+        try:
+            self.llm = llm_factory.create_llm()
+            logger.info("LLM client initialized for SpendingAgent")
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM client: {e}")
+            self.llm = None
+            
         self._setup_graph()
     
     def _setup_graph(self) -> None:
@@ -264,38 +275,96 @@ class SpendingAgent:
     
     def _route_intent_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
-        Route conversation based on intent detection.
+        Route conversation based on LLM-powered intent detection.
         
-        Subtask: Implement agent workflow routing based on conversation intent
+        Uses LLM to accurately classify user intent with context awareness.
         """
         last_message = state["messages"][-1] if state["messages"] else None
         
         if not isinstance(last_message, HumanMessage):
-            return {}
+            return {"detected_intent": "general_spending"}
         
-        user_input = last_message.content.lower()
+        user_input = last_message.content
+        user_context = state.get("user_context", {})
         
-        # FIXME: Implement LLM-based intent classification for more accurate routing
-        # Current: Simple keyword matching - replace with LLM call for proper intent detection
-        # Consider: OpenAI/Claude API call with predefined intent categories and examples
-        # This is a simple keyword-based routing - replace with proper intent detection
-        detected_intent = "general_spending"  # Default intent
+        # Build context-aware intent detection prompt
+        demographics = user_context.get("demographics", {})
+        financial_context = user_context.get("financial_context", {})
         
-        if any(keyword in user_input for keyword in ["save", "saving", "optimize"]):
-            detected_intent = "optimization"
-        elif any(keyword in user_input for keyword in ["spend", "spending", "expense"]):
-            detected_intent = "spending_analysis"
-        elif any(keyword in user_input for keyword in ["budget", "budgeting"]):
-            detected_intent = "budget_planning"
-        elif any(keyword in user_input for keyword in ["transaction", "purchase"]):
-            detected_intent = "transaction_query"
+        context_info = []
+        if demographics.get("age_range"):
+            context_info.append(f"Age: {demographics['age_range']}")
+        if demographics.get("occupation"):
+            context_info.append(f"Occupation: {demographics['occupation']}")
+        if financial_context.get("has_dependents"):
+            context_info.append("Has dependents")
         
-        logger.info(f"Detected intent: {detected_intent}")
+        context_str = "; ".join(context_info) if context_info else "No specific context available"
         
-        # Store intent for response generation
-        return {
-            "detected_intent": detected_intent
-        }
+        system_prompt = f"""You are an intent classifier for a financial spending assistant.
+Your task is to classify the user's intent into exactly ONE of these categories:
+
+INTENT CATEGORIES:
+1. spending_analysis - User wants to understand their spending patterns, analyze expenses, or review spending habits
+2. budget_planning - User wants to create, modify, or discuss budgets and financial planning
+3. optimization - User wants recommendations to reduce costs, save money, or optimize spending
+4. transaction_query - User wants to find specific transactions, purchases, or account activity
+5. general_spending - Default for general questions, greetings, or unclear financial topics
+
+USER CONTEXT: {context_str}
+
+EXAMPLES:
+- "How much did I spend on groceries?" → transaction_query
+- "I want to save money on my monthly expenses" → optimization  
+- "Help me create a monthly budget" → budget_planning
+- "What are my spending patterns this month?" → spending_analysis
+- "Hi, I need help with my finances" → general_spending
+
+Respond with exactly ONE word: spending_analysis, budget_planning, optimization, transaction_query, or general_spending."""
+
+        try:
+            if self.llm:
+                # Use LLM for intelligent intent detection - proper conversation format for all providers
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_input)
+                ]
+                response = self.llm.invoke(messages)
+                detected_intent = response.content.strip().lower()
+                
+                # Validate response is one of expected intents
+                valid_intents = ["spending_analysis", "budget_planning", "optimization", "transaction_query", "general_spending"]
+                if detected_intent not in valid_intents:
+                    logger.warning(f"LLM returned invalid intent: {detected_intent}, using default")
+                    detected_intent = "general_spending"
+                    
+                logger.info(f"LLM detected intent: {detected_intent}")
+            else:
+                # Fallback to keyword-based detection if LLM unavailable
+                detected_intent = self._fallback_intent_detection(user_input)
+                logger.info(f"Fallback detected intent: {detected_intent}")
+                
+        except Exception as e:
+            logger.error(f"Error in LLM intent detection: {e}")
+            detected_intent = self._fallback_intent_detection(user_input)
+            logger.info(f"Fallback detected intent after error: {detected_intent}")
+        
+        return {"detected_intent": detected_intent}
+    
+    def _fallback_intent_detection(self, user_input: str) -> str:
+        """Fallback keyword-based intent detection when LLM is unavailable."""
+        user_input_lower = user_input.lower()
+        
+        if any(keyword in user_input_lower for keyword in ["save", "saving", "optimize", "reduce", "cheaper"]):
+            return "optimization"
+        elif any(keyword in user_input_lower for keyword in ["spend", "spending", "expense", "pattern", "analysis"]):
+            return "spending_analysis"
+        elif any(keyword in user_input_lower for keyword in ["budget", "budgeting", "plan", "planning"]):
+            return "budget_planning"
+        elif any(keyword in user_input_lower for keyword in ["transaction", "purchase", "bought", "paid", "find"]):
+            return "transaction_query"
+        else:
+            return "general_spending"
     
     def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """

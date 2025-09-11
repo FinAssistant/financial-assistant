@@ -19,9 +19,13 @@ class TestSpendingAgent:
         self.agent = SpendingAgent()
     
     def test_spending_agent_initialization(self):
-        """Test SpendingAgent initializes correctly."""
+        """Test SpendingAgent initializes correctly with LLM client."""
         assert self.agent is not None
         assert self.agent.graph is not None
+        # LLM client should be initialized (mocked in test environment)
+        assert hasattr(self.agent, 'llm')
+        # In mocked test environment, LLM client might be None or mocked
+        # The important thing is the attribute exists and error handling works
         
     def test_get_spending_agent_singleton(self):
         """Test get_spending_agent returns singleton instance."""
@@ -46,27 +50,35 @@ class TestSpendingAgent:
         assert "financial_context" in result["user_context"]
     
     def test_route_intent_node_spending_keywords(self):
-        """Test _route_intent_node detects spending-related intents."""
-        test_cases = [
-            ("Tell me about my spending", "spending_analysis"),
-            ("How much did I spend this month?", "spending_analysis"),
-            ("Show me my expenses", "spending_analysis"),
-            ("Help me create a budget", "budget_planning"),
-            ("I need budgeting help", "budget_planning"),
-            ("How can I save money?", "optimization"),
-            ("Optimize my spending", "optimization"),
-            ("Find this transaction", "transaction_query"),
-            ("Show me my purchases", "transaction_query"),
-            ("Hello there", "general_spending")  # Default case
-        ]
+        """Test _route_intent_node detects spending-related intents using fallback logic."""
+        # Note: This test now verifies fallback behavior when LLM is unavailable
+        # For actual LLM-powered detection, see TestSpendingAgentLLMIntegration
         
-        for message_content, expected_intent in test_cases:
-            state = {
-                "messages": [HumanMessage(content=message_content)]
-            }
+        # Create agent without LLM to test fallback keyword detection
+        with patch('app.services.llm_service.llm_factory.create_llm', side_effect=Exception("No LLM")):
+            test_agent = SpendingAgent()
             
-            result = self.agent._route_intent_node(state)
-            assert result.get("detected_intent") == expected_intent
+            test_cases = [
+                ("Tell me about my spending", "spending_analysis"),
+                ("How much did I spend this month?", "spending_analysis"),
+                ("Show me my expenses", "spending_analysis"),
+                ("Help me create a budget", "budget_planning"),
+                ("I need budgeting help", "budget_planning"),
+                ("How can I save money?", "optimization"),
+                ("Optimize my spending", "optimization"),
+                ("Find this transaction", "transaction_query"),
+                ("Show me my purchases", "transaction_query"),
+                ("Hello there", "general_spending")  # Default case
+            ]
+            
+            for message_content, expected_intent in test_cases:
+                state = {
+                    "messages": [HumanMessage(content=message_content)],
+                    "user_context": {}
+                }
+                
+                result = test_agent._route_intent_node(state)
+                assert result.get("detected_intent") == expected_intent
     
     def test_route_intent_node_no_human_message(self):
         """Test _route_intent_node handles non-human messages gracefully."""
@@ -75,7 +87,7 @@ class TestSpendingAgent:
         }
         
         result = self.agent._route_intent_node(state)
-        assert result == {}
+        assert result.get("detected_intent") == "general_spending"
     
     def test_route_to_intent_node(self):
         """Test _route_to_intent_node returns correct intent."""
@@ -520,6 +532,185 @@ class TestSpendingAgent:
             # But both should validate to their respective users
             assert self.agent._auth_service.validate_access_token(jwt_token_1) == user_id_1
             assert self.agent._auth_service.validate_access_token(jwt_token_2) == user_id_2
+
+
+class TestSpendingAgentLLMIntegration:
+    """Test suite for SpendingAgent LLM integration features."""
+    
+    def setup_method(self):
+        """Setup method called before each test."""
+        with patch('app.services.llm_service.llm_factory.create_llm') as mock_llm_factory:
+            # Create a mock LLM that returns predictable responses
+            mock_llm = MagicMock()
+            mock_llm_factory.return_value = mock_llm
+            self.agent = SpendingAgent()
+            self.mock_llm = mock_llm
+    
+    def test_llm_initialization_success(self):
+        """Test LLM client initializes successfully."""
+        assert self.agent.llm is not None
+        assert self.agent.llm == self.mock_llm
+    
+    def test_llm_initialization_failure(self):
+        """Test graceful handling of LLM initialization failure."""
+        with patch('app.services.llm_service.llm_factory.create_llm', side_effect=Exception("LLM unavailable")):
+            agent = SpendingAgent()
+            assert agent.llm is None
+    
+    def test_llm_powered_intent_detection(self):
+        """Test LLM-powered intent detection with various user inputs."""
+        # Mock LLM response for different intents
+        test_cases = [
+            ("I want to analyze my spending patterns", "spending_analysis"),
+            ("Help me create a budget", "budget_planning"),
+            ("How can I save money on groceries?", "optimization"),
+            ("Find my transaction from yesterday", "transaction_query"),
+            ("Hello, I need financial help", "general_spending")
+        ]
+        
+        for user_message, expected_intent in test_cases:
+            # Configure mock LLM to return the expected intent
+            mock_response = MagicMock()
+            mock_response.content = expected_intent
+            self.mock_llm.invoke.return_value = mock_response
+            
+            state = {
+                "messages": [HumanMessage(content=user_message)],
+                "user_context": {
+                    "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                    "financial_context": {"has_dependents": False}
+                }
+            }
+            
+            result = self.agent._route_intent_node(state)
+            
+            assert result["detected_intent"] == expected_intent
+            self.mock_llm.invoke.assert_called()
+            
+            # Verify system prompt includes user context
+            call_args = self.mock_llm.invoke.call_args[0][0]
+            system_message = call_args[0]
+            assert "Age: 26_35" in system_message.content
+            assert "Occupation: engineer" in system_message.content
+    
+    def test_llm_intent_detection_with_invalid_response(self):
+        """Test handling of invalid LLM response in intent detection."""
+        # Mock LLM to return invalid intent
+        mock_response = MagicMock()
+        mock_response.content = "invalid_intent_response"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        state = {
+            "messages": [HumanMessage(content="Help me with my finances")],
+            "user_context": {}
+        }
+        
+        result = self.agent._route_intent_node(state)
+        
+        # Should fall back to default
+        assert result["detected_intent"] == "general_spending"
+    
+    def test_llm_intent_detection_error_fallback(self):
+        """Test fallback to keyword-based detection when LLM fails."""
+        # Mock LLM to raise an exception
+        self.mock_llm.invoke.side_effect = Exception("LLM API error")
+        
+        state = {
+            "messages": [HumanMessage(content="I want to optimize my spending")],
+            "user_context": {}
+        }
+        
+        result = self.agent._route_intent_node(state)
+        
+        # Should use fallback keyword detection
+        assert result["detected_intent"] == "optimization"
+    
+    def test_llm_unavailable_fallback(self):
+        """Test intent detection when LLM is completely unavailable."""
+        # Create agent with no LLM
+        with patch('app.services.llm_service.llm_factory.create_llm', side_effect=Exception("No LLM")):
+            agent = SpendingAgent()
+            
+            state = {
+                "messages": [HumanMessage(content="Help me with budgeting")],
+                "user_context": {}
+            }
+            
+            result = agent._route_intent_node(state)
+            
+            # Should use fallback keyword detection
+            assert result["detected_intent"] == "budget_planning"
+    
+    def test_fallback_intent_detection_accuracy(self):
+        """Test accuracy of fallback keyword-based intent detection."""
+        test_cases = [
+            ("I want to save money and optimize costs", "optimization"),
+            ("Help me reduce my spending", "optimization"),
+            ("Show me my spending patterns and expense analysis", "spending_analysis"),
+            ("Create a monthly budget plan", "budget_planning"),
+            ("Find the transaction I made yesterday", "transaction_query"),
+            ("What did I purchase at the grocery store?", "transaction_query"),
+            ("Hello, I'm new here", "general_spending")
+        ]
+        
+        for user_input, expected_intent in test_cases:
+            result = self.agent._fallback_intent_detection(user_input)
+            assert result == expected_intent
+    
+    def test_context_aware_intent_detection(self):
+        """Test that LLM intent detection includes user context in prompts."""
+        mock_response = MagicMock()
+        mock_response.content = "spending_analysis"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Test with rich user context
+        state = {
+            "messages": [HumanMessage(content="How am I doing financially?")],
+            "user_context": {
+                "demographics": {
+                    "age_range": "36_45",
+                    "occupation": "teacher"
+                },
+                "financial_context": {
+                    "has_dependents": True
+                }
+            }
+        }
+        
+        self.agent._route_intent_node(state)
+        
+        # Verify LLM was called with context-rich prompt
+        call_args = self.mock_llm.invoke.call_args[0][0]
+        system_message = call_args[0]
+        system_prompt = system_message.content
+        
+        assert "Age: 36_45" in system_prompt
+        assert "Occupation: teacher" in system_prompt
+        assert "Has dependents" in system_prompt
+        assert "INTENT CATEGORIES:" in system_prompt
+        assert "EXAMPLES:" in system_prompt
+    
+    def test_context_aware_intent_detection_minimal_context(self):
+        """Test LLM intent detection with minimal user context."""
+        mock_response = MagicMock()
+        mock_response.content = "general_spending"
+        self.mock_llm.invoke.return_value = mock_response
+        
+        # Test with empty context
+        state = {
+            "messages": [HumanMessage(content="Hi there")],
+            "user_context": {
+                "demographics": {},
+                "financial_context": {}
+            }
+        }
+        
+        self.agent._route_intent_node(state)
+        
+        # Verify system prompt handles empty context gracefully
+        call_args = self.mock_llm.invoke.call_args[0][0]
+        system_message = call_args[0]
+        assert "No specific context available" in system_message.content
 
 if __name__ == "__main__":
     pytest.main([__file__])
