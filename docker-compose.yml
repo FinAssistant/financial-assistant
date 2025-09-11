@@ -69,7 +69,8 @@ services:
       - graphiti-mcp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
+      # The health check calls the LLM, so keep the interval long
+      interval: 300s
       timeout: 10s
       retries: 3
       start_period: 40s

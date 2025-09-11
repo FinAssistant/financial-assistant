@@ -51,8 +51,11 @@ class ConversationHealthResponse(BaseModel):
     """Response model for conversation health check."""
     status: str
     graph_initialized: bool
+    llm_available: bool
+    graphiti_available: bool
     test_response_received: bool
     error: Optional[str] = None
+    graphiti_error: Optional[str] = None
 
 
 # Create router
@@ -110,7 +113,7 @@ async def send_message(
             
             try:
                 # Get response from orchestrator
-                ai_response = orchestrator.process_message(
+                ai_response = await orchestrator.process_message(
                     user_message=last_message.content.strip(),
                     user_id=current_user,
                     session_id=session_id
@@ -188,7 +191,7 @@ async def send_message_non_streaming(
     
     try:
         # Process message through orchestrator
-        ai_response = orchestrator.process_message(
+        ai_response = await orchestrator.process_message(
             user_message=last_message.content.strip(),
             user_id=current_user,
             session_id=session_id
@@ -228,19 +231,25 @@ async def health_check(
     Requires authentication to prevent abuse.
     """
     try:
-        health_result = orchestrator.health_check()
+        health_result = await orchestrator.health_check()
         
         return ConversationHealthResponse(
             status=health_result["status"],
             graph_initialized=health_result["graph_initialized"],
+            llm_available=health_result["llm_available"],
+            graphiti_available=health_result["graphiti_available"],
             test_response_received=health_result["test_response_received"],
-            error=health_result.get("error")
+            error=health_result.get("error"),
+            graphiti_error=health_result.get("graphiti_error")
         )
         
     except Exception as e:
         return ConversationHealthResponse(
             status="unhealthy",
             graph_initialized=False,
+            llm_available=False,
+            graphiti_available=False,
             test_response_received=False,
-            error=str(e)
+            error=str(e),
+            graphiti_error=None
         )
