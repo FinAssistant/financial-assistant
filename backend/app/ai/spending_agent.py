@@ -118,6 +118,58 @@ class SpendingAgent:
         
         logger.info("SpendingAgent subgraph initialized with conditional routing")
     
+    def _build_user_context_string(self, user_context: Dict[str, Any]) -> str:
+        """
+        Build a formatted user context string for LLM prompts.
+        Reusable across all LLM-powered response generation nodes in SpendingAgent.
+        
+        Args:
+            user_context: Dictionary containing user demographics and financial context
+                Expected structure: {
+                    "demographics": {"age_range": "26_35", "occupation": "engineer", ...},
+                    "financial_context": {"has_dependents": False, ...}
+                }
+            
+        Returns:
+            Formatted string with user context information suitable for LLM prompts
+        """
+        if not user_context:
+            return "No user context available."
+        
+        context_parts = []
+        
+        # Demographics from nested structure
+        demographics = user_context.get("demographics", {})
+        if demographics.get("age_range"):
+            context_parts.append(f"Age range: {demographics['age_range']}")
+        if demographics.get("occupation"):
+            context_parts.append(f"Occupation: {demographics['occupation']}")
+        if demographics.get("life_stage"):
+            context_parts.append(f"Life stage: {demographics['life_stage']}")
+        if demographics.get("location"):
+            context_parts.append(f"Location: {demographics['location']}")
+        
+        # Financial context from nested structure
+        financial_context = user_context.get("financial_context", {})
+        if financial_context.get("has_dependents") is not None:
+            has_deps = "Yes" if financial_context["has_dependents"] else "No"
+            context_parts.append(f"Has dependents: {has_deps}")
+        if financial_context.get("income_range"):
+            context_parts.append(f"Income range: {financial_context['income_range']}")
+        if financial_context.get("employment_status"):
+            context_parts.append(f"Employment: {financial_context['employment_status']}")
+        
+        # Additional fields that might be present
+        if demographics.get("education_level"):
+            context_parts.append(f"Education: {demographics['education_level']}")
+        if demographics.get("marital_status"):
+            context_parts.append(f"Marital status: {demographics['marital_status']}")
+        
+        if context_parts:
+            return "; ".join(context_parts)
+        else:
+            return "Limited user context available."
+
     def _route_to_intent_node(self, state: SpendingAgentState) -> str:
         """
         Router function to determine which intent-specific node to route to.
@@ -287,19 +339,8 @@ class SpendingAgent:
         user_input = last_message.content
         user_context = state.get("user_context", {})
         
-        # Build context-aware intent detection prompt
-        demographics = user_context.get("demographics", {})
-        financial_context = user_context.get("financial_context", {})
-        
-        context_info = []
-        if demographics.get("age_range"):
-            context_info.append(f"Age: {demographics['age_range']}")
-        if demographics.get("occupation"):
-            context_info.append(f"Occupation: {demographics['occupation']}")
-        if financial_context.get("has_dependents"):
-            context_info.append("Has dependents")
-        
-        context_str = "; ".join(context_info) if context_info else "No specific context available"
+        # Build context-aware intent detection prompt using shared utility
+        context_str = self._build_user_context_string(user_context)
         
         system_prompt = f"""You are an intent classifier for a financial spending assistant.
 Your task is to classify the user's intent into exactly ONE of these categories:
@@ -369,16 +410,90 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
     def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
         Specialized node for spending analysis intent.
-        
-        FIXME: Implement real spending analysis with transaction data integration
-        and use LLM-based response generation with professional tone
+        Uses LLM to generate personalized spending analysis based on available data.
         """
-        response_content = "I'll analyze your spending patterns and provide insights based on your transaction history. Please allow me a moment to process your financial data."
+        
+        # Build user context string from state
+        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        
+        # FIXME: Integrate processed insights from state.spending_insights (Graphiti cache)
+        # 1. Processed insights from state.spending_insights (Graphiti cache)
+        # 2. Historical patterns and categorization data
+        # 3. Budget vs actual spending comparisons
+        
+        # For now, use mock data structure to demonstrate LLM integration
+        mock_spending_data = {
+            "total_monthly_spending": 3250.00,
+            "top_categories": [
+                {"name": "Food & Dining", "amount": 850.00, "percentage": 26.2},
+                {"name": "Transportation", "amount": 650.00, "percentage": 20.0},
+                {"name": "Shopping", "amount": 420.00, "percentage": 12.9}
+            ],
+            "trends": {
+                "month_over_month_change": -5.2,
+                "unusual_spending": "Higher than usual restaurant spending detected"
+            }
+        }
+        
+        # Build comprehensive system prompt
+        system_prompt = f"""You are a professional financial advisor providing personalized spending analysis.
+
+USER CONTEXT:
+{user_context_str}
+
+SPENDING DATA ANALYSIS:
+- Total Monthly Spending: ${mock_spending_data['total_monthly_spending']:,.2f}
+- Top Spending Categories:
+  * {mock_spending_data['top_categories'][0]['name']}: ${mock_spending_data['top_categories'][0]['amount']:.2f} ({mock_spending_data['top_categories'][0]['percentage']:.1f}%)
+  * {mock_spending_data['top_categories'][1]['name']}: ${mock_spending_data['top_categories'][1]['amount']:.2f} ({mock_spending_data['top_categories'][1]['percentage']:.1f}%)
+  * {mock_spending_data['top_categories'][2]['name']}: ${mock_spending_data['top_categories'][2]['amount']:.2f} ({mock_spending_data['top_categories'][2]['percentage']:.1f}%)
+- Month-over-Month Change: {mock_spending_data['trends']['month_over_month_change']:+.1f}%
+- Notable Trend: {mock_spending_data['trends']['unusual_spending']}
+
+INSTRUCTIONS:
+1. Provide a conversational, personalized analysis of their spending patterns
+2. Highlight key insights and trends specific to their financial situation
+3. Consider their user context (age, occupation, family status) in your analysis
+4. Offer 2-3 actionable recommendations for improvement
+5. Maintain a professional yet approachable tone
+6. Keep response concise but informative (3-4 paragraphs)
+7. Use specific numbers and percentages from the data
+
+Generate a comprehensive spending analysis response now."""
+
+        # Get the last human message for context
+        last_human_message = None
+        messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                last_human_message = msg.content
+                break
+        
+        # Create messages for LLM
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=last_human_message or "Please analyze my spending patterns")
+        ]
+        
+        # Generate LLM response
+        if self.llm is None:
+            # Simple fallback when LLM is not available
+            response_content = "I apologize, but my spending analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        else:
+            try:
+                llm_response = self.llm.invoke(messages)
+                response_content = llm_response.content
+            except Exception as e:
+                logger.error(f"LLM call failed in spending analysis: {e}")
+                # Simple fallback when analysis is temporarily unavailable
+                response_content = "I apologize, but my spending analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
-                "intent": "spending_analysis"
+                "intent": "spending_analysis",
+                "llm_powered": True
             }
         )
         return {"messages": [response]}
@@ -386,16 +501,83 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
     def _budget_planning_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
         Specialized node for budget planning intent.
-        
-        FIXME: Implement real budget planning algorithms
-        and use LLM-based response generation with professional tone
+        Uses LLM to generate personalized budget planning guidance based on user context.
         """
-        response_content = "I can assist with budget planning by analyzing your income, expenses, and financial goals to create a suitable budget framework."
+        
+        # Build user context string from state
+        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        
+        # FIXME: Integrate real financial data from these sources:
+        # 1. Current spending patterns from state.spending_insights
+        # 2. Income information from user financial context
+        # 3. Existing budget data if available
+        # 4. Financial goals and priorities
+        
+        # For now, use mock data to demonstrate LLM integration
+        mock_financial_data = {
+            "monthly_income": 5500.00,
+            "current_spending": 3250.00,
+            "available_for_budget": 2250.00,
+            "debt_payments": 450.00,
+            "emergency_fund_target": 16500.00  # 3 months expenses
+        }
+        
+        # Build comprehensive system prompt for budget planning
+        system_prompt = f"""You are a professional financial advisor providing personalized budget planning guidance.
+
+USER CONTEXT:
+{user_context_str}
+
+FINANCIAL SITUATION:
+- Monthly Income: ${mock_financial_data['monthly_income']:,.2f}
+- Current Monthly Spending: ${mock_financial_data['current_spending']:,.2f}
+- Available for Budgeting: ${mock_financial_data['available_for_budget']:,.2f}
+- Current Debt Payments: ${mock_financial_data['debt_payments']:,.2f}
+- Emergency Fund Target: ${mock_financial_data['emergency_fund_target']:,.2f}
+
+INSTRUCTIONS:
+1. Provide personalized budget planning advice based on their financial situation
+2. Consider their user context (age, occupation, family status) in your recommendations
+3. Suggest specific budget categories and allocation percentages
+4. Address emergency fund building, debt management, and savings goals
+5. Offer 2-3 actionable next steps for implementing their budget
+6. Maintain a supportive and encouraging tone
+7. Keep response comprehensive but digestible (4-5 paragraphs)
+8. Use specific dollar amounts and percentages from the data
+
+Generate personalized budget planning guidance now."""
+
+        # Get the last human message for context
+        last_human_message = None
+        messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                last_human_message = msg.content
+                break
+        
+        # Create messages for LLM
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=last_human_message or "Help me create a budget")
+        ]
+        
+        # Generate LLM response with error handling
+        if self.llm is None:
+            response_content = "I apologize, but my budget planning service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        else:
+            try:
+                llm_response = self.llm.invoke(messages)
+                response_content = llm_response.content
+            except Exception as e:
+                logger.error(f"LLM call failed in budget planning: {e}")
+                response_content = "I apologize, but my budget planning service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
-                "intent": "budget_planning"
+                "intent": "budget_planning",
+                "llm_powered": True
             }
         )
         return {"messages": [response]}
@@ -403,16 +585,89 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
     def _optimization_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
         Specialized node for spending optimization intent.
-        
-        FIXME: Implement real optimization algorithms and recommendations
-        and use LLM-based response generation with professional tone
+        Uses LLM to generate personalized cost reduction and optimization recommendations.
         """
-        response_content = "I'll analyze your spending patterns to identify optimization opportunities and provide cost reduction recommendations."
+        
+        # Build user context string from state
+        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        
+        # FIXME: Integrate real optimization data from these sources:
+        # 1. Spending patterns and categories from state.spending_insights
+        # 2. Subscription and recurring payment analysis
+        # 3. Historical spending trends and outliers
+        # 4. Category-wise optimization opportunities
+        
+        # For now, use mock data to demonstrate LLM integration
+        mock_optimization_data = {
+            "monthly_spending": 3250.00,
+            "optimization_opportunities": [
+                {"category": "Food & Dining", "current": 850.00, "potential_savings": 200.00, "optimization": "meal planning"},
+                {"category": "Subscriptions", "current": 89.00, "potential_savings": 35.00, "optimization": "cancel unused services"},
+                {"category": "Transportation", "current": 650.00, "potential_savings": 150.00, "optimization": "carpooling/transit"}
+            ],
+            "total_potential_savings": 385.00,
+            "highest_impact": "Food & Dining"
+        }
+        
+        # Build comprehensive system prompt for optimization
+        system_prompt = f"""You are a financial optimization expert providing personalized cost-saving recommendations.
+
+USER CONTEXT:
+{user_context_str}
+
+SPENDING OPTIMIZATION ANALYSIS:
+- Current Monthly Spending: ${mock_optimization_data['monthly_spending']:,.2f}
+- Total Potential Savings: ${mock_optimization_data['total_potential_savings']:,.2f}
+- Highest Impact Category: {mock_optimization_data['highest_impact']}
+
+OPTIMIZATION OPPORTUNITIES:
+1. {mock_optimization_data['optimization_opportunities'][0]['category']}: ${mock_optimization_data['optimization_opportunities'][0]['current']:,.2f} → Save ${mock_optimization_data['optimization_opportunities'][0]['potential_savings']:,.2f} through {mock_optimization_data['optimization_opportunities'][0]['optimization']}
+2. {mock_optimization_data['optimization_opportunities'][1]['category']}: ${mock_optimization_data['optimization_opportunities'][1]['current']:,.2f} → Save ${mock_optimization_data['optimization_opportunities'][1]['potential_savings']:,.2f} through {mock_optimization_data['optimization_opportunities'][1]['optimization']}  
+3. {mock_optimization_data['optimization_opportunities'][2]['category']}: ${mock_optimization_data['optimization_opportunities'][2]['current']:,.2f} → Save ${mock_optimization_data['optimization_opportunities'][2]['potential_savings']:,.2f} through {mock_optimization_data['optimization_opportunities'][2]['optimization']}
+
+INSTRUCTIONS:
+1. Provide personalized cost-saving recommendations based on their spending patterns
+2. Consider their user context (age, occupation, family status) when suggesting optimizations
+3. Prioritize recommendations by potential impact and ease of implementation
+4. Offer specific, actionable strategies for each optimization opportunity
+5. Include both immediate cost-cutting and long-term saving strategies
+6. Maintain an encouraging and practical tone
+7. Keep response focused and actionable (3-4 paragraphs)
+8. Use specific dollar amounts and percentages from the data
+
+Generate personalized spending optimization recommendations now."""
+
+        # Get the last human message for context
+        last_human_message = None
+        messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                last_human_message = msg.content
+                break
+        
+        # Create messages for LLM
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=last_human_message or "Help me optimize my spending and reduce costs")
+        ]
+        
+        # Generate LLM response with error handling
+        if self.llm is None:
+            response_content = "I apologize, but my spending optimization service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        else:
+            try:
+                llm_response = self.llm.invoke(messages)
+                response_content = llm_response.content
+            except Exception as e:
+                logger.error(f"LLM call failed in optimization: {e}")
+                response_content = "I apologize, but my spending optimization service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
-                "intent": "optimization"
+                "intent": "optimization",
+                "llm_powered": True
             }
         )
         return {"messages": [response]}
@@ -435,10 +690,56 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         found_in_graphiti = False
         transaction_insights = []
         
+        # Build user context string from state
+        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        
         if found_in_graphiti:
-            # Return results from Graphiti
-            response_content = f"I found {len(transaction_insights)} transaction insights in your history. Here's your transaction analysis based on previous processing."
+            # Generate LLM-powered response for existing transaction insights
             logger.info(f"Returning {len(transaction_insights)} transaction insights from Graphiti for user {user_id}")
+            
+            # Get the last human message for context
+            last_human_message = None
+            messages = state.get("messages", [])
+            for msg in reversed(messages):
+                if isinstance(msg, HumanMessage):
+                    last_human_message = msg.content
+                    break
+            
+            system_prompt = f"""You are a transaction analysis expert presenting existing transaction insights to the user.
+
+USER CONTEXT:
+{user_context_str}
+
+AVAILABLE DATA:
+- Found {len(transaction_insights)} transaction insights in user's history
+- Data was previously processed and stored in your knowledge base
+
+INSTRUCTIONS:
+1. Acknowledge that you found their transaction data
+2. Provide a warm introduction to the insights you'll share
+3. Consider their user context when presenting the information
+4. Set expectations about the type of analysis you'll provide
+5. Maintain a professional yet approachable tone
+6. Keep response concise and engaging (1-2 paragraphs)
+
+Generate a personalized introduction to their transaction insights now."""
+            
+            # Create messages for LLM
+            llm_messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=last_human_message or "Show me my transaction data")
+            ]
+            
+            # Generate LLM response with error handling
+            if self.llm is None:
+                response_content = "I apologize, but my transaction analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+            else:
+                try:
+                    llm_response = self.llm.invoke(llm_messages)
+                    response_content = llm_response.content
+                except Exception as e:
+                    logger.error(f"LLM call failed in transaction query (Graphiti): {e}")
+                    response_content = "I apologize, but my transaction analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
         else:
             # No data in Graphiti - need to fetch from Plaid
             response_content = "Let me fetch your latest transaction data and analyze it for you. This will take a moment to process."
@@ -449,7 +750,8 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
             additional_kwargs={
                 "agent": "spending_agent",
                 "intent": "transaction_query",
-                "data_source": "graphiti" if found_in_graphiti else "needs_plaid_fetch"
+                "data_source": "graphiti" if found_in_graphiti else "needs_plaid_fetch",
+                "llm_powered": True
             }
         )
         
@@ -461,17 +763,67 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
     
     def _general_spending_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
-        Specialized node for general spending inquiries (default).
-        
-        FIXME: Implement context-aware general responses
-        and use LLM-based response generation with professional tone
+        Specialized node for general spending inquiries and introductory guidance.
+        Uses LLM to provide personalized welcome and guidance based on user context.
         """
-        response_content = "I'm your spending analysis agent. I can provide insights on spending patterns, budget planning, optimization recommendations, and transaction analysis. How may I assist you?"
+        
+        # Build user context string from state
+        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        
+        # Build comprehensive system prompt for general guidance
+        system_prompt = f"""You are a friendly and professional financial advisor providing general guidance and introductions to financial services.
+
+USER CONTEXT:
+{user_context_str}
+
+YOUR CAPABILITIES:
+- Spending Pattern Analysis: Analyze transaction history and spending habits
+- Budget Planning: Help create personalized budgets based on income and expenses
+- Spending Optimization: Identify opportunities to reduce costs and save money  
+- Transaction Queries: Help find and analyze specific transactions or purchases
+
+INSTRUCTIONS:
+1. Provide a warm, personalized welcome based on their user context
+2. Briefly introduce your capabilities in an approachable way
+3. Consider their demographic context when tailoring your introduction
+4. Ask an engaging follow-up question to understand their specific financial needs
+5. Keep the tone conversational, helpful, and encouraging
+6. Keep response concise but comprehensive (2-3 paragraphs)
+7. Make them feel comfortable asking about any financial topic
+
+Generate a personalized introduction and guidance now."""
+
+        # Get the last human message for context
+        last_human_message = None
+        messages = state.get("messages", [])
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                last_human_message = msg.content
+                break
+        
+        # Create messages for LLM
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=last_human_message or "Hello, I need help with my finances")
+        ]
+        
+        # Generate LLM response with error handling
+        if self.llm is None:
+            response_content = "I apologize, but my financial guidance service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        else:
+            try:
+                llm_response = self.llm.invoke(messages)
+                response_content = llm_response.content
+            except Exception as e:
+                logger.error(f"LLM call failed in general spending: {e}")
+                response_content = "I apologize, but my financial guidance service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
-                "intent": "general_spending"
+                "intent": "general_spending",
+                "llm_powered": True
             }
         )
         return {"messages": [response]}

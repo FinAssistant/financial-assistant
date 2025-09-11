@@ -100,12 +100,25 @@ class TestSpendingAgent:
         result = self.agent._route_to_intent_node(empty_state)
         assert result == "general_spending"
     
-    def test_spending_analysis_node(self):
+    def test_spending_analysis_node(self, mock_llm_factory):
         """Test _spending_analysis_node generates appropriate responses."""
-        test_state = {
-            "messages": [HumanMessage(content="Tell me about my spending")],
-            "detected_intent": "spending_analysis"
-        }
+        from app.ai.spending_agent import SpendingAgentState
+        
+        # Mock the LLM to return a proper spending analysis response
+        mock_llm_factory.invoke.return_value = AIMessage(
+            content="Based on your spending data, I can see you spent $3,250.00 this month. Your largest expense category is Food & Dining, which represents a significant portion of your budget. I'd recommend reviewing your dining expenses and consider meal planning to optimize costs.",
+            additional_kwargs={'refusal': None}
+        )
+        
+        test_state = SpendingAgentState(
+            messages=[HumanMessage(content="Tell me about my spending")],
+            user_id="test_user_123",
+            session_id="test_session",
+            user_context={
+                "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                "financial_context": {"has_dependents": False}
+            }
+        )
         
         result = self.agent._spending_analysis_node(test_state)
         assert "messages" in result
@@ -115,10 +128,13 @@ class TestSpendingAgent:
         assert isinstance(ai_message, AIMessage)
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "spending_analysis"
-        assert "analyze" in ai_message.content.lower()
+        assert ai_message.additional_kwargs["llm_powered"] is True
+        assert "spending" in ai_message.content.lower() or "expense" in ai_message.content.lower()
     
     def test_specialized_intent_nodes(self):
         """Test all specialized intent nodes work correctly."""
+        from app.ai.spending_agent import SpendingAgentState
+        
         intent_nodes = [
             ("spending_analysis", self.agent._spending_analysis_node),
             ("budget_planning", self.agent._budget_planning_node),
@@ -128,10 +144,15 @@ class TestSpendingAgent:
         ]
         
         for intent, node_method in intent_nodes:
-            state = {
-                "messages": [HumanMessage(content="Test message")],
-                "detected_intent": intent
-            }
+            state = SpendingAgentState(
+                messages=[HumanMessage(content="Test message")],
+                user_id="test_user_123", 
+                session_id="test_session",
+                user_context={
+                    "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                    "financial_context": {"has_dependents": False}
+                }
+            )
             
             result = node_method(state)
             assert "messages" in result
@@ -590,7 +611,7 @@ class TestSpendingAgentLLMIntegration:
             # Verify system prompt includes user context
             call_args = self.mock_llm.invoke.call_args[0][0]
             system_message = call_args[0]
-            assert "Age: 26_35" in system_message.content
+            assert "Age range: 26_35" in system_message.content
             assert "Occupation: engineer" in system_message.content
     
     def test_llm_intent_detection_with_invalid_response(self):
@@ -684,9 +705,9 @@ class TestSpendingAgentLLMIntegration:
         system_message = call_args[0]
         system_prompt = system_message.content
         
-        assert "Age: 36_45" in system_prompt
+        assert "Age range: 36_45" in system_prompt
         assert "Occupation: teacher" in system_prompt
-        assert "Has dependents" in system_prompt
+        assert "Has dependents: Yes" in system_prompt
         assert "INTENT CATEGORIES:" in system_prompt
         assert "EXAMPLES:" in system_prompt
     
@@ -710,7 +731,7 @@ class TestSpendingAgentLLMIntegration:
         # Verify system prompt handles empty context gracefully
         call_args = self.mock_llm.invoke.call_args[0][0]
         system_message = call_args[0]
-        assert "No specific context available" in system_message.content
+        assert "Limited user context available" in system_message.content
 
 if __name__ == "__main__":
     pytest.main([__file__])
