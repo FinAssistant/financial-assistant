@@ -1,8 +1,7 @@
-import pytest
 import jwt
 from datetime import datetime, timedelta, timezone
 
-from app.services.auth_service import AuthService, LoginCredentials, RegisterData, AuthResult
+from app.services.auth_service import AuthService, LoginCredentials, RegisterData
 
 
 class TestAuthService:

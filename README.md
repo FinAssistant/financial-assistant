@@ -176,6 +176,18 @@ PORT=8000
 # Security
 SECRET_KEY=your-production-secret-key
 
+# LLM Provider Configuration (Required for AI features)
+DEFAULT_LLM_PROVIDER=openai          # Choose: openai, anthropic, or google
+OPENAI_API_KEY=sk-your-openai-key-here
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here  
+GOOGLE_API_KEY=your-google-api-key-here
+OPENAI_MODEL=gpt-4o
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+GOOGLE_MODEL=gemini-2.5-flash
+LLM_MAX_TOKENS=4096
+LLM_TEMPERATURE=0.7
+LLM_REQUEST_TIMEOUT=60
+
 # MCP Server Configuration
 MCP_SERVER_NAME=financial-assistant-mcp
 MCP_SERVER_VERSION=0.1.0
@@ -188,6 +200,36 @@ PLAID_SECRET=your-plaid-secret
 PLAID_ENV=sandbox
 PLAID_PRODUCTS=["transactions", "accounts", "balances"]
 ```
+
+#### LLM Provider Setup
+
+The application supports **OpenAI**, **Anthropic Claude**, and **Google Gemini** for AI conversations:
+
+1. **Choose a provider** and get an API key:
+   - **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+   - **Anthropic**: [console.anthropic.com](https://console.anthropic.com/)
+   - **Google**: [makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
+
+2. **Set your provider** and API key:
+   ```bash
+   # For OpenAI (recommended)
+   DEFAULT_LLM_PROVIDER=openai
+   OPENAI_API_KEY=sk-your-openai-key-here
+   
+   # For Anthropic Claude (advanced reasoning)
+   DEFAULT_LLM_PROVIDER=anthropic
+   ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
+   
+   # For Google Gemini (cost-effective)
+   DEFAULT_LLM_PROVIDER=google
+   GOOGLE_API_KEY=your-google-api-key-here
+   ```
+
+3. **Test your configuration**:
+   ```bash
+   cd backend && source .venv/bin/activate
+   python -c "from app.services.llm_service import llm_factory; print('Available providers:', llm_factory.get_available_providers())"
+   ```
 
 ## 🏗️ Architecture
 

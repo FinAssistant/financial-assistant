@@ -2,7 +2,6 @@
 Unit tests for MCP Server components - focused on business logic.
 """
 
-import pytest
 from unittest.mock import patch
 import os
 

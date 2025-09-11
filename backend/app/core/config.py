@@ -48,9 +48,11 @@ class Settings(BaseSettings):
     # LLM Provider settings
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key")
-    default_llm_provider: str = Field(default="openai", description="Default LLM provider (openai|anthropic)")
+    google_api_key: Optional[str] = Field(default=None, description="Google API key for Gemini")
+    default_llm_provider: str = Field(default="openai", description="Default LLM provider (openai|anthropic|google)")
     openai_model: str = Field(default="gpt-4o", description="OpenAI model to use")
     anthropic_model: str = Field(default="claude-sonnet-4-20250514", description="Anthropic model to use")
+    google_model: str = Field(default="gemini-2.5-flash", description="Google Gemini model to use")
     llm_max_tokens: int = Field(default=4096, description="Maximum tokens for LLM responses")
     llm_temperature: float = Field(default=0.7, description="LLM response temperature")
     llm_request_timeout: int = Field(default=60, description="LLM request timeout in seconds")
@@ -73,7 +75,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_llm_provider(cls, v):
         """Validate that the default LLM provider is supported."""
-        allowed_providers = ["openai", "anthropic"]
+        allowed_providers = ["openai", "anthropic", "google"]
         if v not in allowed_providers:
             raise ValueError(f"default_llm_provider must be one of {allowed_providers}")
         return v
@@ -96,6 +98,15 @@ class Settings(BaseSettings):
                 return False
             if not self.anthropic_api_key.startswith("sk-ant-"):
                 logger.error("Anthropic API key appears to be invalid (should start with 'sk-ant-')")
+                return False
+                
+        elif self.default_llm_provider == "google":
+            if not self.google_api_key:
+                logger.error("Google API key is required when using Google as the default provider")
+                return False
+            # Google API keys typically start with "AIza" but can vary
+            if len(self.google_api_key) < 20:
+                logger.error("Google API key appears to be invalid (too short)")
                 return False
         
         logger.info(f"LLM credentials validated for provider: {self.default_llm_provider}")
