@@ -73,8 +73,8 @@ def pytest_configure(config):
     has_key = bool(os.getenv('OPENAI_API_KEY'))
     real_tests = os.getenv('RUN_REAL_TESTS') == 'true'
     
-    print(f"\n=== Test Environment ===")
+    print("\n=== Test Environment ===")
     print(f"Has OpenAI Key: {has_key}")
     print(f"Real API Tests: {real_tests}")
     print(f"LLM Mocking: {'DISABLED' if real_tests else 'ENABLED'}")
-    print(f"========================\n")
+    print("========================\n")

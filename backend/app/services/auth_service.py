@@ -2,7 +2,7 @@ import bcrypt
 import jwt
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional
 from dataclasses import dataclass
 
 from app.core.config import settings

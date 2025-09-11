@@ -1,12 +1,9 @@
 import pytest
-import json
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
-from fastapi import Depends
 
 from app.main import create_app
-from app.services.auth_service import auth_service
 from app.routers.auth import get_current_user
 
 

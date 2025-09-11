@@ -12,6 +12,11 @@ try:
 except ImportError:
     ChatAnthropic = None
 
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except ImportError:
+    ChatGoogleGenerativeAI = None
+
 from app.core.config import settings
 
 
@@ -19,6 +24,7 @@ class LLMProvider(str, Enum):
     """Supported LLM providers."""
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    GOOGLE = "google"
 
 
 class LLMError(Exception):
@@ -30,8 +36,8 @@ class LLMFactory:
     """
     Factory for creating LangGraph-compatible LLM instances.
     
-    Creates ChatOpenAI or ChatAnthropic instances based on configuration
-    with proper error handling and validation.
+    Creates ChatOpenAI, ChatAnthropic, or ChatGoogleGenerativeAI instances
+    based on configuration with proper error handling and validation.
     """
     
     def __init__(self):
@@ -39,7 +45,7 @@ class LLMFactory:
         self.logger = logging.getLogger(__name__)
         self.default_provider = LLMProvider(settings.default_llm_provider)
     
-    def create_llm(self, provider: Optional[LLMProvider] = None) -> Optional[Union[ChatOpenAI, ChatAnthropic]]:
+    def create_llm(self, provider: Optional[LLMProvider] = None) -> Optional[Union[ChatOpenAI, ChatAnthropic, ChatGoogleGenerativeAI]]:
         """
         Create LangGraph-compatible LLM instance.
         
@@ -47,7 +53,7 @@ class LLMFactory:
             provider: Specific provider to use (defaults to configured default)
             
         Returns:
-            LangGraph LLM instance (ChatOpenAI or ChatAnthropic) or None if no API key configured
+            LangGraph LLM instance (ChatOpenAI, ChatAnthropic, or ChatGoogleGenerativeAI) or None if no API key configured
             
         Raises:
             LLMError: If provider not available or library not installed
@@ -58,6 +64,8 @@ class LLMFactory:
             return self._create_openai_llm()
         elif target_provider == LLMProvider.ANTHROPIC:
             return self._create_anthropic_llm()
+        elif target_provider == LLMProvider.GOOGLE:
+            return self._create_google_llm()
         else:
             raise LLMError(f"Unsupported provider: {target_provider}")
     
@@ -107,6 +115,29 @@ class LLMFactory:
         except Exception as e:
             raise LLMError(f"Failed to create Anthropic LLM: {e}")
     
+    def _create_google_llm(self) -> Optional[ChatGoogleGenerativeAI]:
+        """Create ChatGoogleGenerativeAI instance."""
+        if not ChatGoogleGenerativeAI:
+            raise LLMError("langchain_google_genai not installed")
+        
+        if not settings.google_api_key:
+            self.logger.warning("Google API key not configured - LLM calls will fail at runtime")
+            # Return None to indicate LLM not available, handle gracefully in calling code
+            return None
+        
+        try:
+            llm = ChatGoogleGenerativeAI(
+                model=settings.google_model,
+                google_api_key=settings.google_api_key,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+                timeout=settings.llm_request_timeout
+            )
+            self.logger.info(f"Created Google LLM with model: {settings.google_model}")
+            return llm
+        except Exception as e:
+            raise LLMError(f"Failed to create Google LLM: {e}")
+    
     def get_available_providers(self) -> list[LLMProvider]:
         """Get list of available providers based on configuration and dependencies."""
         available = []
@@ -116,6 +147,9 @@ class LLMFactory:
         
         if settings.anthropic_api_key and ChatAnthropic:
             available.append(LLMProvider.ANTHROPIC)
+        
+        if settings.google_api_key and ChatGoogleGenerativeAI:
+            available.append(LLMProvider.GOOGLE)
         
         return available
     

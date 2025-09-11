@@ -3,9 +3,9 @@ Unit tests for OnboardingAgent.
 All external dependencies are mocked for fast, reliable testing.
 """
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from app.ai.onboarding import OnboardingAgent, OnboardingState, ProfileDataExtraction
 

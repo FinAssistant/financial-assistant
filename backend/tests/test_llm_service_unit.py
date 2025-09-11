@@ -3,8 +3,7 @@ Unit tests for LLM service functionality.
 All tests use mocked LLM calls by default via conftest.py fixtures.
 """
 import pytest
-import os
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from langchain_core.messages import AIMessage
 from app.services.llm_service import LLMFactory, LLMProvider, LLMError
 
@@ -78,9 +77,9 @@ class TestLLMFactory:
        
         factory = LLMFactory()
         
-        assert factory.validate_configuration() == False
+        assert not factory.validate_configuration()
         with pytest.raises(Exception):
-            llm = factory.create_llm()
+            factory.create_llm()
 
     @patch('app.services.llm_service.settings')
     def test_llm_error_missing_model(self, mock_settings):
@@ -90,9 +89,65 @@ class TestLLMFactory:
        
         factory = LLMFactory()
         
-        assert factory.validate_configuration() == False
+        assert not factory.validate_configuration()
         with pytest.raises(Exception):
-            llm = factory.create_llm()
+            factory.create_llm()
+
+    @patch('app.services.llm_service.settings')
+    def test_create_google_llm_success(self, mock_settings):
+        """Test successful Google LLM creation (mocked)."""
+        mock_settings.default_llm_provider = "google"
+        mock_settings.google_api_key = "test_google_key"
+        mock_settings.google_model = "gemini-2.5-flash"
+        mock_settings.llm_temperature = 0.7
+        mock_settings.llm_max_tokens = 4096
+        mock_settings.llm_request_timeout = 60
+
+        factory = LLMFactory()
+        llm = factory.create_llm()
+        
+        assert llm is not None
+        assert hasattr(llm, 'invoke')
+        assert llm.model == "models/gemini-2.5-flash"
+
+    @patch("langchain_google_genai.ChatGoogleGenerativeAI.invoke")
+    @patch('app.services.llm_service.settings')
+    def test_google_llm_invoke_mocked(self, mock_settings, mock_invoke):
+        """Test Google LLM invocation with mocked response."""
+        mock_settings.default_llm_provider = "google"
+        mock_settings.google_api_key = "test_google_key"
+        mock_settings.google_model = "gemini-2.5-flash"
+        mock_settings.llm_temperature = 0.7
+        mock_settings.llm_max_tokens = 4096
+        mock_settings.llm_request_timeout = 60
+        mocked_llm_response = "This is a test response from Gemini."
+        mock_invoke.return_value = AIMessage(content=mocked_llm_response)
+
+        factory = LLMFactory()
+        llm = factory.create_llm()
+        
+        messages = [{"role": "user", "content": "Hello"}]
+        response = llm.invoke(messages)
+        
+        assert response is not None
+        assert hasattr(response, 'content')
+        assert response.content == mocked_llm_response
+
+    @patch('app.services.llm_service.settings')
+    def test_create_llm_with_explicit_google_provider(self, mock_settings):
+        """Test LLM creation with explicit Google provider."""
+        mock_settings.default_llm_provider = "openai"  # Set a valid default
+        mock_settings.google_api_key = "test_google_key"
+        mock_settings.google_model = "gemini-2.5-flash"
+        mock_settings.llm_temperature = 0.7
+        mock_settings.llm_max_tokens = 4096
+        mock_settings.llm_request_timeout = 60
+
+        factory = LLMFactory()
+        llm = factory.create_llm(provider=LLMProvider.GOOGLE)
+        
+        assert llm is not None
+        assert llm.model == "models/gemini-2.5-flash"
 
 
 class TestLLMProviderEnum:
@@ -102,11 +157,13 @@ class TestLLMProviderEnum:
         """Test provider enum values."""
         assert LLMProvider.OPENAI.value == "openai"
         assert LLMProvider.ANTHROPIC.value == "anthropic"
+        assert LLMProvider.GOOGLE.value == "google"
     
     def test_provider_string_conversion(self):
         """Test provider can be created from string."""
         assert LLMProvider("openai") == LLMProvider.OPENAI
         assert LLMProvider("anthropic") == LLMProvider.ANTHROPIC
+        assert LLMProvider("google") == LLMProvider.GOOGLE
         
         with pytest.raises(ValueError):
             LLMProvider("invalid")

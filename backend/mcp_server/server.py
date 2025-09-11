@@ -125,11 +125,11 @@ async def whoami() -> Dict[str, Any]:
 
         result = {
             "authenticated": True,
-            "user_id": token.claims.get("sub", {}).get("user_id"),
-            "email": token.claims.get("sub", {}).get("email"),
-            "name": token.claims.get("sub", {}).get("name"),
+            "sub": token.claims.get("sub"),
             "scopes": token.scopes,
-            "expires_at": token.expires_at,
+            "exp": token.claims.get("exp"),
+            "iat": token.claims.get("iat"),
+            "type": token.claims.get("type"),
             "debug": "token_found"
         }
 

@@ -1,8 +1,4 @@
-import pytest
-from httpx import AsyncClient
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import json
 
 from app.main import create_app
 from app.routers.auth import router as auth_router
