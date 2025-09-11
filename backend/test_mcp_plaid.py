@@ -68,6 +68,43 @@ async def test_plaid_sandbox_setup():
         print(f"❌ Error creating sandbox public token: {e}")
         return None
 
+async def test_exchange_public_token(tool_dict, public_token):
+    """
+    Exchanges a Plaid public token using the MCP tool.
+
+    Args:
+        tool_dict (dict): Dictionary of available MCP tools.
+        public_token (str): The Plaid public token to exchange.
+
+    Returns:
+        bool: True if exchange was successful, False otherwise.
+    """
+    print("\n💱 Exchanging public token")
+    print("-" * 30)
+    if 'exchange_public_token' in tool_dict:
+        try:
+            result = await tool_dict['exchange_public_token'].ainvoke({
+                "public_token": public_token
+            })
+            print("📤 Input: Created public token from sandbox")
+            print(f"📥 Output: {json.dumps(result, indent=2)}")
+
+            if isinstance(result, str):
+                result = json.loads(result)
+
+            if result.get("status") == "success":
+                print("✅ Public token exchange successful")
+                await asyncio.sleep(1)  # Small delay to allow token storage
+                return True
+            else:
+                print(f"❌ Public token exchange failed: {result}")
+                return False
+        except Exception as e:
+            print(f"❌ Error exchanging public token: {e}")
+            return False
+    else:
+        print("❌ exchange_public_token tool not found")
+        return False
 
 async def test_mcp_plaid_integration(public_token: str, jwt_token: str):
     """Test full MCP Plaid integration flow."""
@@ -105,29 +142,11 @@ async def test_mcp_plaid_integration(public_token: str, jwt_token: str):
     # Test 1: Exchange public token
     print("\n💱 Test 1: Exchange public token")
     print("-" * 30)
-    if 'exchange_public_token' in tool_dict:
-        try:
-            result = await tool_dict['exchange_public_token'].ainvoke({
-                "public_token": public_token
-            })
-            print("📤 Input: Created public token from sandbox")
-            print(f"📥 Output: {json.dumps(result, indent=2)}")
-            
-            if isinstance(result, str):
-                result = json.loads(result)
-            
-            if result.get("status") == "success":
-                print("✅ Public token exchange successful")
-            else:
-                print(f"❌ Public token exchange failed: {result}")
-                return False
-        except Exception as e:
-            print(f"❌ Error exchanging public token: {e}")
-            return False
-    else:
-        print("❌ exchange_public_token tool not found")
+    exchange_success = await test_exchange_public_token(tool_dict, public_token)
+    if not exchange_success:
+        print("❌ Stopping tests: Public token exchange failed.")
         return False
-    
+
     # Small delay to allow token storage
     await asyncio.sleep(1)
     

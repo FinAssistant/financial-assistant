@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 import logging
 from datetime import datetime
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver

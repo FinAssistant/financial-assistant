@@ -296,7 +296,6 @@ class SQLiteUserStorage:
             await session.delete(context[0])
             await session.commit()
             return True
-
 # Async-to-sync wrapper for compatibility with existing sync code
 class AsyncUserStorageWrapper:
     """Wrapper to make async SQLite storage work with sync code."""
