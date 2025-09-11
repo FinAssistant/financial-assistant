@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -125,7 +125,7 @@ async def send_message(
                 # Send text end
                 yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
                 
-            except Exception as e:
+            except Exception:
                 # Send error as content
                 error_msg = "I apologize, but I'm having trouble processing your message right now. Please try again."
                 yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": error_msg})}\n\n'

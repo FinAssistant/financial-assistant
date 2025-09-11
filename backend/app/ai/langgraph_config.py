@@ -121,9 +121,9 @@ class GlobalState(BaseModel):
                 
             self.profile_context_timestamp = datetime.now()
                 
-        except Exception as e:
+        except Exception:
             # Log error but don't break the conversation flow
-            self.profile_context = f"Unable to load user profile. Provide general financial guidance."
+            self.profile_context = "Unable to load user profile. Provide general financial guidance."
             self.profile_context_timestamp = datetime.now()
     
     def check_and_refresh_profile_context(self, user_id: str) -> bool:

@@ -1,16 +1,11 @@
 from typing import Dict, Any, Optional, Annotated
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
-from langgraph.checkpoint.sqlite import SqliteSaver
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
-from app.core.sqlmodel_models import (
-    UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate,
-    FamilyStructure, EducationLevel, CaregivingResponsibility
-)
 
 
 # Structured output model for LLM responses
@@ -114,7 +109,7 @@ class OnboardingAgent:
                 "current_step": "continue" if collected_data else "welcome"
                 # Don't return empty messages - let LangGraph handle it
             }
-        except Exception as e:
+        except Exception:
             # Log error and continue with empty state
             return {
                 "collected_data": {},
@@ -250,7 +245,7 @@ class OnboardingAgent:
             
             return {"needs_database_update": False}
             
-        except Exception as e:
+        except Exception:
             # Log error but don't break the flow
             return {"needs_database_update": False}
 
@@ -258,8 +253,6 @@ class OnboardingAgent:
         """Update shared fields with GlobalState when onboarding is complete."""
         if not state.onboarding_complete:
             return {"onboarding_complete": False}  # Still need to return a valid state field
-        
-        user_id = config["configurable"]["user_id"]
         
         # Build profile context string from collected data
         context_parts = []

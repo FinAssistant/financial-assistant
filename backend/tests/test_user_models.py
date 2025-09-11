@@ -1,7 +1,5 @@
 import pytest
-from datetime import datetime
 import threading
-import time
 
 from app.core.database import AsyncUserStorageWrapper
 # For testing, we'll use the new SQLite storage
