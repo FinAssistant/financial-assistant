@@ -1,10 +1,9 @@
 from typing import Dict, Any, Optional, Annotated
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
-from langgraph.prebuilt import ToolNode
 import logging
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
@@ -126,30 +125,14 @@ class OnboardingAgent:
         """Call LLM to process user message and extract profile data."""
         llm = llm_factory.create_llm()
         
-        # Bind Graphiti MCP tools to LLM (tools are guaranteed to be available)
-        graphiti_tools = get_graphiti_tools()
-        llm = llm.bind_tools(graphiti_tools)
+        # No tool binding for simplified workflow - memory storage handled in separate node
 
         self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
-        
-        # Tool instructions for financial context storage
-        tool_instructions = """
-        
-        ADDITIONAL CAPABILITY - Financial Context Storage:
-        - If the user mentions financial goals, concerns, or preferences, use the add_memory tool to store this rich context
-        - Store context that would be valuable for future financial planning conversations
-        - Store personal information such as income range, net worth, major assets/liabilities if mentioned
-        - Store geographic context such as city/state and cost of living if mentioned
-        - Store demographic context such as age range, life stage, occupation type if mentioned
-        - Examples: "I make around $80,000 a year", "My net worth is about $250,000", "I own a house and a car"
-        - Examples: "I want to save for a house", "I'm worried about retirement", "I prefer low-risk investments"
-        """
         
         # Build system prompt for structured data extraction
         system_prompt = """You are an onboarding assistant with TWO important jobs:
         1. Extract profile data from user messages into the extracted_data field
         2. Generate a helpful response to the user in the user_response field
-        """ + tool_instructions + """
 
         CRITICAL REQUIREMENTS:
         - ALWAYS provide a helpful, natural response to the user in user_response field
@@ -232,12 +215,55 @@ class OnboardingAgent:
         updated_collected.update(response.extracted_data)
         
         
-        return {
+        data =  {
             "messages": [ai_message],
             "collected_data": updated_collected,
             "needs_database_update": bool(response.extracted_data),
             "onboarding_complete": response.completion_status == "complete"
         }
+
+        self.logger.info(f"Onboarding LLM response and collected data: {data}")
+
+        return data
+
+    async def _store_memory(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
+        """Explicitly store conversation in Graphiti after LLM processing."""
+        user_id = config["configurable"]["user_id"]
+
+        self.logger.info(f"Storing onboarding memory for user {user_id}")
+        
+        # Get the latest human message and AI response
+        human_message = None
+        ai_response = None
+        
+        for msg in reversed(state.messages):
+            if isinstance(msg, AIMessage) and not ai_response:
+                ai_response = msg.content
+            elif isinstance(msg, HumanMessage) and not human_message:
+                human_message = msg.content
+                break
+        
+        if human_message and ai_response:
+            # Use GraphitiMCPClient directly for guaranteed storage
+            try:
+                graphiti_client = await get_graphiti_client()
+                episode_content = f"User: {human_message}\nAssistant: {ai_response}"
+                self.logger.info(f"Storing onboarding memory for user {user_id}: {episode_content}")
+                await graphiti_client.add_episode(
+                    user_id=user_id,
+                    content=episode_content, 
+                    name="Onboarding Conversation",
+                    source_description="onboarding_agent"
+                )
+                
+                self.logger.info(f"Stored onboarding memory for user {user_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to store memory for user {user_id}: {e}")
+                # Don't break flow - memory storage failure shouldn't stop onboarding
+        else:
+            self.logger.warning(f"Insufficient messages to store memory for user {user_id}")
+        
+        return {}  # No state changes needed
 
     def _update_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Update database with collected profile data."""
@@ -272,6 +298,7 @@ class OnboardingAgent:
             
         except Exception:
             # Log error but don't break the flow
+            self.logger.error(f"Failed to update database for user {user_id} with data {state.collected_data}")
             return {"needs_database_update": False}
 
     def _update_main_graph(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
@@ -350,35 +377,19 @@ class OnboardingAgent:
         if self._graph is None:
             onb_builder = StateGraph(OnboardingState)
             
-            # Get pre-initialized Graphiti ToolNode (guaranteed to be available)
-            graphiti_tool_node = get_graphiti_tool_node()
-            
-            # Add nodes
+            # Add nodes - simplified linear workflow
             onb_builder.add_node("read_database", self._read_db)
             onb_builder.add_node("call_llm", self._call_llm)
-            onb_builder.add_node("tools", graphiti_tool_node)
+            onb_builder.add_node("store_memory", self._store_memory)
             onb_builder.add_node("update_database", self._update_db)
             onb_builder.add_node("update_global_state", self._update_main_graph)
 
-            # Add edges with tool routing
+            # Add linear edges - ReadDB -> Call LLM -> Store Memory -> Update DB -> Update Global -> END
             onb_builder.add_edge(START, "read_database")
             onb_builder.add_edge("read_database", "call_llm")
-            
-            # Route from call_llm based on whether tools are needed
-            onb_builder.add_conditional_edges(
-                "call_llm",
-                self._should_use_tools,
-                {"tools": "tools", "update_database": "update_database"}
-            )
-            # After tools execution, go to database update
-            onb_builder.add_edge("tools", "update_database")
-            
-            # Check completion after database update
-            onb_builder.add_conditional_edges(
-                "update_database",
-                self._check_profile_complete, 
-                {"update_global_state": "update_global_state", "end": END}
-            )
+            onb_builder.add_edge("call_llm", "store_memory")
+            onb_builder.add_edge("store_memory", "update_database")            
+            onb_builder.add_edge("update_database", "update_global_state")
             onb_builder.add_edge("update_global_state", END)
 
             self._graph = onb_builder.compile()
@@ -386,51 +397,6 @@ class OnboardingAgent:
         return self._graph
 
     
-
-
-# Global Graphiti tool node state
-_graphiti_tools = None
-_graphiti_tool_node = None
-
-
-async def setup_graphiti_tools() -> ToolNode:
-    """Setup Graphiti MCP tools during FastAPI startup."""
-    global _graphiti_tools, _graphiti_tool_node
-    
-    try:
-        # Get Graphiti MCP client and tools
-        graphiti_client = await get_graphiti_client()
-        
-        if not graphiti_client or not graphiti_client.is_connected():
-            raise RuntimeError("Graphiti MCP client not connected - Graphiti is required for financial assistant")
-        
-        _graphiti_tools = graphiti_client.tools
-        if not _graphiti_tools:
-            raise RuntimeError("No Graphiti tools available - Graphiti tools are required for financial context storage")
-        
-        _graphiti_tool_node = ToolNode(_graphiti_tools)
-        logging.getLogger(__name__).info(f"Graphiti ToolNode initialized with tools: {[tool.name for tool in _graphiti_tools]}")
-        return _graphiti_tool_node
-            
-    except Exception as e:
-        logging.getLogger(__name__).error(f"Failed to setup Graphiti tools: {e}")
-        _graphiti_tools = None
-        _graphiti_tool_node = None
-        raise RuntimeError(f"Graphiti tools setup failed - this is a critical error: {e}") from e
-
-
-def get_graphiti_tool_node() -> ToolNode:
-    """Get the initialized Graphiti ToolNode."""
-    if _graphiti_tool_node is None:
-        raise RuntimeError("Graphiti ToolNode not initialized - setup_graphiti_tools() must be called during startup")
-    return _graphiti_tool_node
-
-
-def get_graphiti_tools() -> list:
-    """Get the Graphiti MCP tools list."""
-    if _graphiti_tools is None:
-        raise RuntimeError("Graphiti tools not initialized - setup_graphiti_tools() must be called during startup")
-    return _graphiti_tools
 
 
 def create_onboarding_node():

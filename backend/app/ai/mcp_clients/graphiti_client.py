@@ -95,7 +95,7 @@ class GraphitiMCPClient:
         """
         add_memory_tool = self._get_tool("add_memory")
 
-              # Build enhanced episode content with extraction guidance
+        # Build enhanced episode content with extraction guidance
         enhanced_content = f"""
             FINANCIAL CONVERSATION CONTEXT:
             User Message: {content}
@@ -116,7 +116,7 @@ class GraphitiMCPClient:
         try:
             response = await add_memory_tool.ainvoke({
                 "name": name,
-                "episode_body": content,
+                "episode_body": enhanced_content,
                 "source": "text",  # Let Graphiti handle content type classification
                 "source_description": source_description,
                 "group_id": user_id,  # CRITICAL: user_id = group_id for data isolation
@@ -169,8 +169,51 @@ class GraphitiMCPClient:
         return [tool.name for tool in self.tools] if self.tools else []
 
 
-# Global instance for reuse across agents
+# Global instances for reuse across agents
 _graphiti_client: Optional[GraphitiMCPClient] = None
+_graphiti_tools = None
+_graphiti_tool_node = None
+
+
+async def setup_graphiti_tools():
+    """Setup Graphiti MCP tools during FastAPI startup."""
+    from langgraph.prebuilt import ToolNode
+    global _graphiti_tools, _graphiti_tool_node
+    
+    try:
+        # Get Graphiti MCP client and tools
+        graphiti_client = await get_graphiti_client()
+        
+        if not graphiti_client or not graphiti_client.is_connected():
+            raise RuntimeError("Graphiti MCP client not connected - Graphiti is required for financial assistant")
+        
+        _graphiti_tools = graphiti_client.tools
+        if not _graphiti_tools:
+            raise RuntimeError("No Graphiti tools available - Graphiti tools are required for financial context storage")
+        
+        _graphiti_tool_node = ToolNode(_graphiti_tools)
+        logger.info(f"Graphiti ToolNode initialized with tools: {[tool.name for tool in _graphiti_tools]}")
+        return _graphiti_tool_node
+            
+    except Exception as e:
+        logger.error(f"Failed to setup Graphiti tools: {e}")
+        _graphiti_tools = None
+        _graphiti_tool_node = None
+        raise RuntimeError(f"Graphiti tools setup failed - this is a critical error: {e}") from e
+
+
+def get_graphiti_tool_node():
+    """Get the initialized Graphiti ToolNode."""
+    if _graphiti_tool_node is None:
+        raise RuntimeError("Graphiti ToolNode not initialized - setup_graphiti_tools() must be called during startup")
+    return _graphiti_tool_node
+
+
+def get_graphiti_tools() -> list:
+    """Get the Graphiti MCP tools list."""
+    if _graphiti_tools is None:
+        raise RuntimeError("Graphiti tools not initialized - setup_graphiti_tools() must be called during startup")
+    return _graphiti_tools
 
 
 async def get_graphiti_client(graphiti_url: Optional[str] = None) -> GraphitiMCPClient:
