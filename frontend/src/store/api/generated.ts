@@ -133,11 +133,19 @@ export type LoginRequest = {
 export type MessageResponse = {
   message: string;
 };
+export type MessagePart = {
+  /** Part type: text, image, etc. */
+  type: string;
+  /** Text content for text parts */
+  text: string;
+};
 export type ClientMessage = {
+  /** Message ID */
+  id: string;
   /** Message role: user, assistant, or system */
   role: string;
-  /** Message content */
-  content: string;
+  /** Message parts array */
+  parts: MessagePart[];
 };
 export type ConversationRequest = {
   /** Array of conversation messages */
@@ -157,6 +165,7 @@ export type ConversationResponse = {
 export type ConversationHealthResponse = {
   status: string;
   graph_initialized: boolean;
+  llm_available: boolean;
   test_response_received: boolean;
   error?: string | null;
 };
