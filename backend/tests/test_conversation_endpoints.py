@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
@@ -43,10 +43,11 @@ def unauthenticated_client(unauthenticated_app):
 class TestConversationEndpoints:
     """Test cases for conversation API endpoints."""
     
-    @patch('app.routers.conversation.orchestrator')
-    def test_send_message_success(self, mock_orchestrator, client):
+    @patch('app.routers.conversation.get_orchestrator')
+    def test_send_message_success(self, mock_get_orchestrator, client):
         """Test successful message sending with AI SDK format."""
         # Mock orchestrator to return a successful response
+        mock_orchestrator = AsyncMock()
         mock_orchestrator.process_message.return_value = {
             "content": "Hello! How can I help you with budgeting today?",
             "agent": "small_talk",
@@ -55,6 +56,7 @@ class TestConversationEndpoints:
             "message_type": "ai_response",
             "error": None
         }
+        mock_get_orchestrator.return_value = mock_orchestrator
         
         response = client.post(
             "/conversation/message",
@@ -93,12 +95,13 @@ class TestConversationEndpoints:
         assert len(data["content"]) > 0
         assert "Hello! How can I help you with budgeting today?" in data["content"]
     
-    @patch('app.routers.conversation.orchestrator')
-    def test_send_message_with_custom_session_id(self, mock_orchestrator, client):
+    @patch('app.routers.conversation.get_orchestrator')
+    def test_send_message_with_custom_session_id(self, mock_get_orchestrator, client):
         """Test message sending with custom session ID."""
         custom_session_id = "custom_session_456"
         
         # Mock orchestrator to return a successful response with custom session ID
+        mock_orchestrator = AsyncMock()
         mock_orchestrator.process_message.return_value = {
             "content": "Test response",
             "agent": "small_talk",
@@ -107,6 +110,7 @@ class TestConversationEndpoints:
             "message_type": "ai_response",
             "error": None
         }
+        mock_get_orchestrator.return_value = mock_orchestrator
         
         response = client.post(
             "/conversation/message",
@@ -261,15 +265,17 @@ class TestConversationEndpoints:
         
         assert response.status_code == 403  # Missing authorization header
     
-    @patch('app.routers.conversation.orchestrator')
-    def test_send_message_orchestrator_error(self, mock_orchestrator, client):
+    @patch('app.routers.conversation.get_orchestrator')
+    def test_send_message_orchestrator_error(self, mock_get_orchestrator, client):
         """Test handling of orchestrator errors."""
         # Mock orchestrator to return error
+        mock_orchestrator = AsyncMock()
         mock_orchestrator.process_message.return_value = {
             "content": "Error occurred",
             "error": "Test error",
             "agent": "orchestrator"
         }
+        mock_get_orchestrator.return_value = mock_orchestrator
         
         response = client.post(
             "/conversation/message",
@@ -292,11 +298,13 @@ class TestConversationEndpoints:
         assert response.status_code == 500
         assert "AI processing error" in response.json()["detail"] or "Conversation processing failed" in response.json()["detail"]
     
-    @patch('app.routers.conversation.orchestrator')
-    def test_health_check_orchestrator_exception(self, mock_orchestrator, client):
+    @patch('app.routers.conversation.get_orchestrator')
+    def test_health_check_orchestrator_exception(self, mock_get_orchestrator, client):
         """Test health check when orchestrator raises exception."""
         # Mock orchestrator to raise exception
+        mock_orchestrator = AsyncMock()
         mock_orchestrator.health_check.side_effect = Exception("Test exception")
+        mock_get_orchestrator.return_value = mock_orchestrator
         
         response = client.get("/conversation/health")
         

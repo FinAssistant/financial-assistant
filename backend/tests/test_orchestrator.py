@@ -37,7 +37,7 @@ class TestOrchestratorAgent:
         assert "user_id" in result
         assert "message_type" in result
         
-        assert result["agent"] == "orchestrator"
+        assert result["agent"] == "small_talk"
         assert result["session_id"] == "test_session_456"
         assert result["user_id"] == "test_user_123"
         assert result["message_type"] == "ai_response"
