@@ -76,6 +76,7 @@ class GraphitiMCPClient:
         self, 
         user_id: str, 
         content: str, 
+        context: Optional[Dict[str, Any]] = None,
         name: str = "Financial Conversation",
         source_description: str = "agent_conversation"
     ) -> Dict[str, Any]:
@@ -111,6 +112,12 @@ class GraphitiMCPClient:
             - Geographic context: city/state, cost of living
             - Demographic context: age range, life stage, occupation type
             - Any other details relevant to financial planning
+            """
+
+        if context:
+            enhanced_content += f"""
+            ADDITIONAL CONTEXT:
+            {context if context else "None"}
             """
         
         try:

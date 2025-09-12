@@ -84,6 +84,8 @@ class OnboardingAgent:
     def _read_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Read user and personal context data from SQLite database."""
         user_id = config["configurable"]["user_id"]
+
+        self.logger.info(f"Reading onboarding database for user {user_id}")
         
         try:
             # Get user data to check if user exists
@@ -138,13 +140,15 @@ class OnboardingAgent:
         - ALWAYS provide a helpful, natural response to the user in user_response field
         - Extract ANY profile data mentioned by the user into the extracted_data field
         - NEVER echo or repeat the user's message - always generate your own response
+        - IMPORTANT: UPDATE existing fields when life circumstances change (job loss, career change, family changes, moves)
+        - DETECT employment status changes and update related fields (occupation_type, life_stage, family_structure)
 
         Extract these exact fields when mentioned:
         - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
-        - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement  
-        - occupation_type: job category (teacher, engineer, healthcare, etc.)
+        - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement, between_jobs  
+        - occupation_type: job category (teacher, engineer, healthcare, unemployed, etc.)
         - location_context: state/region with cost of living
-        - family_structure: single_no_dependents, single_with_dependents, married_dual_income, etc.
+        - family_structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income, etc.
         - marital_status: single, married, divorced, widowed, domestic_partnership
         - total_dependents_count: number (integer)
         - children_count: number (integer) 
@@ -154,6 +158,8 @@ class OnboardingAgent:
         - Age "25" or "18-25" → "age_range": "18_25"
         - Job "teacher" → "occupation_type": "teacher" 
         - Job "software engineer" → "occupation_type": "engineer"
+        - "I left my job" / "I'm unemployed" → "occupation_type": "unemployed", "life_stage": "between_jobs"
+        - "My spouse lost their job" → update "family_structure" from "married_dual_income" to "married_single_income"
         - Location "California" → "location_context": "California, high cost of living"
         - "married" → "marital_status": "married"
         - "two kids" → "children_count": 2
@@ -189,6 +195,18 @@ class OnboardingAgent:
           "user_response": "I'd be happy to help with investment advice! First, I need to understand your personal situation. Could you tell me your age range and occupation?"
         }
         
+        Example 3 - User reports LIFE CHANGES (CRITICAL: Always extract updates):
+        User: "I have left my job in mid July, my wife is taking a leave of absence starting in October"
+        Response: {
+          "extracted_data": {
+            "occupation_type": "unemployed",
+            "life_stage": "between_jobs",
+            "family_structure": "married_no_income"
+          },
+          "completion_status": "complete",
+          "user_response": "Thank you for updating me on these important changes. Being between jobs and having your wife take leave will significantly impact your financial planning. I'd be happy to help you navigate this transition period."
+        }
+        
         REMEMBER: Always provide a helpful user_response. Never echo the user's message."""
         
         # Get current collected data context
@@ -203,6 +221,8 @@ class OnboardingAgent:
         structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
         
         response = structured_llm.invoke(messages)
+
+        self.logger.info(f"Onboarding LLM response: {response}")
         
         # Create AI message with natural response
         ai_message = AIMessage(
@@ -247,11 +267,11 @@ class OnboardingAgent:
             # Use GraphitiMCPClient directly for guaranteed storage
             try:
                 graphiti_client = await get_graphiti_client()
-                episode_content = f"User: {human_message}\nAssistant: {ai_response}"
-                self.logger.info(f"Storing onboarding memory for user {user_id}: {episode_content}")
+                self.logger.info(f"Storing onboarding memory for user {user_id}: {human_message}")
                 await graphiti_client.add_episode(
                     user_id=user_id,
-                    content=episode_content, 
+                    content=human_message,
+                    context={"assistant_response": ai_response}, 
                     name="Onboarding Conversation",
                     source_description="onboarding_agent"
                 )
@@ -267,11 +287,14 @@ class OnboardingAgent:
 
     def _update_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Update database with collected profile data."""
-        if not state.needs_database_update and not state.onboarding_complete:
-            return {"needs_database_update": False}  # Still need to return a valid state field
-        
+
         user_id = config["configurable"]["user_id"]
-        
+
+        self.logger.info(f"Updating onboarding database for user {user_id}: needs_update={state.needs_database_update}, complete={state.onboarding_complete}, collected_data={state.collected_data}")
+
+        # Always try to update if we have collected data - don't check flags
+        # People's situations change (new kids, job changes, moves, etc.)
+                
         try:
             # Filter collected_data to only include fields that exist in PersonalContextModel
             valid_fields = {
@@ -287,11 +310,15 @@ class OnboardingAgent:
             }
             
             if filtered_data:
+                self.logger.info(f"Saving filtered data to database for user {user_id}: {filtered_data}")
                 # Save to structured PersonalContextModel table
                 user_storage.create_or_update_personal_context(user_id, filtered_data)
+            else:
+                self.logger.info(f"No valid data to save for user {user_id}")
             
             # Update user's profile_complete flag if onboarding is complete
             if state.onboarding_complete:
+                self.logger.info(f"Marking profile complete for user {user_id}")
                 user_storage.update_user(user_id, {"profile_complete": True})
             
             return {"needs_database_update": False}
