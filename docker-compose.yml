@@ -1,8 +1,4 @@
 services:
-  # Currently using: https://neo4j.com/sandbox/
-  # just set the appropriate connection info in your  .env file
-  # or uncomment the following
-
   neo4j:
     image: neo4j:5.26.0
     ports:
