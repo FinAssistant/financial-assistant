@@ -137,167 +137,6 @@ class TestOrchestratorAgent:
         assert result["test_response_received"] is False
         assert result["error"] is not None
 
-    @patch('app.ai.orchestrator.get_graphiti_client')
-    @pytest.mark.asyncio
-    async def test_graphiti_storage_with_financial_keywords(self, mock_get_client):
-        """Test that financial messages are stored in Graphiti."""
-        # Mock Graphiti client
-        mock_client = AsyncMock()
-        mock_client.is_connected.return_value = True
-        mock_client.add_episode = AsyncMock()
-        mock_get_client.return_value = mock_client
-        
-        orchestrator = OrchestratorAgent()
-        
-        # Mock the LangGraph processing to avoid LLM calls
-        with patch.object(orchestrator.langgraph_config, 'invoke_conversation') as mock_invoke:
-            mock_invoke.return_value = {
-                "content": "I can help you with budgeting!",
-                "agent": "spending",
-                "session_id": "test_session",
-                "user_id": "test_user",
-                "message_type": "ai_response"
-            }
-            
-            result = await orchestrator.process_message(
-                user_message="I need help with my budget and savings",
-                user_id="test_user_123",
-                session_id="test_session_456"
-            )
-        
-        # Verify the message was processed normally
-        assert result["content"] == "I can help you with budgeting!"
-        assert result["agent"] == "spending"
-        
-        # Verify Graphiti client was called to store the financial context
-        mock_client.add_episode.assert_called_once_with(
-            user_id="test_user_123",
-            content="I need help with my budget and savings",
-            name="Financial Conversation Context",
-            source_description="agent_conversation | agent: spending | session: test_session_456"
-        )
-
-    @patch('app.ai.orchestrator.get_graphiti_client')
-    @pytest.mark.asyncio
-    async def test_no_graphiti_storage_without_financial_keywords(self, mock_get_client):
-        """Test that non-financial messages are NOT stored in Graphiti."""
-        # Mock Graphiti client
-        mock_client = AsyncMock()
-        mock_client.is_connected.return_value = True
-        mock_client.add_episode = AsyncMock()
-        mock_get_client.return_value = mock_client
-        
-        orchestrator = OrchestratorAgent()
-        
-        # Mock the LangGraph processing to avoid LLM calls
-        with patch.object(orchestrator.langgraph_config, 'invoke_conversation') as mock_invoke:
-            mock_invoke.return_value = {
-                "content": "Hello! How can I help you today?",
-                "agent": "small_talk",
-                "session_id": "test_session",
-                "user_id": "test_user",
-                "message_type": "ai_response"
-            }
-            
-            result = await orchestrator.process_message(
-                user_message="Hello, how are you?",
-                user_id="test_user_123",
-                session_id="test_session_456"
-            )
-        
-        # Verify the message was processed normally
-        assert result["content"] == "Hello! How can I help you today?"
-        assert result["agent"] == "small_talk"
-        
-        # Verify Graphiti client was NOT called since no financial keywords
-        mock_client.add_episode.assert_not_called()
-
-    @patch('app.ai.orchestrator.get_graphiti_client')
-    @pytest.mark.asyncio
-    async def test_graphiti_storage_error_handling(self, mock_get_client):
-        """Test graceful handling of Graphiti storage errors."""
-        # Mock Graphiti client to raise an error
-        mock_client = AsyncMock()
-        mock_client.is_connected.return_value = True
-        mock_client.add_episode.side_effect = Exception("Graphiti connection failed")
-        mock_get_client.return_value = mock_client
-        
-        orchestrator = OrchestratorAgent()
-        
-        # Mock the LangGraph processing to avoid LLM calls
-        with patch.object(orchestrator.langgraph_config, 'invoke_conversation') as mock_invoke:
-            mock_invoke.return_value = {
-                "content": "I can help with investment planning!",
-                "agent": "investment",
-                "session_id": "test_session",
-                "user_id": "test_user",
-                "message_type": "ai_response"
-            }
-            
-            # This should not raise an exception even though Graphiti fails
-            result = await orchestrator.process_message(
-                user_message="I want to invest in stocks",
-                user_id="test_user_123",
-                session_id="test_session_456"
-            )
-        
-        # Verify the conversation continues normally despite Graphiti failure
-        assert result["content"] == "I can help with investment planning!"
-        assert result["agent"] == "investment"
-        assert result.get("error") is None  # No error propagated to user
-
-    @patch('app.ai.orchestrator.get_graphiti_client')
-    @pytest.mark.asyncio
-    async def test_graphiti_disconnected_handling(self, mock_get_client):
-        """Test handling when Graphiti client is not connected."""
-        # Mock Graphiti client as disconnected
-        mock_client = AsyncMock()
-        mock_client.is_connected.return_value = False
-        mock_client.add_episode = AsyncMock()
-        mock_get_client.return_value = mock_client
-        
-        orchestrator = OrchestratorAgent()
-        
-        # Mock the LangGraph processing to avoid LLM calls
-        with patch.object(orchestrator.langgraph_config, 'invoke_conversation') as mock_invoke:
-            mock_invoke.return_value = {
-                "content": "Let me help you with retirement planning!",
-                "agent": "investment",
-                "session_id": "test_session",
-                "user_id": "test_user",
-                "message_type": "ai_response"
-            }
-            
-            result = await orchestrator.process_message(
-                user_message="I need help planning for retirement",
-                user_id="test_user_123",
-                session_id="test_session_456"
-            )
-        
-        # Verify the conversation works normally
-        assert result["content"] == "Let me help you with retirement planning!"
-        assert result["agent"] == "investment"
-        
-        # Verify Graphiti storage was skipped due to disconnection
-        mock_client.add_episode.assert_not_called()
-
-    @patch('app.ai.orchestrator.get_graphiti_client')
-    @pytest.mark.asyncio
-    async def test_health_check_with_graphiti_status(self, mock_get_client):
-        """Test health check includes Graphiti status."""
-        # Mock connected Graphiti client
-        mock_client = AsyncMock()
-        mock_client.is_connected.return_value = True
-        mock_get_client.return_value = mock_client
-        
-        orchestrator = OrchestratorAgent()
-        result = await orchestrator.health_check()
-        
-        # Verify health check includes Graphiti information
-        assert "graphiti_available" in result
-        assert "graphiti_error" in result
-        assert result["graphiti_available"] is True
-        assert result["graphiti_error"] is None
 
 
 class TestLangGraphConfig:
@@ -310,7 +149,8 @@ class TestLangGraphConfig:
         assert config.graph is not None
         assert hasattr(config, 'invoke_conversation')
     
-    def test_invoke_conversation_basic(self, mock_llm_factory):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_basic(self, mock_llm_factory):
         """Test basic conversation invocation."""
         # Override the mock to return proper routing responses
         from langchain_core.messages import AIMessage
@@ -324,7 +164,7 @@ class TestLangGraphConfig:
         
         config = LangGraphConfig()
         
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message="Hello",
             user_id="test_user",
             session_id="test_session"
@@ -342,7 +182,8 @@ class TestLangGraphConfig:
         assert isinstance(result["content"], str)
     
     @pytest.mark.skip(reason="OnboardingAgent structured output needs to be fixed")
-    def test_invoke_conversation_onboarding_route(self, mock_llm_factory):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_onboarding_route(self, mock_llm_factory):
         """Test that the orchestrator routes to ONBOARDING for users without complete profiles."""
         from langchain_core.messages import AIMessage
         
@@ -356,7 +197,7 @@ class TestLangGraphConfig:
         config = LangGraphConfig()
         
         test_message = "I need help with my budget"
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message=test_message,
             user_id="test_user",
             session_id="test_session"

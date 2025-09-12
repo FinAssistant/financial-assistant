@@ -3,6 +3,7 @@ Unit tests for orchestrator and agent routing functionality.
 All tests use mocked LLM calls by default.
 """
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import pytest
 
 from app.ai.langgraph_config import LangGraphConfig, GlobalState
 
@@ -142,7 +143,8 @@ class TestSmallTalkAgent:
 class TestConversationFlow:
     """Test end-to-end conversation processing with mocked responses."""
     
-    def test_invoke_conversation_basic(self, mock_llm_factory, test_user_id, test_session_id):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_basic(self, mock_llm_factory, test_user_id, test_session_id):
         """Test basic conversation invocation."""
         # Set up mock to return routing decision first, then small talk response
         mock_responses = [
@@ -153,7 +155,7 @@ class TestConversationFlow:
         
         config = LangGraphConfig()
         
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message="Hello there!",
             user_id=test_user_id,
             session_id=test_session_id
@@ -169,7 +171,8 @@ class TestConversationFlow:
         assert result["user_id"] == test_user_id
         assert len(result["content"]) > 0
     
-    def test_invoke_conversation_smalltalk_routing(self, mock_llm_factory, test_user_id, test_session_id):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_smalltalk_routing(self, mock_llm_factory, test_user_id, test_session_id):
         """Test conversation routes to small talk correctly."""
         # Mock orchestrator to return SMALLTALK, then small talk response
         mock_responses = [
@@ -180,7 +183,7 @@ class TestConversationFlow:
         
         config = LangGraphConfig()
         
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message="Hi there!",
             user_id=test_user_id,
             session_id=test_session_id
