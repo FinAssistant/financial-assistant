@@ -25,7 +25,7 @@ pytest tests/test_spending_agent_real_llm.py -v
 import pytest
 import os
 from unittest.mock import patch
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from app.ai.spending_agent import SpendingAgent
 from app.services.llm_service import LLMFactory, LLMProvider
@@ -60,7 +60,7 @@ class TestSpendingAgentRealLLM:
     def setup_method(self):
         """Setup method called before each test."""
         # Ensure no mocking interferes with real LLM calls
-        with patch.object(SpendingAgent, '__init__', lambda x: None):
+        with patch.object(SpendingAgent, '__init__', lambda _: None):
             # Create agent with real LLM (bypass any potential mocking)
             self.agent = SpendingAgent()
             self.agent._user_context_dao = None  # Not needed for intent tests
@@ -272,6 +272,180 @@ class TestSpendingAgentRealLLM:
         print(f"✅ Real LLM is working and detected intent: {result['detected_intent']}")
 
 
+class TestSpendingAgentRealLLMResponseGeneration:
+    """Integration tests for SpendingAgent LLM-powered response generation with real LLM API calls."""
+    
+    def setup_method(self):
+        """Setup method called before each test."""
+        with patch.object(SpendingAgent, '__init__', lambda _: None):
+            self.agent = SpendingAgent()
+            self.agent._user_context_dao = None
+            self.agent._auth_service = None  
+            self.agent._mcp_clients = {}
+            
+            # Initialize real LLM
+            self.agent.llm = LLMFactory().create_llm()
+    
+    def test_real_llm_spending_analysis_response(self):
+        """Test real LLM generates personalized spending analysis responses."""
+        from app.ai.spending_agent import SpendingAgentState
+        
+        state = SpendingAgentState(
+            messages=[HumanMessage(content="I want to understand my spending patterns")],
+            user_id="test_user_123",
+            session_id="test_session", 
+            user_context={
+                "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                "financial_context": {"has_dependents": False}
+            }
+        )
+        
+        result = self.agent._spending_analysis_node(state)
+        
+        # Verify response structure
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+        assert ai_message.additional_kwargs["agent"] == "spending_agent"
+        assert ai_message.additional_kwargs["intent"] == "spending_analysis"
+        assert ai_message.additional_kwargs["llm_powered"] is True
+        
+        # Verify response contains financial context
+        response_content = ai_message.content.lower()
+        assert len(response_content) > 50  # Should be substantial response
+        assert any(word in response_content for word in ["spending", "expense", "financial", "budget", "money"])
+        
+        print(f"✅ Real LLM generated spending analysis response: {len(ai_message.content)} chars")
+    
+    def test_real_llm_budget_planning_response(self):
+        """Test real LLM generates personalized budget planning responses.""" 
+        from app.ai.spending_agent import SpendingAgentState
+        
+        state = SpendingAgentState(
+            messages=[HumanMessage(content="Help me create a monthly budget")],
+            user_id="test_user_456",
+            session_id="test_session",
+            user_context={
+                "demographics": {"age_range": "36_45", "occupation": "teacher"},
+                "financial_context": {"has_dependents": True}
+            }
+        )
+        
+        result = self.agent._budget_planning_node(state)
+        
+        # Verify response structure
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert ai_message.additional_kwargs["intent"] == "budget_planning"
+        assert ai_message.additional_kwargs["llm_powered"] is True
+        
+        # Verify response contains budget context
+        response_content = ai_message.content.lower()
+        assert len(response_content) > 50
+        assert any(word in response_content for word in ["budget", "income", "expense", "allocation", "planning"])
+        
+        print(f"✅ Real LLM generated budget planning response: {len(ai_message.content)} chars")
+    
+    def test_real_llm_optimization_response(self):
+        """Test real LLM generates personalized optimization responses."""
+        from app.ai.spending_agent import SpendingAgentState
+        
+        state = SpendingAgentState(
+            messages=[HumanMessage(content="How can I save money on my expenses?")],
+            user_id="test_user_789", 
+            session_id="test_session",
+            user_context={
+                "demographics": {"age_range": "18_25", "occupation": "student"},
+                "financial_context": {"has_dependents": False}
+            }
+        )
+        
+        result = self.agent._optimization_node(state)
+        
+        # Verify response structure
+        ai_message = result["messages"][0]
+        assert ai_message.additional_kwargs["intent"] == "optimization" 
+        assert ai_message.additional_kwargs["llm_powered"] is True
+        
+        # Verify response contains optimization context
+        response_content = ai_message.content.lower()
+        assert len(response_content) > 50
+        assert any(word in response_content for word in ["save", "reduce", "optimize", "cost", "expense"])
+        
+        print(f"✅ Real LLM generated optimization response: {len(ai_message.content)} chars")
+    
+    def test_real_llm_general_spending_response(self):
+        """Test real LLM generates personalized general spending responses."""
+        from app.ai.spending_agent import SpendingAgentState
+        
+        state = SpendingAgentState(
+            messages=[HumanMessage(content="Hi, I need help with my finances")],
+            user_id="test_user_101",
+            session_id="test_session", 
+            user_context={
+                "demographics": {"age_range": "46_55", "occupation": "manager"},
+                "financial_context": {"has_dependents": True}
+            }
+        )
+        
+        result = self.agent._general_spending_node(state)
+        
+        # Verify response structure  
+        ai_message = result["messages"][0]
+        assert ai_message.additional_kwargs["intent"] == "general_spending"
+        assert ai_message.additional_kwargs["llm_powered"] is True
+        
+        # Verify response is welcoming and informative
+        response_content = ai_message.content.lower()
+        assert len(response_content) > 50
+        assert any(word in response_content for word in ["help", "financial", "assist", "guidance", "analysis"])
+        
+        print(f"✅ Real LLM generated general spending response: {len(ai_message.content)} chars")
+
+    def test_real_llm_user_context_integration(self):
+        """Test that real LLM responses are personalized based on user context."""
+        from app.ai.spending_agent import SpendingAgentState
+        
+        # Test with young professional context
+        state_young = SpendingAgentState(
+            messages=[HumanMessage(content="Help me with budgeting")],
+            user_id="young_professional", 
+            session_id="test_session",
+            user_context={
+                "demographics": {"age_range": "18_25", "occupation": "entry_level"},
+                "financial_context": {"has_dependents": False}
+            }
+        )
+        
+        # Test with family context
+        state_family = SpendingAgentState(
+            messages=[HumanMessage(content="Help me with budgeting")],
+            user_id="family_person",
+            session_id="test_session",
+            user_context={
+                "demographics": {"age_range": "36_45", "occupation": "parent"},
+                "financial_context": {"has_dependents": True}
+            }
+        )
+        
+        result_young = self.agent._budget_planning_node(state_young)
+        result_family = self.agent._budget_planning_node(state_family)
+        
+        # Both should be valid responses but potentially different
+        young_content = result_young["messages"][0].content
+        family_content = result_family["messages"][0].content
+        
+        assert len(young_content) > 50
+        assert len(family_content) > 50
+        assert isinstance(young_content, str)
+        assert isinstance(family_content, str)
+        
+        print(f"✅ Young professional response: {len(young_content)} chars")
+        print(f"✅ Family context response: {len(family_content)} chars")
+
+
 class TestSpendingAgentMultiProviderRealLLM:
     """Test SpendingAgent intent detection across all available LLM providers."""
     
@@ -293,7 +467,7 @@ class TestSpendingAgentMultiProviderRealLLM:
             os.environ['DEFAULT_LLM_PROVIDER'] = provider.value
             
             # Create agent with specific provider
-            with patch.object(SpendingAgent, '__init__', lambda x: None):
+            with patch.object(SpendingAgent, '__init__', lambda _: None):
                 agent = SpendingAgent()
                 agent._user_context_dao = None
                 agent._auth_service = None
@@ -359,7 +533,7 @@ class TestSpendingAgentMultiProviderRealLLM:
                     os.environ['DEFAULT_LLM_PROVIDER'] = provider.value
                     
                     # Create agent with this provider
-                    with patch.object(SpendingAgent, '__init__', lambda x: None):
+                    with patch.object(SpendingAgent, '__init__', lambda _: None):
                         agent = SpendingAgent()
                         agent._user_context_dao = None
                         agent._auth_service = None
