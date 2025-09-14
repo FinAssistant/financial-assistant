@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+import logging
 from .langgraph_config import get_langgraph_config
 
 
@@ -10,8 +11,10 @@ class OrchestratorAgent:
     
     def __init__(self):
         self.langgraph_config = get_langgraph_config()
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("OrchestratorAgent initialized")
     
-    def process_message(
+    async def process_message(
         self, 
         user_message: str, 
         user_id: str, 
@@ -43,15 +46,17 @@ class OrchestratorAgent:
         
         try:
             # Process through LangGraph
-            result = self.langgraph_config.invoke_conversation(
+            result = await self.langgraph_config.invoke_conversation(
                 user_message=user_message.strip(),
                 user_id=user_id,
                 session_id=effective_session_id
             )
             
+            
             return result
             
         except Exception as e:
+            self.logger.error(f"Orchestrator processing error: {e}")
             # Error handling - return graceful fallback
             return {
                 "content": "I apologize, but I'm having trouble processing your message right now. Please try again.",
@@ -113,7 +118,7 @@ class OrchestratorAgent:
                 "error": str(e)
             }
     
-    def health_check(self) -> Dict[str, Any]:
+    async def health_check(self) -> Dict[str, Any]:
         """
         Simple health check for the orchestrator agent.
         
@@ -135,9 +140,10 @@ class OrchestratorAgent:
             # Check if LLM is available
             llm_available = self.langgraph_config.llm is not None
             
+            
             if llm_available:
                 # Test basic functionality if LLM is available
-                test_response = self.process_message(
+                test_response = await self.process_message(
                     user_message="health check",
                     user_id="system",
                     session_id="health_check"
@@ -153,6 +159,7 @@ class OrchestratorAgent:
             return {
                 "status": "healthy" if graph_initialized else "unhealthy",
                 "graph_initialized": graph_initialized,
+                "llm_available": llm_available,
                 "test_response_received": test_response_received,
                 "error": error
             }

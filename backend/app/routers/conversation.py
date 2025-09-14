@@ -51,6 +51,7 @@ class ConversationHealthResponse(BaseModel):
     """Response model for conversation health check."""
     status: str
     graph_initialized: bool
+    llm_available: bool
     test_response_received: bool
     error: Optional[str] = None
 
@@ -58,8 +59,15 @@ class ConversationHealthResponse(BaseModel):
 # Create router
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
-# Global orchestrator instance
-orchestrator = OrchestratorAgent()
+# Global orchestrator instance - lazy loaded
+orchestrator = None
+
+def get_orchestrator() -> OrchestratorAgent:
+    """Get or create the global orchestrator instance."""
+    global orchestrator
+    if orchestrator is None:
+        orchestrator = OrchestratorAgent()
+    return orchestrator
 
 
 @router.post("/send", response_class=StreamingResponse)
@@ -110,7 +118,7 @@ async def send_message(
             
             try:
                 # Get response from orchestrator
-                ai_response = orchestrator.process_message(
+                ai_response = await get_orchestrator().process_message(
                     user_message=last_message.content.strip(),
                     user_id=current_user,
                     session_id=session_id
@@ -188,7 +196,7 @@ async def send_message_non_streaming(
     
     try:
         # Process message through orchestrator
-        ai_response = orchestrator.process_message(
+        ai_response = await get_orchestrator().process_message(
             user_message=last_message.content.strip(),
             user_id=current_user,
             session_id=session_id
@@ -228,11 +236,12 @@ async def health_check(
     Requires authentication to prevent abuse.
     """
     try:
-        health_result = orchestrator.health_check()
+        health_result = await get_orchestrator().health_check()
         
         return ConversationHealthResponse(
             status=health_result["status"],
             graph_initialized=health_result["graph_initialized"],
+            llm_available=health_result["llm_available"],
             test_response_received=health_result["test_response_received"],
             error=health_result.get("error")
         )
@@ -241,6 +250,7 @@ async def health_check(
         return ConversationHealthResponse(
             status="unhealthy",
             graph_initialized=False,
+            llm_available=False,
             test_response_received=False,
             error=str(e)
         )

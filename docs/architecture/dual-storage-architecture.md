@@ -43,26 +43,21 @@ The AI Financial Assistant employs a sophisticated dual-storage architecture tha
 
 ## Agent Access Patterns
 
-### Onboarding Agent Workflow
-```python
-# Phase 1: Essential Information Collection
-async def collect_essential_info(user_id: str):
-    # Store structured data in SQLite
-    personal_context = await extract_demographics(conversation)
-    await sqlite_storage.store_personal_context(user_id, personal_context)
-    
-    # Store conversational context in Graphiti
-    await graphiti.add_episode(user_id, conversation_context)
+### Onboarding Agent Workflow with Graphiti Integration
 
-# Phase 2: Ongoing Conversational Discovery  
-async def ongoing_discovery(user_id: str, conversation: str):
-    # Query existing context from both sources
-    personal_context = await sqlite_storage.get_personal_context(user_id)
-    financial_context = await graphiti.search(user_id, "financial goals constraints")
-    
-    # Store new insights in appropriate system
-    await graphiti.add_episode(user_id, conversation)
-```
+The onboarding agent implements explicit conversation storage in Graphiti through a dedicated `_store_memory` node in its LangGraph workflow. This approach ensures that user conversations are preserved for building comprehensive financial profiles.
+
+**Key Integration Points:**
+- **Conversation Storage**: After each LLM interaction, conversations are stored in Graphiti using the `add_episode` MCP tool
+- **User Data Isolation**: Critical security implementation using `user_id` as `group_id` to ensure complete data separation between users
+- **Context Preservation**: Both user messages and AI responses are stored to maintain conversation continuity
+- **Graceful Degradation**: Graphiti storage failures don't interrupt the onboarding flow
+
+**Profile Building Strategy**: The agent combines structured demographic data (SQLite) with conversational context (Graphiti) to create comprehensive user profiles that capture both factual information and nuanced preferences expressed naturally.
+
+**Enhanced Life Change Detection**: Advanced prompting enables the agent to detect significant life events (job loss, family changes, relocations) and update profiles accordingly, supporting dynamic financial planning needs.
+
+*Implementation: See `backend/app/ai/onboarding.py` - `_store_memory` method*
 
 ### Spending Agent Data Access
 ```python
@@ -135,6 +130,20 @@ The dual-storage architecture directly enables Epic 2.1's two-phase approach:
 - SQLite provides ACID transactions for demographic updates
 - Graphiti handles eventual consistency for conversational learning
 - No strong consistency required between storage systems
+
+### Graphiti MCP Tools Integration
+
+**Core MCP Tools Used:**
+- **`add_memory`**: Stores conversation episodes with automatic entity extraction
+- **`search_memory_nodes`**: Retrieves relevant financial context based on semantic search
+- **User Data Isolation**: All operations use `group_id = user_id` pattern for security
+
+**MCP Client Architecture**: 
+- Shared `GraphitiMCPClient` provides consistent interface across all agents
+- Handles connection management and error recovery automatically  
+- Enhanced content processing for financial conversations with context metadata
+
+*Implementation: See `backend/app/ai/mcp_clients/graphiti_client.py`*
 
 ### Agent Coordination
 - Agents query both systems as needed for complete context

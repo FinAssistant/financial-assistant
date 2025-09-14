@@ -1,11 +1,13 @@
 from typing import Dict, Any, Optional, Annotated
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
+import logging
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
+from .mcp_clients.graphiti_client import get_graphiti_client
 
 
 # Structured output model for LLM responses
@@ -76,10 +78,14 @@ class OnboardingAgent:
     def __init__(self):
         """Initialize the onboarding agent."""
         self._graph = None
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("OnboardingAgent initialized")
     
     def _read_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Read user and personal context data from SQLite database."""
         user_id = config["configurable"]["user_id"]
+
+        self.logger.info(f"Reading onboarding database for user {user_id}")
         
         try:
             # Get user data to check if user exists
@@ -121,6 +127,10 @@ class OnboardingAgent:
         """Call LLM to process user message and extract profile data."""
         llm = llm_factory.create_llm()
         
+        # No tool binding for simplified workflow - memory storage handled in separate node
+
+        self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
+        
         # Build system prompt for structured data extraction
         system_prompt = """You are an onboarding assistant with TWO important jobs:
         1. Extract profile data from user messages into the extracted_data field
@@ -130,13 +140,15 @@ class OnboardingAgent:
         - ALWAYS provide a helpful, natural response to the user in user_response field
         - Extract ANY profile data mentioned by the user into the extracted_data field
         - NEVER echo or repeat the user's message - always generate your own response
+        - IMPORTANT: UPDATE existing fields when life circumstances change (job loss, career change, family changes, moves)
+        - DETECT employment status changes and update related fields (occupation_type, life_stage, family_structure)
 
         Extract these exact fields when mentioned:
         - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
-        - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement  
-        - occupation_type: job category (teacher, engineer, healthcare, etc.)
+        - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement, between_jobs  
+        - occupation_type: job category (teacher, engineer, healthcare, unemployed, etc.)
         - location_context: state/region with cost of living
-        - family_structure: single_no_dependents, single_with_dependents, married_dual_income, etc.
+        - family_structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income, etc.
         - marital_status: single, married, divorced, widowed, domestic_partnership
         - total_dependents_count: number (integer)
         - children_count: number (integer) 
@@ -146,6 +158,8 @@ class OnboardingAgent:
         - Age "25" or "18-25" → "age_range": "18_25"
         - Job "teacher" → "occupation_type": "teacher" 
         - Job "software engineer" → "occupation_type": "engineer"
+        - "I left my job" / "I'm unemployed" → "occupation_type": "unemployed", "life_stage": "between_jobs"
+        - "My spouse lost their job" → update "family_structure" from "married_dual_income" to "married_single_income"
         - Location "California" → "location_context": "California, high cost of living"
         - "married" → "marital_status": "married"
         - "two kids" → "children_count": 2
@@ -181,6 +195,18 @@ class OnboardingAgent:
           "user_response": "I'd be happy to help with investment advice! First, I need to understand your personal situation. Could you tell me your age range and occupation?"
         }
         
+        Example 3 - User reports LIFE CHANGES (CRITICAL: Always extract updates):
+        User: "I have left my job in mid July, my wife is taking a leave of absence starting in October"
+        Response: {
+          "extracted_data": {
+            "occupation_type": "unemployed",
+            "life_stage": "between_jobs",
+            "family_structure": "married_no_income"
+          },
+          "completion_status": "complete",
+          "user_response": "Thank you for updating me on these important changes. Being between jobs and having your wife take leave will significantly impact your financial planning. I'd be happy to help you navigate this transition period."
+        }
+        
         REMEMBER: Always provide a helpful user_response. Never echo the user's message."""
         
         # Get current collected data context
@@ -195,6 +221,8 @@ class OnboardingAgent:
         structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
         
         response = structured_llm.invoke(messages)
+
+        self.logger.info(f"Onboarding LLM response: {response}")
         
         # Create AI message with natural response
         ai_message = AIMessage(
@@ -207,20 +235,66 @@ class OnboardingAgent:
         updated_collected.update(response.extracted_data)
         
         
-        return {
+        data =  {
             "messages": [ai_message],
             "collected_data": updated_collected,
             "needs_database_update": bool(response.extracted_data),
             "onboarding_complete": response.completion_status == "complete"
         }
 
+        self.logger.info(f"Onboarding LLM response and collected data: {data}")
+
+        return data
+
+    async def _store_memory(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
+        """Explicitly store conversation in Graphiti after LLM processing."""
+        user_id = config["configurable"]["user_id"]
+
+        self.logger.info(f"Storing onboarding memory for user {user_id}")
+        
+        # Get the latest human message and AI response
+        human_message = None
+        ai_response = None
+        
+        for msg in reversed(state.messages):
+            if isinstance(msg, AIMessage) and not ai_response:
+                ai_response = msg.content
+            elif isinstance(msg, HumanMessage) and not human_message:
+                human_message = msg.content
+                break
+        
+        if human_message and ai_response:
+            # Use GraphitiMCPClient directly for guaranteed storage
+            try:
+                graphiti_client = await get_graphiti_client()
+                self.logger.info(f"Storing onboarding memory for user {user_id}: {human_message}")
+                await graphiti_client.add_episode(
+                    user_id=user_id,
+                    content=human_message,
+                    context={"assistant_response": ai_response}, 
+                    name="Onboarding Conversation",
+                    source_description="onboarding_agent"
+                )
+                
+                self.logger.info(f"Stored onboarding memory for user {user_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to store memory for user {user_id}: {e}")
+                # Don't break flow - memory storage failure shouldn't stop onboarding
+        else:
+            self.logger.warning(f"Insufficient messages to store memory for user {user_id}")
+        
+        return {}  # No state changes needed
+
     def _update_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Update database with collected profile data."""
-        if not state.needs_database_update and not state.onboarding_complete:
-            return {"needs_database_update": False}  # Still need to return a valid state field
-        
+
         user_id = config["configurable"]["user_id"]
-        
+
+        self.logger.info(f"Updating onboarding database for user {user_id}: needs_update={state.needs_database_update}, complete={state.onboarding_complete}, collected_data={state.collected_data}")
+
+        # Always try to update if we have collected data - don't check flags
+        # People's situations change (new kids, job changes, moves, etc.)
+                
         try:
             # Filter collected_data to only include fields that exist in PersonalContextModel
             valid_fields = {
@@ -236,17 +310,22 @@ class OnboardingAgent:
             }
             
             if filtered_data:
+                self.logger.info(f"Saving filtered data to database for user {user_id}: {filtered_data}")
                 # Save to structured PersonalContextModel table
                 user_storage.create_or_update_personal_context(user_id, filtered_data)
+            else:
+                self.logger.info(f"No valid data to save for user {user_id}")
             
             # Update user's profile_complete flag if onboarding is complete
             if state.onboarding_complete:
+                self.logger.info(f"Marking profile complete for user {user_id}")
                 user_storage.update_user(user_id, {"profile_complete": True})
             
             return {"needs_database_update": False}
             
         except Exception:
             # Log error but don't break the flow
+            self.logger.error(f"Failed to update database for user {user_id} with data {state.collected_data}")
             return {"needs_database_update": False}
 
     def _update_main_graph(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
@@ -309,26 +388,35 @@ class OnboardingAgent:
         else:
             return "end"
     
+    def _should_use_tools(self, state: OnboardingState) -> str:
+        """Determine if the LLM wants to use tools based on the last message."""
+        last_message = state.messages[-1]
+        
+        # Check if the LLM made tool calls
+        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            self.logger.info("LLM requested tool usage")
+            return "tools"
+        else:
+            return "update_database"
+    
     def graph_compile(self) -> StateGraph:
         """Compile and return the onboarding subgraph."""
         if self._graph is None:
             onb_builder = StateGraph(OnboardingState)
             
-            # Add nodes
+            # Add nodes - simplified linear workflow
             onb_builder.add_node("read_database", self._read_db)
             onb_builder.add_node("call_llm", self._call_llm)
+            onb_builder.add_node("store_memory", self._store_memory)
             onb_builder.add_node("update_database", self._update_db)
             onb_builder.add_node("update_global_state", self._update_main_graph)
 
-            # Add edges - always update database first, then check completion
+            # Add linear edges - ReadDB -> Call LLM -> Store Memory -> Update DB -> Update Global -> END
             onb_builder.add_edge(START, "read_database")
             onb_builder.add_edge("read_database", "call_llm")
-            onb_builder.add_edge("call_llm", "update_database")  # Always update DB first
-            onb_builder.add_conditional_edges(
-                "update_database",  # Check completion AFTER database update
-                self._check_profile_complete, 
-                {"update_global_state": "update_global_state", "end": END}
-            )
+            onb_builder.add_edge("call_llm", "store_memory")
+            onb_builder.add_edge("store_memory", "update_database")            
+            onb_builder.add_edge("update_database", "update_global_state")
             onb_builder.add_edge("update_global_state", END)
 
             self._graph = onb_builder.compile()

@@ -327,6 +327,10 @@
             "type": "boolean",
             "title": "Graph Initialized"
           },
+          "llm_available": {
+            "type": "boolean",
+            "title": "Llm Available"
+          },
           "test_response_received": {
             "type": "boolean",
             "title": "Test Response Received"
@@ -347,6 +351,7 @@
         "required": [
           "status",
           "graph_initialized",
+          "llm_available",
           "test_response_received"
         ],
         "title": "ConversationHealthResponse",

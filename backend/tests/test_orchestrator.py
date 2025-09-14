@@ -1,5 +1,6 @@
 import pytest
-from unittest.mock import patch, MagicMock
+import pytest_asyncio
+from unittest.mock import patch, MagicMock, AsyncMock
 from app.ai.orchestrator import OrchestratorAgent
 from app.ai.langgraph_config import LangGraphConfig
 
@@ -21,9 +22,10 @@ def mock_langgraph_config():
 class TestOrchestratorAgent:
     """Test cases for the OrchestratorAgent."""
     
-    def test_process_message_valid_input(self, orchestrator):
+    @pytest.mark.asyncio
+    async def test_process_message_valid_input(self, orchestrator):
         """Test processing a valid message."""
-        result = orchestrator.process_message(
+        result = await orchestrator.process_message(
             user_message="Hello, I need help with budgeting",
             user_id="test_user_123",
             session_id="test_session_456"
@@ -35,16 +37,17 @@ class TestOrchestratorAgent:
         assert "user_id" in result
         assert "message_type" in result
         
-        assert result["agent"] == "orchestrator"
+        assert result["agent"] == "small_talk"
         assert result["session_id"] == "test_session_456"
         assert result["user_id"] == "test_user_123"
         assert result["message_type"] == "ai_response"
         assert isinstance(result["content"], str)
         assert len(result["content"]) > 0
     
-    def test_process_message_empty_input(self, orchestrator):
+    @pytest.mark.asyncio
+    async def test_process_message_empty_input(self, orchestrator):
         """Test processing an empty message."""
-        result = orchestrator.process_message(
+        result = await orchestrator.process_message(
             user_message="",
             user_id="test_user_123"
         )
@@ -54,9 +57,10 @@ class TestOrchestratorAgent:
         assert result["user_id"] == "test_user_123"
         assert result["error"] is None
     
-    def test_process_message_whitespace_only(self, orchestrator):
+    @pytest.mark.asyncio
+    async def test_process_message_whitespace_only(self, orchestrator):
         """Test processing a message with only whitespace."""
-        result = orchestrator.process_message(
+        result = await orchestrator.process_message(
             user_message="   \n\t  ",
             user_id="test_user_123"
         )
@@ -64,9 +68,10 @@ class TestOrchestratorAgent:
         assert result["content"] == "I'm here to help! Please let me know what you'd like to discuss about your finances."
         assert result["agent"] == "orchestrator"
     
-    def test_process_message_no_session_id(self, orchestrator):
+    @pytest.mark.asyncio
+    async def test_process_message_no_session_id(self, orchestrator):
         """Test processing a message without session_id."""
-        result = orchestrator.process_message(
+        result = await orchestrator.process_message(
             user_message="Test message",
             user_id="test_user_123"
         )
@@ -76,7 +81,8 @@ class TestOrchestratorAgent:
         assert result["session_id"] is not None
     
     @patch('app.ai.orchestrator.get_langgraph_config')
-    def test_process_message_langgraph_exception(self, mock_get_config, orchestrator):
+    @pytest.mark.asyncio
+    async def test_process_message_langgraph_exception(self, mock_get_config, orchestrator):
         """Test handling of LangGraph exceptions."""
         # Mock LangGraph to raise an exception
         mock_config = MagicMock()
@@ -86,7 +92,7 @@ class TestOrchestratorAgent:
         # Create a new orchestrator with the mocked config
         orchestrator = OrchestratorAgent()
         
-        result = orchestrator.process_message(
+        result = await orchestrator.process_message(
             user_message="Test message",
             user_id="test_user_123"
         )
@@ -96,9 +102,10 @@ class TestOrchestratorAgent:
         assert result["error"] is not None
         assert "LangGraph error" in result["error"]
     
-    def test_health_check_healthy(self, orchestrator):
+    @pytest.mark.asyncio
+    async def test_health_check_healthy(self, orchestrator):
         """Test health check when system is healthy."""
-        result = orchestrator.health_check()
+        result = await orchestrator.health_check()
         
         assert "status" in result
         assert "graph_initialized" in result
@@ -114,7 +121,8 @@ class TestOrchestratorAgent:
         # error can be None or contain LLM configuration message
         assert result["error"] is None or "LLM not configured" in str(result["error"])
     
-    def test_health_check_unhealthy(self):
+    @pytest.mark.asyncio
+    async def test_health_check_unhealthy(self):
         """Test health check when system is unhealthy."""
         # Create orchestrator with broken config
         orchestrator = OrchestratorAgent()
@@ -122,12 +130,13 @@ class TestOrchestratorAgent:
         # Break the graph reference to simulate unhealthy state
         orchestrator.langgraph_config.graph = None
         
-        result = orchestrator.health_check()
+        result = await orchestrator.health_check()
         
         assert result["status"] == "unhealthy"
         assert result["graph_initialized"] is False
         assert result["test_response_received"] is False
         assert result["error"] is not None
+
 
 
 class TestLangGraphConfig:
@@ -140,7 +149,8 @@ class TestLangGraphConfig:
         assert config.graph is not None
         assert hasattr(config, 'invoke_conversation')
     
-    def test_invoke_conversation_basic(self, mock_llm_factory):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_basic(self, mock_llm_factory):
         """Test basic conversation invocation."""
         # Override the mock to return proper routing responses
         from langchain_core.messages import AIMessage
@@ -154,7 +164,7 @@ class TestLangGraphConfig:
         
         config = LangGraphConfig()
         
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message="Hello",
             user_id="test_user",
             session_id="test_session"
@@ -172,7 +182,8 @@ class TestLangGraphConfig:
         assert isinstance(result["content"], str)
     
     @pytest.mark.skip(reason="OnboardingAgent structured output needs to be fixed")
-    def test_invoke_conversation_onboarding_route(self, mock_llm_factory):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_onboarding_route(self, mock_llm_factory):
         """Test that the orchestrator routes to ONBOARDING for users without complete profiles."""
         from langchain_core.messages import AIMessage
         
@@ -186,7 +197,7 @@ class TestLangGraphConfig:
         config = LangGraphConfig()
         
         test_message = "I need help with my budget"
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message=test_message,
             user_id="test_user",
             session_id="test_session"

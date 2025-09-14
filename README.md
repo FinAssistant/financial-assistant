@@ -6,10 +6,10 @@ A modern, full-stack AI-powered financial management application built with Reac
 
 ### Prerequisites
 
-- **Node.js** 18+ 
-- **Python** 3.11
-- **UV** package manager for Python
-- **Docker** (optional, for deployment)
+- **Docker** and **Docker Compose** (required for development)
+- **Node.js** 18+ (for local frontend development only)
+- **Python** 3.11 (for local backend development only)
+- **UV** package manager for Python (for local backend development only)
 
 ### Setup
 
@@ -20,15 +20,17 @@ A modern, full-stack AI-powered financial management application built with Reac
    ./scripts/dev-setup.sh
    ```
 
-2. **Start development servers:**
+2. **Start all services with Docker Compose:**
    ```bash
    ./scripts/start-dev.sh
    ```
 
 3. **Access the application:**
-   - Frontend: http://localhost:5173
+   - Frontend: http://localhost:8000
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
+   - Graphiti MCP Server: http://localhost:8080
+   - Neo4j Browser: http://localhost:7474
 
 ## 📁 Project Structure
 
@@ -105,16 +107,33 @@ uvicorn app.main:app --reload  # Start development server
 pytest                     # Run tests
 ```
 
-## 🐳 Docker Deployment
+## 🐳 Docker Deployment with Graphiti Integration
 
-### Building Docker Image
+### Development with Docker Compose
+
+The application uses Docker Compose to orchestrate multiple services including Graphiti graph database integration:
 
 ```bash
-# Build production image
-docker build -t ai-financial-assistant .
+# Start all services (includes building latest code)
+./scripts/start-dev.sh
 
-# Run container
-docker run -p 8000:8000 ai-financial-assistant
+# Or manually with docker-compose
+docker-compose up --build
+```
+
+### Services Running:
+- **financial-assistant**: Main FastAPI application with React frontend
+- **graphiti-mcp**: Graphiti MCP server for graph database operations  
+- **neo4j**: Neo4j graph database for Graphiti storage
+
+### Production Deployment
+
+```bash
+# Build and start all services
+docker-compose up --build -d
+
+# Stop all services
+docker-compose down
 ```
 
 ## 🧪 Testing
@@ -199,6 +218,13 @@ PLAID_CLIENT_ID=your-plaid-client-id
 PLAID_SECRET=your-plaid-secret
 PLAID_ENV=sandbox
 PLAID_PRODUCTS=["transactions", "accounts", "balances"]
+
+# Graphiti Graph Database Configuration
+NEO4J_URI=bolt://neo4j:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=demodemo
+OPENAI_API_KEY=your-openai-api-key
+MODEL_NAME=gpt-4o-mini
 ```
 
 #### LLM Provider Setup

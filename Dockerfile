@@ -47,6 +47,7 @@ RUN uv pip install -r pyproject.toml
 # Copy backend source code (includes mcp_server)
 COPY backend/app ./app
 COPY backend/mcp_server ./mcp_server
+RUN mkdir -p ./data
 
 # Copy built frontend files from previous stage
 COPY --from=frontend-builder /app/backend/app/static ./app/static

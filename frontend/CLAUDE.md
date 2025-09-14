@@ -8,27 +8,11 @@
 - **Linting**: ESLint with `@typescript-eslint`
 - **Package Manager**: `npm` (preferred)
 
-## 🔍 Documentation
-
-@../docs/architecture/coding-standards.md
-@../docs/architecture/error-handling-strategy.md
-@../docs/front-end-spec.md
-
 ## 🧱 Component Guidelines
 
 - Use styled components
 - Always keep the implementation as simple as possible
 - Always check if we can reuse existing components or styles from our codebase and/or installed libraries
-
-## Development Philosophy
-
-- **Simplicity**: Write simple, straightforward code
-- **Readability**: Make code easy to understand
-- **Performance**: Consider performance without sacrificing readability
-- **Maintainability**: Write code that's easy to update
-- **Testability**: Ensure code is testable
-- **Reusability**: Create reusable components and functions
-- **Less Code = Less Debt**: Minimize code footprint
 
 ## Coding Best Practices
 

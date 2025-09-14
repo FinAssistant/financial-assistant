@@ -18,10 +18,20 @@ async def app_lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up FastAPI application...")
     
+    # Initialize AsyncSqliteSaver checkpointer
+    from app.ai.langgraph_config import setup_checkpointer
+    await setup_checkpointer()
+    
+    # Initialize Graphiti MCP tools for all agents
+    from app.ai.mcp_clients.graphiti_client import setup_graphiti_tools
+    await setup_graphiti_tools()
+    
     yield
     
     # Shutdown
     logger.info("Shutting down FastAPI application...")
+    from app.ai.langgraph_config import cleanup_checkpointer
+    await cleanup_checkpointer()
 
 
 

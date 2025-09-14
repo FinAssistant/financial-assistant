@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     
     # Database settings
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./financial_assistant.db",
+        default="sqlite+aiosqlite:///./data/financial_assistant.db",
         description="Database URL for SQLite persistence"
     )
     database_echo: bool = Field(default=False, description="Echo SQL queries for debugging")
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     
     # LangGraph settings
     langgraph_memory_type: str = Field(default="sqlite", description="LangGraph memory backend")
-    langgraph_db_path: str = Field(default="./langgraph_checkpoints.db", description="Path to LangGraph checkpoint database")
+    langgraph_db_path: str = Field(default="./data/langgraph_checkpoints.db", description="Path to LangGraph checkpoint database")
     conversation_timeout: int = Field(default=300, description="Conversation timeout in seconds")
     
     # Plaid API settings
@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     plaid_products: List[str] = Field(
         default_factory=lambda: ["identity", "transactions", "liabilities", "investments"],
         description="Plaid products to use"
+    )
+    
+    # MCP settings
+    mcp_graphiti_server_url: str = Field(
+        default="http://localhost:8080/sse", 
+        description="Graphiti MCP server URL"
     )
 
     @field_validator('default_llm_provider')

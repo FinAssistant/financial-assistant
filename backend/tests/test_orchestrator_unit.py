@@ -3,6 +3,7 @@ Unit tests for orchestrator and agent routing functionality.
 All tests use mocked LLM calls by default.
 """
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import pytest
 
 from app.ai.langgraph_config import LangGraphConfig, GlobalState
 
@@ -53,11 +54,18 @@ class TestLangGraphConfig:
         assert config.llm == mock_llm_factory
     
     def test_checkpointer_initialization(self, mock_llm_factory):
-        """Test SQLite checkpointer setup."""
+        """Test checkpointer setup in test environment."""
         config = LangGraphConfig()
         
-        # Should have checkpointer (SQLite is default)
-        assert config.checkpointer is not None
+        # In test environment, checkpointer is None by design (no FastAPI startup)
+        # This is expected behavior - tests should work without external SQLite dependencies
+        assert config.checkpointer is None
+        
+        # Test that we can create a config with an explicit checkpointer
+        from unittest.mock import Mock
+        mock_checkpointer = Mock()
+        config_with_checkpointer = LangGraphConfig(checkpointer=mock_checkpointer)
+        assert config_with_checkpointer.checkpointer is mock_checkpointer
 
 
 class TestOrchestratorRouting:
@@ -142,7 +150,8 @@ class TestSmallTalkAgent:
 class TestConversationFlow:
     """Test end-to-end conversation processing with mocked responses."""
     
-    def test_invoke_conversation_basic(self, mock_llm_factory, test_user_id, test_session_id):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_basic(self, mock_llm_factory, test_user_id, test_session_id):
         """Test basic conversation invocation."""
         # Set up mock to return routing decision first, then small talk response
         mock_responses = [
@@ -153,7 +162,7 @@ class TestConversationFlow:
         
         config = LangGraphConfig()
         
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message="Hello there!",
             user_id=test_user_id,
             session_id=test_session_id
@@ -169,7 +178,8 @@ class TestConversationFlow:
         assert result["user_id"] == test_user_id
         assert len(result["content"]) > 0
     
-    def test_invoke_conversation_smalltalk_routing(self, mock_llm_factory, test_user_id, test_session_id):
+    @pytest.mark.asyncio
+    async def test_invoke_conversation_smalltalk_routing(self, mock_llm_factory, test_user_id, test_session_id):
         """Test conversation routes to small talk correctly."""
         # Mock orchestrator to return SMALLTALK, then small talk response
         mock_responses = [
@@ -180,7 +190,7 @@ class TestConversationFlow:
         
         config = LangGraphConfig()
         
-        result = config.invoke_conversation(
+        result = await config.invoke_conversation(
             user_message="Hi there!",
             user_id=test_user_id,
             session_id=test_session_id
