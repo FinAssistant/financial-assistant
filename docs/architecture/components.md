@@ -47,8 +47,6 @@ class FinancialAssistantGraph:
 - Tool: plaid_exchange_token - Exchange public token for access token  
 - Tool: plaid_get_accounts - Retrieve connected accounts with fresh data
 - Tool: plaid_get_transactions - Fetch transactions on-demand
-- Tool: graphiti_store_context - Store user context in graph database
-- Tool: graphiti_query_relationships - Query user financial relationships
 
 **MCP Architecture**:
 ```python
@@ -59,11 +57,34 @@ class FinancialMCPServer:
         "plaid_exchange_token": PlaidExchangeTool,
         "plaid_get_accounts": PlaidAccountsTool,
         "plaid_get_transactions": PlaidTransactionsTool,
-        
-        # Graphiti General-Purpose Tools
-        "graphiti_store_context": GraphitiStoreTool,
-        "graphiti_query_relationships": GraphitiQueryTool,
     }
+```
+
+### Graphiti Integration Service
+**Responsibility**: Client connection to external Graphiti MCP server for graph database operations
+
+**Key Interfaces**:
+- add_episode() - Store conversation episodes in Graphiti
+- search() - Query Graphiti for context and relationships
+
+**Integration Architecture**:
+```python
+# Shared MCP client for all agents
+class GraphitiMCPClient:
+    def __init__(self):
+        self.client = MultiServerMCPClient()
+    
+    async def connect(self):
+        # Connect to external Graphiti MCP server container
+        await self.client.add_server("graphiti", "sse://graphiti-mcp-server:8080/sse")
+    
+    async def add_episode(self, user_id: str, content: str):
+        # Use Graphiti's native add_memory tool
+        return await self.client.call_tool("graphiti", "add_memory", {
+            "user_id": user_id,
+            "content": content,
+            "group_id": user_id  # User data isolation
+        })
 ```
 
 **Periodic Sync Strategy**:

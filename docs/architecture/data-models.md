@@ -280,19 +280,23 @@ class FinancialAssistantState(BaseModel):
     user_id: str
     # LangGraph checkpointer persists this state automatically
 
-# Graphiti integration happens within agent nodes via MCP tools
+# Graphiti integration happens within agent nodes via shared client factory
 async def spending_agent_node(state: FinancialAssistantState):
-    # Store conversation context in Graphiti via MCP tool
-    await mcp_client.call_tool("graphiti_store_context", {
-        "user_id": state.user_id,
-        "context": f"User spending inquiry: {state.user_message}"
-    })
+    # Get shared Graphiti client (connects to external Graphiti MCP server)
+    graphiti_client = await get_graphiti_client()
     
-    # Query Graphiti for previous spending insights via MCP tool
-    context = await mcp_client.call_tool("graphiti_query_relationships", {
-        "user_id": state.user_id,
-        "query": "spending patterns personality insights"
-    })
+    # Store conversation context in Graphiti via external MCP server
+    await graphiti_client.add_episode(
+        user_id=state.user_id,
+        content=f"User spending inquiry: {state.user_message}",
+        context={"agent_type": "spending_agent", "query_type": "spending_analysis"}
+    )
+    
+    # Query Graphiti for previous spending insights via external MCP server
+    context = await graphiti_client.search(
+        user_id=state.user_id,
+        query="spending patterns personality insights"
+    )
     
     # Generate response with context (LangGraph manages the conversation flow)
     response = await llm.ainvoke([context, state.user_message])
