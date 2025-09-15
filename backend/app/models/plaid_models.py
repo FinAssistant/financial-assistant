@@ -3,7 +3,7 @@ Pydantic models for Plaid API data structures.
 These models represent the sanitized transaction and account data from Plaid.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from decimal import Decimal
 
@@ -183,11 +183,33 @@ class TransactionCategorization(BaseModel):
     on the AI categorization results that will be applied to PlaidTransaction objects.
     """
     
-    model_config = ConfigDict(
-        extra="ignore",
-        use_enum_values=True,
-        arbitrary_types_allowed=False  # Strict types for LLM compatibility
-    )
+    def __init_subclass__(cls, **kwargs):
+        """Configure model based on LLM provider."""
+        super().__init_subclass__(**kwargs)
+        try:
+            from app.config import Settings
+            settings = Settings()
+            
+            # Only use extra="forbid" for OpenAI structured output
+            if settings.default_llm_provider == "openai":
+                cls.model_config = ConfigDict(
+                    extra="forbid",
+                    use_enum_values=True,
+                    arbitrary_types_allowed=False
+                )
+            else:
+                cls.model_config = ConfigDict(
+                    extra="ignore",
+                    use_enum_values=True,
+                    arbitrary_types_allowed=False
+                )
+        except ImportError:
+            # Fallback configuration if settings unavailable
+            cls.model_config = ConfigDict(
+                extra="ignore",
+                use_enum_values=True,
+                arbitrary_types_allowed=False
+            )
     
     transaction_id: str = Field(..., description="Transaction ID being categorized")
     ai_category: str = Field(..., description="Primary AI-generated category")
@@ -227,11 +249,33 @@ class TransactionCategorizationBatch(BaseModel):
     This model is designed for structured LLM output when categorizing multiple transactions.
     """
     
-    model_config = ConfigDict(
-        extra="ignore",
-        use_enum_values=True,
-        arbitrary_types_allowed=False
-    )
+    def __init_subclass__(cls, **kwargs):
+        """Configure model based on LLM provider."""
+        super().__init_subclass__(**kwargs)
+        try:
+            from app.config import Settings
+            settings = Settings()
+            
+            # Only use extra="forbid" for OpenAI structured output
+            if settings.default_llm_provider == "openai":
+                cls.model_config = ConfigDict(
+                    extra="forbid",
+                    use_enum_values=True,
+                    arbitrary_types_allowed=False
+                )
+            else:
+                cls.model_config = ConfigDict(
+                    extra="ignore",
+                    use_enum_values=True,
+                    arbitrary_types_allowed=False
+                )
+        except ImportError:
+            # Fallback configuration if settings unavailable
+            cls.model_config = ConfigDict(
+                extra="ignore",
+                use_enum_values=True,
+                arbitrary_types_allowed=False
+            )
     
     categorizations: List[TransactionCategorization] = Field(
         default_factory=list, 
@@ -241,6 +285,18 @@ class TransactionCategorizationBatch(BaseModel):
         ..., 
         description="Summary of the categorization process"
     )
+    
+    @field_validator('categorizations', mode='before')
+    @classmethod
+    def parse_categorizations(cls, v):
+        """Parse categorizations if needed, handle various input formats."""
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v) if v.strip() else []
+            except json.JSONDecodeError:
+                return []
+        return v if isinstance(v, list) else []
     
     @field_validator('processing_summary')
     @classmethod
