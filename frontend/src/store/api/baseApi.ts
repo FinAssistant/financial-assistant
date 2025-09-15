@@ -33,6 +33,9 @@ const baseQueryWithReauth: BaseQueryFn<
       // Import logout dynamically to avoid circular dependency
       const { logout } = await import('../slices/authSlice')
       api.dispatch(logout())
+      
+      // Force redirect to login page immediately
+      window.location.href = '/login'
     }
   }
 

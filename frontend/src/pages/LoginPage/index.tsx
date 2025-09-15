@@ -6,6 +6,7 @@ import {
   useRegisterAuthRegisterPostMutation,
 } from '../../store/api/generated'
 import { selectIsAuthenticated, selectIsLoading } from '../../store/slices/authSlice'
+import { getErrorMessage } from '../../utils/errorUtils'
 import {
   Container,
   FormContainer,
@@ -201,9 +202,7 @@ const LoginPage: React.FC = () => {
 
           {currentError && (
             <ErrorMessage>
-              {'data' in currentError && currentError.data && typeof currentError.data === 'object' && 'detail' in currentError.data
-                ? (currentError.data as { detail: string }).detail
-                : 'An error occurred. Please try again.'}
+              {getErrorMessage(currentError)}
             </ErrorMessage>
           )}
 
