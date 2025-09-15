@@ -239,6 +239,7 @@ class LangGraphConfig:
         # profile_context = state.get_profile_context(user_id)
         
         # Build consolidated system prompt with all context
+        # FIXME: we should probably read this from the DB instead of context
         profile_status = "complete" if state.profile_complete else "incomplete"
         profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"
         
@@ -281,6 +282,8 @@ Examples:
             raise LLMError("LLM not available - API key not configured")
             
         response = self.llm.invoke(messages)
+
+        self.logger.info(f"Orchestrator: LLM response for routing decision: {response.content}")
         
         # Update state with new message
         return {
