@@ -4,8 +4,10 @@ Tests Orchestrator agent using a real LLM (e.g., GPT-4) for integration testing.
 This script is intended for integration testing and should be run only when the LLM service is accessible.
 """
 
+from time import sleep
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
+from app.core.config import settings
 
 from app.ai.langgraph_config import LangGraphConfig
 from app.services.llm_service import llm_factory
@@ -45,3 +47,7 @@ class TestOrchestratorLLM:
         assert result is not None
         assert "agent" in result
         assert result["agent"] == "onboarding", f"Expected 'onboarding' agent, got '{result['agent']}'"
+        
+        if settings.default_llm_provider == "google":
+            # Sleep to avoid rate limiting (specifically with Gemini free tier)
+            sleep(10)  
