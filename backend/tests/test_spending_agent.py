@@ -733,5 +733,155 @@ class TestSpendingAgentLLMIntegration:
         system_message = call_args[0]
         assert "Limited user context available" in system_message.content
 
+class TestSpendingAgentTransactionCategorization:
+    """Test integration between SpendingAgent and TransactionCategorizationService."""
+
+    @pytest.fixture
+    def agent_with_categorization(self):
+        """SpendingAgent instance with categorization service enabled."""
+        agent = SpendingAgent()
+        # Ensure categorization service is available for testing
+        assert agent.categorization_service is not None
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_fetch_and_process_with_categorization_integration(self, agent_with_categorization, sample_transactions):
+        """Test that _fetch_and_process_node properly integrates transaction categorization."""
+        # Mock successful transaction fetch
+        mock_transaction_data = {
+            "status": "success",
+            "transactions": [txn.model_dump() for txn in sample_transactions],
+            "total_transactions": len(sample_transactions)
+        }
+
+        with patch.object(agent_with_categorization, '_fetch_transactions', return_value=mock_transaction_data):
+            # Mock the categorization service response
+            from app.models.plaid_models import TransactionCategorization, TransactionCategorizationBatch
+
+            mock_categorizations = [
+                TransactionCategorization(
+                    transaction_id="txn_starbucks_1",
+                    ai_category="Food & Dining",
+                    ai_subcategory="Coffee Shops",
+                    ai_confidence=0.95,
+                    ai_tags=["caffeine", "daily-habit"],
+                    reasoning="Starbucks purchase clearly indicates coffee"
+                ),
+                TransactionCategorization(
+                    transaction_id="txn_gas_1",
+                    ai_category="Transportation",
+                    ai_subcategory="Gas Stations",
+                    ai_confidence=0.92,
+                    ai_tags=["fuel", "automotive"],
+                    reasoning="Shell gas station for vehicle fuel"
+                )
+            ]
+
+            mock_batch = TransactionCategorizationBatch(
+                categorizations=mock_categorizations,
+                processing_summary="Successfully categorized 2 transactions"
+            )
+
+            # Mock the categorization service
+            with patch.object(agent_with_categorization.categorization_service, 'categorize_transactions', return_value=mock_batch):
+
+                state = {
+                    "messages": [HumanMessage(content="Fetch and analyze my recent transactions")],
+                    "user_id": "test_user_123",
+                    "user_context": {
+                        "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                        "financial_context": {"has_dependents": False}
+                    },
+                    "found_in_graphiti": False
+                }
+
+                result = await agent_with_categorization._fetch_and_process_node(state)
+
+                # Verify basic response structure
+                assert "messages" in result
+                assert "found_in_graphiti" in result
+                assert result["found_in_graphiti"] is True
+
+                # Verify response mentions categorization
+                ai_message = result["messages"][0]
+                response_content = ai_message.content
+
+                # Should mention both total transactions and categorized count
+                assert "2 transactions" in response_content
+                assert "categorized 2" in response_content
+                assert "AI insights" in response_content
+
+                # Verify categorization service was called with correct data
+                agent_with_categorization.categorization_service.categorize_transactions.assert_called_once()
+                call_args = agent_with_categorization.categorization_service.categorize_transactions.call_args
+
+                # Check transaction objects were passed
+                transactions_arg = call_args[0][0]
+                assert len(transactions_arg) == 2
+                assert transactions_arg[0].transaction_id == "txn_starbucks_1"
+                assert transactions_arg[1].transaction_id == "txn_gas_1"
+
+                # Check user context was passed
+                user_context_arg = call_args[0][1]
+                assert user_context_arg["demographics"]["age_range"] == "26_35"
+                assert user_context_arg["financial_context"]["has_dependents"] is False
+
+    @pytest.mark.asyncio
+    async def test_categorization_service_initialization(self, agent_with_categorization):
+        """Test that categorization service is properly initialized in SpendingAgent."""
+        # Verify categorization service exists
+        assert hasattr(agent_with_categorization, 'categorization_service')
+        assert agent_with_categorization.categorization_service is not None
+
+        # Verify it has the expected interface
+        assert hasattr(agent_with_categorization.categorization_service, 'categorize_transactions')
+        assert hasattr(agent_with_categorization, '_categorize_and_apply_transactions')
+        assert hasattr(agent_with_categorization, '_apply_categorization_to_transaction')
+
+    @pytest.mark.asyncio
+    async def test_categorize_and_apply_transactions_method(self, agent_with_categorization, sample_transactions):
+        """Test the _categorize_and_apply_transactions utility method."""
+        # Mock categorization response
+        from app.models.plaid_models import TransactionCategorization, TransactionCategorizationBatch
+
+        mock_categorization = TransactionCategorization(
+            transaction_id="txn_starbucks_1",
+            ai_category="Food & Dining",
+            ai_subcategory="Coffee Shops",
+            ai_confidence=0.95,
+            ai_tags=["caffeine"],
+            reasoning="Coffee purchase"
+        )
+
+        mock_batch = TransactionCategorizationBatch(
+            categorizations=[mock_categorization],
+            processing_summary="Categorized 1 transaction"
+        )
+
+        with patch.object(agent_with_categorization.categorization_service, 'categorize_transactions', return_value=mock_batch):
+
+            user_context = {"demographics": {"age_range": "26_35"}}
+
+            categorized_transactions, batch_result = await agent_with_categorization._categorize_and_apply_transactions(
+                sample_transactions, user_context
+            )
+
+            # Verify results
+            assert len(categorized_transactions) == 2
+            assert batch_result == mock_batch
+
+            # Verify first transaction got AI categorization applied
+            first_txn = categorized_transactions[0]
+            assert first_txn.ai_category == "Food & Dining"
+            assert first_txn.ai_subcategory == "Coffee Shops"
+            assert first_txn.ai_confidence == 0.95
+            assert first_txn.ai_tags == ["caffeine"]
+
+            # Verify second transaction remains unchanged (no categorization for it)
+            second_txn = categorized_transactions[1]
+            assert second_txn.ai_category is None
+            assert second_txn.transaction_id == "txn_gas_1"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

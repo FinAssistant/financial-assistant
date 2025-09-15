@@ -14,6 +14,8 @@ import json
 from app.services.user_context_dao import UserContextDAOSync
 from app.services.auth_service import AuthService
 from app.services.llm_service import llm_factory
+from app.services.transaction_categorization import TransactionCategorizationService
+from app.utils.context_formatting import build_user_context_string
 from langchain_core.messages import SystemMessage
 
 logger = logging.getLogger(__name__)
@@ -53,9 +55,19 @@ class SpendingAgent:
         try:
             self.llm = llm_factory.create_llm()
             logger.info("LLM client initialized for SpendingAgent")
+
+            # Initialize transaction categorization service
+            if self.llm:
+                from app.core.config import settings
+                self.categorization_service = TransactionCategorizationService(self.llm, settings)
+                logger.info("Transaction categorization service initialized")
+            else:
+                self.categorization_service = None
+
         except Exception as e:
             logger.error(f"Failed to initialize LLM client: {e}")
             self.llm = None
+            self.categorization_service = None
             
         self._setup_graph()
     
@@ -118,57 +130,6 @@ class SpendingAgent:
         
         logger.info("SpendingAgent subgraph initialized with conditional routing")
     
-    def _build_user_context_string(self, user_context: Dict[str, Any]) -> str:
-        """
-        Build a formatted user context string for LLM prompts.
-        Reusable across all LLM-powered response generation nodes in SpendingAgent.
-        
-        Args:
-            user_context: Dictionary containing user demographics and financial context
-                Expected structure: {
-                    "demographics": {"age_range": "26_35", "occupation": "engineer", ...},
-                    "financial_context": {"has_dependents": False, ...}
-                }
-            
-        Returns:
-            Formatted string with user context information suitable for LLM prompts
-        """
-        if not user_context:
-            return "No user context available."
-        
-        context_parts = []
-        
-        # Demographics from nested structure
-        demographics = user_context.get("demographics", {})
-        if demographics.get("age_range"):
-            context_parts.append(f"Age range: {demographics['age_range']}")
-        if demographics.get("occupation"):
-            context_parts.append(f"Occupation: {demographics['occupation']}")
-        if demographics.get("life_stage"):
-            context_parts.append(f"Life stage: {demographics['life_stage']}")
-        if demographics.get("location"):
-            context_parts.append(f"Location: {demographics['location']}")
-        
-        # Financial context from nested structure
-        financial_context = user_context.get("financial_context", {})
-        if financial_context.get("has_dependents") is not None:
-            has_deps = "Yes" if financial_context["has_dependents"] else "No"
-            context_parts.append(f"Has dependents: {has_deps}")
-        if financial_context.get("income_range"):
-            context_parts.append(f"Income range: {financial_context['income_range']}")
-        if financial_context.get("employment_status"):
-            context_parts.append(f"Employment: {financial_context['employment_status']}")
-        
-        # Additional fields that might be present
-        if demographics.get("education_level"):
-            context_parts.append(f"Education: {demographics['education_level']}")
-        if demographics.get("marital_status"):
-            context_parts.append(f"Marital status: {demographics['marital_status']}")
-        
-        if context_parts:
-            return "; ".join(context_parts)
-        else:
-            return "Limited user context available."
 
     def _route_to_intent_node(self, state: SpendingAgentState) -> str:
         """
@@ -228,6 +189,102 @@ class SpendingAgent:
                 return None
         
         return self._mcp_clients[user_id]
+
+    def _apply_categorization_to_transaction(
+        self,
+        transaction,
+        categorization
+    ):
+        """
+        Apply categorization results to a transaction.
+
+        Args:
+            transaction: Original PlaidTransaction
+            categorization: TransactionCategorization to apply
+
+        Returns:
+            Updated transaction with AI categorization fields
+        """
+        # Create a copy of the transaction with updated AI fields
+        updated_data = transaction.model_dump() if hasattr(transaction, 'model_dump') else transaction.__dict__.copy()
+        updated_data.update({
+            "ai_category": categorization.ai_category,
+            "ai_subcategory": categorization.ai_subcategory,
+            "ai_confidence": categorization.ai_confidence,
+            "ai_tags": categorization.ai_tags
+        })
+
+        # Return updated transaction (assuming PlaidTransaction constructor)
+        from app.models.plaid_models import PlaidTransaction
+        return PlaidTransaction(**updated_data)
+
+    async def _categorize_and_apply_transactions(
+        self,
+        transactions,
+        user_context = None
+    ):
+        """
+        Categorize transactions and apply results to them.
+
+        Args:
+            transactions: List of transactions to categorize
+            user_context: Optional user context
+
+        Returns:
+            Tuple of (updated_transactions, categorization_batch)
+        """
+        if not self.categorization_service or not transactions:
+            return transactions, None
+
+        # Get categorizations
+        categorization_batch = await self.categorization_service.categorize_transactions(transactions, user_context)
+
+        # Create lookup for categorizations by transaction_id
+        categorization_lookup = {
+            cat.transaction_id: cat
+            for cat in categorization_batch.categorizations
+        }
+
+        # Apply categorizations to transactions
+        updated_transactions = []
+        for transaction in transactions:
+            transaction_id = getattr(transaction, 'transaction_id', transaction.get('transaction_id') if isinstance(transaction, dict) else None)
+            if transaction_id and transaction_id in categorization_lookup:
+                categorization = categorization_lookup[transaction_id]
+                updated_transaction = self._apply_categorization_to_transaction(
+                    transaction, categorization
+                )
+                updated_transactions.append(updated_transaction)
+            else:
+                # Keep original transaction if categorization failed
+                updated_transactions.append(transaction)
+
+        return updated_transactions, categorization_batch
+
+    def _invoke_llm_with_fallback(self, messages, intent_name: str, fallback_message: str = None) -> str:
+        """
+        Helper method to invoke LLM with consistent error handling and fallback.
+
+        Args:
+            messages: List of messages for LLM
+            intent_name: Name of the intent for error logging
+            fallback_message: Custom fallback message (optional)
+
+        Returns:
+            LLM response content or fallback message
+        """
+        if fallback_message is None:
+            fallback_message = f"I apologize, but my {intent_name} service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+
+        if self.llm is None:
+            return fallback_message
+
+        try:
+            llm_response = self.llm.invoke(messages)
+            return llm_response.content
+        except Exception as e:
+            logger.error(f"LLM call failed in {intent_name}: {e}")
+            return fallback_message
     
     async def _fetch_transactions(self, user_id: str) -> Dict[str, Any]:
         """
@@ -340,7 +397,7 @@ class SpendingAgent:
         user_context = state.get("user_context", {})
         
         # Build context-aware intent detection prompt using shared utility
-        context_str = self._build_user_context_string(user_context)
+        context_str = build_user_context_string(user_context)
         
         system_prompt = f"""You are an intent classifier for a financial spending assistant.
 Your task is to classify the user's intent into exactly ONE of these categories:
@@ -415,7 +472,7 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         """
         
         # Build user context string from state
-        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        user_context_str = build_user_context_string(state.get("user_context", {}))
         
         # FIXME: Integrate processed insights from state.spending_insights (Graphiti cache)
         # 1. Processed insights from state.spending_insights (Graphiti cache)
@@ -476,18 +533,8 @@ Generate a comprehensive spending analysis response now."""
             HumanMessage(content=last_human_message or "Please analyze my spending patterns")
         ]
         
-        # Generate LLM response
-        if self.llm is None:
-            # Simple fallback when LLM is not available
-            response_content = "I apologize, but my spending analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
-        else:
-            try:
-                llm_response = self.llm.invoke(messages)
-                response_content = llm_response.content
-            except Exception as e:
-                logger.error(f"LLM call failed in spending analysis: {e}")
-                # Simple fallback when analysis is temporarily unavailable
-                response_content = "I apologize, but my spending analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        # Generate LLM response with fallback handling
+        response_content = self._invoke_llm_with_fallback(messages, "spending analysis")
         
         response = AIMessage(
             content=response_content,
@@ -506,7 +553,7 @@ Generate a comprehensive spending analysis response now."""
         """
         
         # Build user context string from state
-        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        user_context_str = build_user_context_string(state.get("user_context", {}))
         
         # FIXME: Integrate real financial data from these sources:
         # 1. Current spending patterns from state.spending_insights
@@ -563,15 +610,7 @@ Generate personalized budget planning guidance now."""
         ]
         
         # Generate LLM response with error handling
-        if self.llm is None:
-            response_content = "I apologize, but my budget planning service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
-        else:
-            try:
-                llm_response = self.llm.invoke(messages)
-                response_content = llm_response.content
-            except Exception as e:
-                logger.error(f"LLM call failed in budget planning: {e}")
-                response_content = "I apologize, but my budget planning service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        response_content = self._invoke_llm_with_fallback(messages, "budget planning")
         
         response = AIMessage(
             content=response_content,
@@ -590,7 +629,7 @@ Generate personalized budget planning guidance now."""
         """
         
         # Build user context string from state
-        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        user_context_str = build_user_context_string(state.get("user_context", {}))
         
         # FIXME: Integrate real optimization data from these sources:
         # 1. Spending patterns and categories from state.spending_insights
@@ -653,15 +692,7 @@ Generate personalized spending optimization recommendations now."""
         ]
         
         # Generate LLM response with error handling
-        if self.llm is None:
-            response_content = "I apologize, but my spending optimization service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
-        else:
-            try:
-                llm_response = self.llm.invoke(messages)
-                response_content = llm_response.content
-            except Exception as e:
-                logger.error(f"LLM call failed in optimization: {e}")
-                response_content = "I apologize, but my spending optimization service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        response_content = self._invoke_llm_with_fallback(messages, "spending optimization")
         
         response = AIMessage(
             content=response_content,
@@ -692,7 +723,7 @@ Generate personalized spending optimization recommendations now."""
         transaction_insights = []
         
         # Build user context string from state
-        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        user_context_str = build_user_context_string(state.get("user_context", {}))
         
         if found_in_graphiti:
             # Generate LLM-powered response for existing transaction insights
@@ -732,15 +763,7 @@ Generate a personalized introduction to their transaction insights now."""
             ]
             
             # Generate LLM response with error handling
-            if self.llm is None:
-                response_content = "I apologize, but my transaction analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
-            else:
-                try:
-                    llm_response = self.llm.invoke(llm_messages)
-                    response_content = llm_response.content
-                except Exception as e:
-                    logger.error(f"LLM call failed in transaction query (Graphiti): {e}")
-                    response_content = "I apologize, but my transaction analysis service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+            response_content = self._invoke_llm_with_fallback(llm_messages, "transaction analysis")
         else:
             # No data in Graphiti - need to fetch from Plaid
             response_content = "Let me fetch your latest transaction data and analyze it for you. This will take a moment to process."
@@ -769,7 +792,7 @@ Generate a personalized introduction to their transaction insights now."""
         """
         
         # Build user context string from state
-        user_context_str = self._build_user_context_string(state.get("user_context", {}))
+        user_context_str = build_user_context_string(state.get("user_context", {}))
         
         # Build comprehensive system prompt for general guidance
         system_prompt = f"""You are a friendly and professional financial advisor providing general guidance and introductions to financial services.
@@ -809,15 +832,7 @@ Generate a personalized introduction and guidance now."""
         ]
         
         # Generate LLM response with error handling
-        if self.llm is None:
-            response_content = "I apologize, but my financial guidance service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
-        else:
-            try:
-                llm_response = self.llm.invoke(messages)
-                response_content = llm_response.content
-            except Exception as e:
-                logger.error(f"LLM call failed in general spending: {e}")
-                response_content = "I apologize, but my financial guidance service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
+        response_content = self._invoke_llm_with_fallback(messages, "financial guidance")
         
         response = AIMessage(
             content=response_content,
@@ -849,14 +864,40 @@ Generate a personalized introduction and guidance now."""
         else:
             transactions = transaction_result.get("transactions", [])
             total_count = transaction_result.get("total_transactions", len(transactions))
-            
-            # FIXME: Process transactions and store insights in Graphiti via MCP tools
-            # For now, just acknowledge the fetch
-            response_content = f"Successfully fetched {total_count} transactions from your connected accounts. Processing and analyzing this data now."
-            logger.info(f"Fetched {total_count} transactions for user {user_id}, ready for Graphiti processing")
-            
-            # FIXME: Store processed insights in Graphiti here
-            # After storing, set found_in_graphiti=True for next transaction_query call
+
+            # Process transactions with AI categorization
+            user_context = state.get("user_context", {})
+
+            try:
+                if self.categorization_service and transactions:
+                    # Convert raw transaction data to PlaidTransaction objects if needed
+                    from app.models.plaid_models import PlaidTransaction
+                    transaction_objects = []
+                    for txn in transactions:
+                        if isinstance(txn, dict):
+                            transaction_objects.append(PlaidTransaction(**txn))
+                        else:
+                            transaction_objects.append(txn)
+
+                    # Categorize and apply AI insights
+                    categorized_transactions, categorization_batch = await self._categorize_and_apply_transactions(
+                        transaction_objects, user_context
+                    )
+
+                    categorized_count = len(categorization_batch.categorizations) if categorization_batch else 0
+                    response_content = f"Successfully fetched {total_count} transactions and categorized {categorized_count} with AI insights. Processing complete!"
+                    logger.info(f"Fetched {total_count} transactions, categorized {categorized_count} for user {user_id}")
+
+                    # FIXME: Store categorized_transactions in Graphiti here
+                    # Use categorized_transactions (with AI fields applied) for storage
+                    # After storing, set found_in_graphiti=True for next transaction_query call
+                else:
+                    response_content = f"Successfully fetched {total_count} transactions from your connected accounts. Processing and analyzing this data now."
+                    logger.info(f"Fetched {total_count} transactions for user {user_id}, ready for Graphiti processing")
+
+            except Exception as e:
+                logger.error(f"Error processing transactions with AI categorization: {e}")
+                response_content = f"Successfully fetched {total_count} transactions, but encountered an issue with AI categorization. Data is still available for analysis."
         
         response = AIMessage(
             content=response_content,
