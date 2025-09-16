@@ -239,6 +239,7 @@ class LangGraphConfig:
         # profile_context = state.get_profile_context(user_id)
         
         # Build consolidated system prompt with all context
+        # FIXME: we should probably read this from the DB instead of context
         profile_status = "complete" if state.profile_complete else "incomplete"
         profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"
         
@@ -249,30 +250,39 @@ USER PROFILE STATUS: {profile_status}
 USER PROFILE: {profile_info}
 
 ROUTING RULES:
-1. SMALLTALK: If the user input is small talk (greetings, goodbyes, casual conversation) or any query unrelated to personal finance, regardless of profile status.
 
-2. SPENDING: If the user profile is COMPLETE and the query is about:
-   - Budgeting, expenses, spending tracking
-   - Account balances, transactions
-   - Personal finance management (non-investment)
-   - Financial planning and cash flow
+1. ONBOARDING:  
+   - If the user input contains any information about their personal situation, demographics, geography, occupation, age, family, or financial goals, ALWAYS route to ONBOARDING.  
+   - This applies regardless of whether the profile is COMPLETE or INCOMPLETE.  
 
-3. INVESTMENT: If the user profile is COMPLETE and the query is about:
-   - Investment strategies, portfolio management
-   - Stocks, bonds, mutual funds, ETFs
-   - Retirement planning, 401k, IRA
-   - Asset allocation and investment advice
+2. SPENDING:  
+   - If the user profile is COMPLETE and the query is about:  
+     - Budgeting, expenses, spending tracking  
+     - Account balances, transactions  
+     - Personal finance management (non-investment)  
+     - Financial planning and cash flow  
 
-4. ONBOARDING: If the user profile is INCOMPLETE, route ALL financial questions here.
+3. INVESTMENT:  
+   - If the user profile is COMPLETE and the query is about:  
+     - Investment strategies, portfolio management  
+     - Stocks, bonds, mutual funds, ETFs  
+     - Retirement planning, 401k, IRA  
+     - Asset allocation and investment advice  
 
-CRITICAL: You must respond with exactly ONE word: SMALLTALK, SPENDING, INVESTMENT, or ONBOARDING.
+4. SMALLTALK (catch-all):  
+   - If none of the above rules apply and the input is purely casual (greetings, goodbyes, jokes, unrelated chit-chat), choose SMALLTALK.  
 
-Examples:
-- "Hello!" → SMALLTALK
+CRITICAL:  
+You must respond with exactly ONE word: SMALLTALK, SPENDING, INVESTMENT, or ONBOARDING.  
+
+Examples:  
+- "Hello!" → SMALLTALK  
+- "I am 35 and want to start saving for a vacation." → ONBOARDING  
 - "How should I budget?" (profile incomplete) → ONBOARDING  
-- "How should I budget?" (profile complete) → SPENDING
-- "What stocks should I buy?" (profile incomplete) → ONBOARDING
-- "What stocks should I buy?" (profile complete) → INVESTMENT"""
+- "How should I budget?" (profile complete) → SPENDING  
+- "What stocks should I buy?" (profile incomplete) → ONBOARDING  
+- "What stocks should I buy?" (profile complete) → INVESTMENT  
+"""
 
         messages = [SystemMessage(content=system_prompt)] + state.messages
 
@@ -281,6 +291,8 @@ Examples:
             raise LLMError("LLM not available - API key not configured")
             
         response = self.llm.invoke(messages)
+
+        self.logger.info(f"Orchestrator: LLM response for routing decision: {response.content}")
         
         # Update state with new message
         return {
