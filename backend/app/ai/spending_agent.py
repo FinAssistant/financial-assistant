@@ -376,8 +376,9 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
                 # Validate response is one of expected intents
                 valid_intents = ["spending_analysis", "budget_planning", "optimization", "transaction_query", "general_spending"]
                 if detected_intent not in valid_intents:
-                    logger.warning(f"LLM returned invalid intent: {detected_intent}, using default")
-                    detected_intent = "general_spending"
+                    logger.warning(f"LLM returned invalid intent: {detected_intent}, using fallback detection")
+                    detected_intent = self._fallback_intent_detection(user_input)
+                    logger.info(f"Fallback detected intent: {detected_intent}")
                     
                 logger.info(f"LLM detected intent: {detected_intent}")
             else:
