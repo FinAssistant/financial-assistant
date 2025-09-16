@@ -20,11 +20,7 @@ function App() {
         {/* Public routes */}
         <Route
           path="/login"
-          element={
-            <AuthGuard requireAuth={false}>
-              <LoginPage />
-            </AuthGuard>
-          }
+          element={<LoginPage />}
         />
 
         {/* Public home page */}

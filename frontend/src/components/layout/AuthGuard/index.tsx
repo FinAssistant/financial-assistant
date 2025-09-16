@@ -10,14 +10,15 @@ interface AuthGuardProps {
   redirectTo?: string
 }
 
-const AuthGuard: React.FC<AuthGuardProps> = ({ 
-  children, 
-  requireAuth = true, 
-  redirectTo = '/login' 
+const AuthGuard: React.FC<AuthGuardProps> = ({
+  children,
+  requireAuth = true,
+  redirectTo = '/login'
 }) => {
   const isAuthenticated = useSelector(selectIsAuthenticated)
   const isLoading = useSelector(selectIsLoading)
   const location = useLocation()
+
 
   // Show loading spinner while checking authentication status
   if (isLoading) {

@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { persistStore, persistReducer } from 'redux-persist'
 import storage from 'redux-persist/lib/storage'
-import { baseApi } from './api/baseApi'
+import { api } from './api/generated'
 import authReducer from './slices/authSlice'
 import conversationReducer from './slices/conversationSlice'
 
@@ -17,7 +17,7 @@ export const store = configureStore({
   reducer: {
     auth: persistedAuthReducer,
     conversation: conversationReducer,
-    [baseApi.reducerPath]: baseApi.reducer,
+    [api.reducerPath]: api.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -29,8 +29,10 @@ export const store = configureStore({
           'persist/PURGE',
           'persist/REGISTER',
         ],
+        ignoredActionsPaths: ['meta.arg', 'payload.timestamp'],
+        ignoredPaths: [api.reducerPath],
       },
-    }).concat(baseApi.middleware),
+    }).concat(api.middleware),
   devTools: process.env.NODE_ENV !== 'production',
 })
 

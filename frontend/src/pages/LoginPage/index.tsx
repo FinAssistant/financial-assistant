@@ -3,9 +3,10 @@ import { Navigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import {
   useLoginAuthLoginPostMutation,
-  useRegisterAuthRegisterPostMutation,
+  useRegisterAuthRegisterPostMutation
 } from '../../store/api/generated'
 import { selectIsAuthenticated, selectIsLoading } from '../../store/slices/authSlice'
+import { getErrorMessage } from '../../utils/errorUtils'
 import {
   Container,
   FormContainer,
@@ -36,6 +37,8 @@ const LoginPage: React.FC = () => {
 
   const [login, { isLoading: isLoginLoading, error: loginError }] = useLoginAuthLoginPostMutation()
   const [register, { isLoading: isRegisterLoading, error: registerError }] = useRegisterAuthRegisterPostMutation()
+
+
 
   // Redirect if already authenticated
   if (isAuthenticated) {
@@ -104,26 +107,21 @@ const LoginPage: React.FC = () => {
       return
     }
 
-    try {
-      if (isLogin) {
-        await login({
-          loginRequest: {
-            email: formData.email,
-            password: formData.password,
-          },
-        }).unwrap()
-      } else {
-        await register({
-          registerRequest: {
-            email: formData.email,
-            password: formData.password,
-            name: formData.name || undefined,
-          },
-        }).unwrap()
-      }
-    } catch (error) {
-      console.error('Authentication error:', error)
-      // Error handling is done by RTK Query and the authSlice
+    if (isLogin) {
+      login({
+        loginRequest: {
+          email: formData.email,
+          password: formData.password,
+        },
+      })
+    } else {
+      register({
+        registerRequest: {
+          email: formData.email,
+          password: formData.password,
+          name: formData.name || undefined,
+        },
+      })
     }
   }
 
@@ -135,6 +133,8 @@ const LoginPage: React.FC = () => {
 
   const currentError = loginError || registerError
   const currentLoading = isLoginLoading || isRegisterLoading || isLoading
+
+
 
   return (
     <Container>
@@ -201,9 +201,7 @@ const LoginPage: React.FC = () => {
 
           {currentError && (
             <ErrorMessage>
-              {'data' in currentError && currentError.data && typeof currentError.data === 'object' && 'detail' in currentError.data
-                ? (currentError.data as { detail: string }).detail
-                : 'An error occurred. Please try again.'}
+              {getErrorMessage(currentError)}
             </ErrorMessage>
           )}
 
