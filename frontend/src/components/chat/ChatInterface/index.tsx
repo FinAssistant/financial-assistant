@@ -29,6 +29,7 @@ import {
   MessageBubble,
 } from "./styles";
 import { DefaultChatTransport } from "ai";
+import { logout } from "../../../store/slices/authSlice";
 
 interface ChatInterfaceProps {
   className?: string;
@@ -82,6 +83,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
     }
   }, [currentSessionId, dispatch]);
 
+  // Custom fetch function that handles 401 errors like RTK Query
+  const customFetch: typeof fetch = async (url, options) => {
+    const response = await fetch(url, options);
+
+    // If we get a 401 error, handle it like RTK Query
+    if (response.status === 401) {
+      console.log('Token expired, logging out and redirecting to login page');
+      dispatch(logout());
+    }
+
+    return response;
+  };
+
   const runtime = useChatRuntime({
     transport: new DefaultChatTransport({
       api: "/conversation/send",
@@ -92,6 +106,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
               "Content-Type": "application/json",
             }
           : undefined,
+      fetch: customFetch,
     }),
   });
 

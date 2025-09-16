@@ -120,6 +120,7 @@ describe("ChatInterface", () => {
         Authorization: "Bearer fake-token",
         "Content-Type": "application/json",
       },
+      fetch: expect.any(Function),
     });
     expect(mockUseChatRuntime).toHaveBeenCalledWith({
       transport: expect.any(Object),
