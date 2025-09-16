@@ -33,9 +33,12 @@ const baseQueryWithReauth: BaseQueryFn<
       // Import logout dynamically to avoid circular dependency
       const { logout } = await import('../slices/authSlice')
       api.dispatch(logout())
-      
+
       // Force redirect to login page immediately
+      console.log('Token expired, logging out and redirecting to login page')
       window.location.href = '/login'
+    } else {
+      console.log('User not authenticated, allowing error to bubble up for login form')
     }
   }
 
