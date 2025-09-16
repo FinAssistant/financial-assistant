@@ -43,7 +43,7 @@ def unauthenticated_client(unauthenticated_app):
 class TestConversationEndpoints:
     """Test cases for conversation API endpoints."""
     
-    @patch('app.routers.conversation.get_orchestrator')
+    @patch('app.routers.conversation.get_conversation_handler')
     def test_send_message_success(self, mock_get_orchestrator, client):
         """Test successful message sending with AI SDK format."""
         # Mock orchestrator to return a successful response
@@ -95,7 +95,7 @@ class TestConversationEndpoints:
         assert len(data["content"]) > 0
         assert "Hello! How can I help you with budgeting today?" in data["content"]
     
-    @patch('app.routers.conversation.get_orchestrator')
+    @patch('app.routers.conversation.get_conversation_handler')
     def test_send_message_with_custom_session_id(self, mock_get_orchestrator, client):
         """Test message sending with custom session ID."""
         custom_session_id = "custom_session_456"
@@ -265,7 +265,7 @@ class TestConversationEndpoints:
         
         assert response.status_code == 403  # Missing authorization header
     
-    @patch('app.routers.conversation.get_orchestrator')
+    @patch('app.routers.conversation.get_conversation_handler')
     def test_send_message_orchestrator_error(self, mock_get_orchestrator, client):
         """Test handling of orchestrator errors."""
         # Mock orchestrator to return error
@@ -298,7 +298,7 @@ class TestConversationEndpoints:
         assert response.status_code == 500
         assert "AI processing error" in response.json()["detail"] or "Conversation processing failed" in response.json()["detail"]
     
-    @patch('app.routers.conversation.get_orchestrator')
+    @patch('app.routers.conversation.get_conversation_handler')
     def test_health_check_orchestrator_exception(self, mock_get_orchestrator, client):
         """Test health check when orchestrator raises exception."""
         # Mock orchestrator to raise exception

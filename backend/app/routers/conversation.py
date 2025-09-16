@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 
 from app.routers.auth import get_current_user
-from app.ai.orchestrator import OrchestratorAgent
+from app.ai.conversation_handler import ConversationHandler
 
 
 # AI SDK 5 compatible message part model
@@ -59,15 +59,15 @@ class ConversationHealthResponse(BaseModel):
 # Create router
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
-# Global orchestrator instance - lazy loaded
-orchestrator = None
+# Global conversation handler instance - lazy loaded
+conversation_handler = None
 
-def get_orchestrator() -> OrchestratorAgent:
-    """Get or create the global orchestrator instance."""
-    global orchestrator
-    if orchestrator is None:
-        orchestrator = OrchestratorAgent()
-    return orchestrator
+def get_conversation_handler() -> ConversationHandler:
+    """Get or create the global conversation handler instance."""
+    global conversation_handler
+    if conversation_handler is None:
+        conversation_handler = ConversationHandler()
+    return conversation_handler
 
 
 @router.post("/send", response_class=StreamingResponse)
@@ -100,7 +100,7 @@ async def send_message(
             detail="No valid user message found"
         )
     
-    # Generate consistent session ID using same pattern as orchestrator
+    # Generate consistent session ID using same pattern as conversation handler
     session_id = request.session_id or f"session_{current_user}"
     
     try:
@@ -117,8 +117,8 @@ async def send_message(
             yield f'data: {json.dumps({"type": "text-start", "id": text_id})}\n\n'
             
             try:
-                # Get response from orchestrator
-                ai_response = await get_orchestrator().process_message(
+                # Get response from conversation handler
+                ai_response = await get_conversation_handler().process_message(
                     user_message=last_message.content.strip(),
                     user_id=current_user,
                     session_id=session_id
@@ -191,12 +191,12 @@ async def send_message_non_streaming(
             detail="No valid user message found"
         )
     
-    # Generate consistent session ID using same pattern as orchestrator
+    # Generate consistent session ID using same pattern as conversation handler
     session_id = request.session_id or f"session_{current_user}"
     
     try:
-        # Process message through orchestrator
-        ai_response = await get_orchestrator().process_message(
+        # Process message through conversation handler
+        ai_response = await get_conversation_handler().process_message(
             user_message=last_message.content.strip(),
             user_id=current_user,
             session_id=session_id
@@ -236,7 +236,7 @@ async def health_check(
     Requires authentication to prevent abuse.
     """
     try:
-        health_result = await get_orchestrator().health_check()
+        health_result = await get_conversation_handler().health_check()
         
         return ConversationHealthResponse(
             status=health_result["status"],

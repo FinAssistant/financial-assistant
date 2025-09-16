@@ -5,7 +5,7 @@ All tests use mocked LLM calls by default.
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import pytest
 
-from app.ai.langgraph_config import LangGraphConfig, GlobalState
+from app.ai.orchestrator_agent import OrchestratorAgent, GlobalState
 
 
 class TestGlobalState:
@@ -41,12 +41,12 @@ class TestGlobalState:
         assert state.profile_complete is True
 
 
-class TestLangGraphConfig:
+class TestOrchestratorAgent:
     """Test LangGraph configuration and setup."""
     
     def test_langgraph_initialization(self, mock_llm_factory):
         """Test LangGraph config can be initialized."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         assert config is not None
         assert config.graph is not None
@@ -55,7 +55,7 @@ class TestLangGraphConfig:
     
     def test_checkpointer_initialization(self, mock_llm_factory):
         """Test checkpointer setup in test environment."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         # In test environment, checkpointer is None by design (no FastAPI startup)
         # This is expected behavior - tests should work without external SQLite dependencies
@@ -64,7 +64,7 @@ class TestLangGraphConfig:
         # Test that we can create a config with an explicit checkpointer
         from unittest.mock import Mock
         mock_checkpointer = Mock()
-        config_with_checkpointer = LangGraphConfig(checkpointer=mock_checkpointer)
+        config_with_checkpointer = OrchestratorAgent(checkpointer=mock_checkpointer)
         assert config_with_checkpointer.checkpointer is mock_checkpointer
 
 
@@ -73,7 +73,7 @@ class TestOrchestratorRouting:
     
     def test_find_route_basic(self, mock_llm_factory):
         """Test find_route extracts routing decision."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         state = GlobalState()
         state.messages = [AIMessage(content="SMALLTALK")]
@@ -83,7 +83,7 @@ class TestOrchestratorRouting:
     
     def test_find_route_all_destinations(self, mock_llm_factory):
         """Test routing to all possible destinations."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         test_routes = ["SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"]
         
@@ -100,7 +100,7 @@ class TestSmallTalkAgent:
     
     def test_small_talk_node_direct(self, mock_llm_factory):
         """Test small talk node directly."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         state = GlobalState()
         state.messages = [HumanMessage(content="Hello!")]
@@ -124,7 +124,7 @@ class TestSmallTalkAgent:
     
     def test_small_talk_system_prompt_usage(self, mock_llm_factory):
         """Test small talk agent uses correct system prompt."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         state = GlobalState()
         state.messages = [HumanMessage(content="How's the weather?")]
@@ -160,7 +160,7 @@ class TestConversationFlow:
         ]
         mock_llm_factory.invoke.side_effect = mock_responses
         
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         result = await config.invoke_conversation(
             user_message="Hello there!",
@@ -188,7 +188,7 @@ class TestConversationFlow:
         ]
         mock_llm_factory.invoke.side_effect = mock_responses
         
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         result = await config.invoke_conversation(
             user_message="Hi there!",
@@ -208,7 +208,7 @@ class TestConversationFlow:
         ]
         mock_llm_factory.invoke.side_effect = mock_responses
         
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         chunks = []
         for chunk in config.stream_conversation(
@@ -228,7 +228,7 @@ class TestDummyAgents:
     
     def test_dummy_investment_agent(self, mock_llm_factory):
         """Test dummy investment agent."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         state = GlobalState()
         test_config = {"configurable": {"user_id": "test_user", "thread_id": "test_thread"}}
@@ -243,7 +243,7 @@ class TestDummyAgents:
     
     def test_dummy_spending_agent(self, mock_llm_factory):
         """Test dummy spending agent."""
-        config = LangGraphConfig()
+        config = OrchestratorAgent()
         
         state = GlobalState()
         test_config = {"configurable": {"user_id": "test_user", "thread_id": "test_thread"}}

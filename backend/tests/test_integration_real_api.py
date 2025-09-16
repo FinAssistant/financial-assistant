@@ -26,7 +26,7 @@ import pytest
 import os
 from pathlib import Path
 from app.services.llm_service import LLMFactory, LLMProvider
-from app.ai.langgraph_config import get_langgraph_config
+from app.ai.orchestrator_agent import get_orchestrator_agent
 from app.core.database import user_storage
 
 
@@ -218,7 +218,7 @@ class TestRealConversationFlow:
             # Remove any existing patches
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             
             result = config.invoke_conversation(
                 user_message="Hello there!",
@@ -236,7 +236,7 @@ class TestRealConversationFlow:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             
             result = config.invoke_conversation(
                 user_message="How should I invest my money?",
@@ -256,7 +256,7 @@ class TestRealConversationFlow:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             
             # Test small talk node directly
             from app.ai.langgraph_config import GlobalState
@@ -285,7 +285,7 @@ class TestRealConversationFlow:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             
             chunks = []
             for chunk in config.stream_conversation(
@@ -310,7 +310,7 @@ class TestRealOnboardingDatabase:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             user_id = "database_test_user"
             session_id = "database_test_session"
             
@@ -389,7 +389,7 @@ class TestRealOnboardingDatabase:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
 
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             user_id = "profile_context_test_user"
             session_id = "profile_context_test_session"
 
@@ -503,7 +503,7 @@ class TestRealOnboardingComplete:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             user_id = "complete_onboard_test_user"
             session_id = "complete_onboard_session"
             
@@ -607,7 +607,7 @@ class TestRealOnboardingComplete:
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
             
-            config = get_langgraph_config()
+            config = get_orchestrator_agent()
             user_id = "complete_onboard_spending_user"
             session_id = "complete_onboard_spending_session"
             
@@ -886,7 +886,7 @@ class TestRealMultiProviderConversationFlow:
                 # Remove any existing patches
                 m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
                 
-                config = get_langgraph_config()
+                config = get_orchestrator_agent()
                 
                 result = config.invoke_conversation(
                     user_message="Hello there!",
@@ -928,7 +928,7 @@ class TestRealMultiProviderConversationFlow:
             with pytest.MonkeyPatch().context() as m:
                 m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
                 
-                config = get_langgraph_config()
+                config = get_orchestrator_agent()
                 
                 result = config.invoke_conversation(
                     user_message="How should I invest my money?",
