@@ -259,7 +259,7 @@ class TestRealConversationFlow:
             config = get_orchestrator_agent()
             
             # Test small talk node directly
-            from app.ai.langgraph_config import GlobalState
+            from app.ai.orchestrator_agent import GlobalState
             from langchain_core.messages import HumanMessage
             
             state = GlobalState()
@@ -476,7 +476,7 @@ class TestRealOnboardingDatabase:
                     print(f"Error accessing checkpointer state: {e}")
                     # Fallback: test that profile context can be built from database
                     print("Fallback: Testing profile context building from database")
-                    from app.ai.langgraph_config import GlobalState
+                    from app.ai.orchestrator_agent import GlobalState
                     test_state = GlobalState()
                     profile_context_str = test_state.get_profile_context(user_id)
                     assert profile_context_str != "User profile not available.", f"Should be able to build profile context from database. Got: {profile_context_str}"
