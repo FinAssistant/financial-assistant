@@ -30,7 +30,7 @@ so that I can access core functionality while the AI learns my preferences over 
 1. Conversational onboarding flow guided by LangGraph Onboarding Agent with progress awareness
 2. Natural language extraction of demographic data into PersonalContextModel (age_range, marital_status, has_dependents)
 3. LLM-guided account connection process with contextual explanations and Plaid Link integration
-4. Clear "Ready to Use" completion state communicated conversationally and reflected in app functionality
+4. Clear "Ready to Use" completion state achieved only after successful Plaid account connection, communicated conversationally and reflected in app functionality
 5. Conversation state persistence across sessions using LangGraph checkpointing and SQLite storage
 
 **Technical Implementation (references architecture/data-models.md):**
@@ -38,7 +38,7 @@ so that I can access core functionality while the AI learns my preferences over 
 7. LangGraph Onboarding Agent initialization with user context
 8. Integration with existing authentication system and user profile
 9. Secure storage of Plaid access tokens (in SQLite DB for POC)
-10. Wizard completion triggers user.profile_complete = True update
+10. Wizard completion triggers PersonalContext.is_complete = True update
 
 **User Experience:**
 11. Conversational completion celebration and seamless transition to main app
