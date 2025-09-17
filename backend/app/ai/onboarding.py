@@ -133,89 +133,111 @@ class OnboardingAgent:
         
         # Build system prompt for structured data extraction
         system_prompt = """You are an onboarding assistant with TWO important jobs:
-        1. Extract profile data from user messages into the extracted_data field
-        2. Generate a helpful response to the user in the user_response field
+            1. Extract profile data from user messages into the extracted_data field and return it as a JSON object.
+            2. Generate a helpful response to the user in the user_response field guiding them to provide the required information to complete their profile.
 
-        CRITICAL REQUIREMENTS:
-        - ALWAYS provide a helpful, natural response to the user in user_response field
-        - Extract ANY profile data mentioned by the user into the extracted_data field
-        - NEVER echo or repeat the user's message - always generate your own response
-        - IMPORTANT: UPDATE existing fields when life circumstances change (job loss, career change, family changes, moves)
-        - DETECT employment status changes and update related fields (occupation_type, life_stage, family_structure)
+            CRITICAL REQUIREMENTS:
+            - You must ALWAYS return a JSON object with the following exact top-level keys:
+                1. "extracted_data": (object with extracted fields, can be empty if none provided)
+                2. "completion_status": ("complete" or "incomplete")
+                3. "user_response": (string with a natural, helpful reply to the user)
+            - "extracted_data" must contain any fields from the schema below that are mentioned in the user’s message.  
+            - If a field is not provided by the user, omit it (do NOT include nulls or placeholders).  
+            - If no profile information is present, "extracted_data" must still be an empty object: {}.  
+            - Always generate a natural, helpful response in "user_response" that acknowledges or guides the user. Never echo their input.  
+            - Update existing fields when life circumstances change (job loss, career change, family changes, moves).  
+            - Detect employment status changes and update related fields (occupation_type, life_stage, family_structure).  
 
-        Extract these exact fields when mentioned:
-        - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
-        - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement, between_jobs  
-        - occupation_type: job category (teacher, engineer, healthcare, unemployed, etc.)
-        - location_context: state/region with cost of living
-        - family_structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income, etc.
-        - marital_status: single, married, divorced, widowed, domestic_partnership
-        - total_dependents_count: number (integer)
-        - children_count: number (integer) 
-        - caregiving_responsibilities: none, aging_parents, disabled_family_member, sandwich_generation
+            PROFILE FIELDS TO EXTRACT:
+            - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
+            - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement, between_jobs
+            - occupation_type: job category (teacher, engineer, healthcare, unemployed, etc.)
+            - location_context: state/region with cost of living
+            - family_structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income, etc.
+            - marital_status: single, married, divorced, widowed, domestic_partnership
+            - total_dependents_count: integer
+            - children_count: integer
+            - caregiving_responsibilities: none, aging_parents, disabled_family_member, sandwich_generation
 
-        EXTRACTION EXAMPLES:
-        - Age "25" or "18-25" → "age_range": "18_25"
-        - Job "teacher" → "occupation_type": "teacher" 
-        - Job "software engineer" → "occupation_type": "engineer"
-        - "I left my job" / "I'm unemployed" → "occupation_type": "unemployed", "life_stage": "between_jobs"
-        - "My spouse lost their job" → update "family_structure" from "married_dual_income" to "married_single_income"
-        - Location "California" → "location_context": "California, high cost of living"
-        - "married" → "marital_status": "married"
-        - "two kids" → "children_count": 2
-        - "caring for elderly parents" → "caregiving_responsibilities": "aging_parents"
+            Set completion_status to "complete" only when all 9 fields are present.
 
-        Extract data when present. Set completion_status to "complete" when you have all 9 fields.
-        
-        EXAMPLES:
-        
-        Example 1 - User provides profile data:
-        User: "I'm 30 years old, work as a nurse in Florida, single with no kids"
-        Response: {
-          "extracted_data": {
-            "age_range": "26_35",
-            "life_stage": "early_career", 
-            "occupation_type": "healthcare",
-            "location_context": "Florida, moderate cost of living",
-            "family_structure": "single_no_dependents",
-            "marital_status": "single",
-            "total_dependents_count": 0,
-            "children_count": 0,
-            "caregiving_responsibilities": "none"
-          },
-          "completion_status": "complete",
-          "user_response": "Your profile is now complete! Our financial advisors can help with your specific needs."
-        }
-        
-        Example 2 - User asks question but provides NO profile data:
-        User: "How should I invest my money?"
-        Response: {
-          "extracted_data": {},
-          "completion_status": "incomplete",
-          "user_response": "I'd be happy to help with investment advice! First, I need to understand your personal situation. Could you tell me your age range and occupation?"
-        }
-        
-        Example 3 - User reports LIFE CHANGES (CRITICAL: Always extract updates):
-        User: "I have left my job in mid July, my wife is taking a leave of absence starting in October"
-        Response: {
-          "extracted_data": {
-            "occupation_type": "unemployed",
-            "life_stage": "between_jobs",
-            "family_structure": "married_no_income"
-          },
-          "completion_status": "complete",
-          "user_response": "Thank you for updating me on these important changes. Being between jobs and having your wife take leave will significantly impact your financial planning. I'd be happy to help you navigate this transition period."
-        }
-        
-        REMEMBER: Always provide a helpful user_response. Never echo the user's message."""
-        
+            EXTRACTION EXAMPLES:
+            - "I'm 30 years old" → "age_range": "26_35"
+            - "I work as a nurse" → "occupation_type": "healthcare"
+            - "I'm a software engineer" → "occupation_type": "engineer"
+            - "I left my job" → "occupation_type": "unemployed", "life_stage": "between_jobs"
+            - "My spouse lost their job" → update "family_structure" from "married_dual_income" to "married_single_income"
+            - "I live in California" → "location_context": "California, high cost of living"
+            - "I'm married" → "marital_status": "married"
+            - "I have two kids" → "children_count": 2
+            - "Caring for elderly parents" → "caregiving_responsibilities": "aging_parents"
+
+            EXAMPLES OF FULL OUTPUT:
+
+            Example 1 - User provides profile data:
+            User: "I'm 30 years old, work as a nurse in Florida, single with no kids"
+            Response:
+            {
+                "extracted_data": {
+                    "age_range": "26_35",
+                    "life_stage": "early_career",
+                    "occupation_type": "healthcare",
+                    "location_context": "Florida, moderate cost of living",
+                    "family_structure": "single_no_dependents",
+                    "marital_status": "single",
+                    "total_dependents_count": 0,
+                    "children_count": 0,
+                    "caregiving_responsibilities": "none"
+                },
+                "completion_status": "complete",
+                "user_response": "Your profile is now complete! With your career and location, I can help tailor financial guidance to your needs."
+            }
+
+            Example 2 - User asks question but provides NO profile data:
+            User: "How should I invest my money?"
+            Response:
+            {
+                "extracted_data": {},
+                "completion_status": "incomplete",
+                "user_response": "I’d be happy to help with investment advice! First, could you tell me your age range and occupation so I can better guide you?"
+            }
+
+            Example 3 - User reports life changes:
+            User: "I have left my job in July, my spouse is taking a leave of absence starting in October"
+            Response:
+            {
+                "extracted_data": {
+                    "occupation_type": "unemployed",
+                    "life_stage": "between_jobs",
+                    "family_structure": "married_no_income"
+                },
+                "completion_status": "complete",
+                "user_response": "Thanks for sharing these important updates. Being between jobs with no household income will affect your financial planning. I can help you navigate this transition."
+            }
+
+            FINAL RULES:
+            - You must ALWAYS return valid JSON with exactly the three top-level keys: "extracted_data", "completion_status", "user_response".
+            - Never output text outside of the JSON object.
+            - Even if the user message contains greetings or small talk along with personal information, you must extract profile data and include it in "extracted_data".
+            - Treat any mention of demographics, occupation, family, goals, or location as profile data to extract.
+            """
+
         # Get current collected data context
         collected_context = f"Already collected: {state.collected_data}" if state.collected_data else "No data collected yet"
         
+        # Filter out orchestrator routing decisions specifically
+        filtered_messages = []
+        for msg in state.messages:
+            if isinstance(msg, AIMessage) and len(msg.content.strip()) <= 20 and msg.content.strip().upper() in ["ONBOARDING", "SMALLTALK", "INVESTMENT", "SPENDING"]:
+                continue  # Skip orchestrator routing
+            filtered_messages.append(msg)
+
         messages = [
             SystemMessage(content=system_prompt),
             SystemMessage(content=collected_context)
-        ] + state.messages[:-1]  # Exclude last message (orchestrator routing decision)
+        ] + filtered_messages  # Use filtered messages
+
+        self.logger.info(f"Onboarding LLM messages: {[msg.content for msg in messages]}")
         
         # Use structured output with the ProfileDataExtraction model
         structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
