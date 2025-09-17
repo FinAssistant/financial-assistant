@@ -50,26 +50,22 @@ class TestProfileDataExtraction:
         extraction = ProfileDataExtraction(
             user_response="Hello! I'd like to help you."
         )
-        
+
         assert extraction.extracted_data == {}
-        assert extraction.next_questions == []
         assert extraction.completion_status == "incomplete"
         assert extraction.user_response == "Hello! I'd like to help you."
     
     def test_profile_data_extraction_complete(self):
         """Test ProfileDataExtraction with full data."""
         extracted_data = {"age_range": "26_35", "occupation_type": "engineer"}
-        next_questions = ["What is your marital status?", "Do you have dependents?"]
         
         extraction = ProfileDataExtraction(
             extracted_data=extracted_data,
-            next_questions=next_questions,
             completion_status="partial",
             user_response="Great! I've noted your age and occupation."
         )
         
         assert extraction.extracted_data == extracted_data
-        assert extraction.next_questions == next_questions
         assert extraction.completion_status == "partial"
         assert extraction.user_response == "Great! I've noted your age and occupation."
 
@@ -155,7 +151,6 @@ class TestOnboardingAgentMethods:
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
             extracted_data={"age_range": "26_35", "occupation_type": "engineer"},
-            next_questions=["What is your marital status?"],
             completion_status="partial",
             user_response="Great! I've noted that you're 28 and work as a software engineer."
         )
@@ -193,7 +188,6 @@ class TestOnboardingAgentMethods:
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
             extracted_data={"marital_status": "single"},
-            next_questions=[],
             completion_status="complete",
             user_response="Perfect! Your profile is now complete."
         )
@@ -404,7 +398,6 @@ class TestOnboardingAgentIntegration:
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
             extracted_data={"age_range": "26_35", "occupation_type": "engineer"},
-            next_questions=["What is your marital status?"],
             completion_status="partial",
             user_response="Great! I've noted your age and occupation. What is your marital status?"
         )
@@ -488,7 +481,6 @@ class TestOnboardingAgentIntegration:
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
             extracted_data={"marital_status": "single", "family_structure": "single_no_dependents"},
-            next_questions=[],
             completion_status="complete",
             user_response="Perfect! Your profile is now complete and I can provide personalized financial advice."
         )
