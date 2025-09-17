@@ -157,11 +157,11 @@ class GlobalState(BaseModel):
             return False
 
 
-class LangGraphConfig:
+class OrchestratorAgent:
     """
-    Configuration and setup for LangGraph workflow infrastructure.
-    
-    Handles graph initialization, checkpointing, and lifecycle management
+    Orchestrator agent that manages conversation routing and workflow coordination.
+
+    Contains the actual routing logic and manages the LangGraph workflow
     using GlobalState for cross-agent data sharing.
     """
     
@@ -493,10 +493,10 @@ async def cleanup_checkpointer() -> None:
             _checkpointer_context = None
 
 
-def get_langgraph_config() -> LangGraphConfig:
-    """Get or create the global LangGraph configuration instance."""
+def get_orchestrator_agent() -> OrchestratorAgent:
+    """Get or create the global orchestrator agent instance."""
     logging.getLogger(__name__).info("Getting LangGraph configuration")
     global _langgraph_config, _checkpointer
     if _langgraph_config is None:
-        _langgraph_config = LangGraphConfig(checkpointer=_checkpointer)
+        _langgraph_config = OrchestratorAgent(checkpointer=_checkpointer)
     return _langgraph_config

@@ -39,7 +39,7 @@ class SpendingAgent:
     """
     LangGraph subgraph for spending analysis and financial insights.
     
-    Follows the established pattern from LangGraphConfig but implements
+    Follows the established pattern from OrchestratorAgent but implements
     specialized nodes for spending-related conversations.
     """
     
@@ -883,7 +883,7 @@ Generate a personalized introduction and guidance now."""
         This method is async to support MCP tool calls for Plaid transaction fetching.
         
         FIXME: Integrate with main orchestrator in /conversation/send API endpoint
-        Currently used for testing - needs integration with LangGraphConfig orchestrator_node
+        Currently used for testing - needs integration with OrchestratorAgent orchestrator_node
         
         Args:
             user_message: The user's input message
