@@ -131,33 +131,60 @@ class TestSpendingAgent:
         assert ai_message.additional_kwargs["llm_powered"] is True
         assert "spending" in ai_message.content.lower() or "expense" in ai_message.content.lower()
     
-    def test_specialized_intent_nodes(self):
+    @pytest.mark.asyncio
+    async def test_specialized_intent_nodes(self):
         """Test all specialized intent nodes work correctly."""
         from app.ai.spending_agent import SpendingAgentState
-        
-        intent_nodes = [
+
+        # Separate sync and async nodes
+        sync_intent_nodes = [
             ("spending_analysis", self.agent._spending_analysis_node),
             ("budget_planning", self.agent._budget_planning_node),
             ("optimization", self.agent._optimization_node),
-            ("transaction_query", self.agent._transaction_query_node),
             ("general_spending", self.agent._general_spending_node)
         ]
-        
-        for intent, node_method in intent_nodes:
+
+        async_intent_nodes = [
+            ("transaction_query", self.agent._transaction_query_node)
+        ]
+
+        # Test sync nodes
+        for intent, node_method in sync_intent_nodes:
             state = SpendingAgentState(
                 messages=[HumanMessage(content="Test message")],
-                user_id="test_user_123", 
+                user_id="test_user_123",
                 session_id="test_session",
                 user_context={
                     "demographics": {"age_range": "26_35", "occupation": "engineer"},
                     "financial_context": {"has_dependents": False}
                 }
             )
-            
+
             result = node_method(state)
             assert "messages" in result
             assert len(result["messages"]) == 1
-            
+
+            ai_message = result["messages"][0]
+            assert isinstance(ai_message, AIMessage)
+            assert ai_message.additional_kwargs["agent"] == "spending_agent"
+            assert ai_message.additional_kwargs["intent"] == intent
+
+        # Test async nodes
+        for intent, node_method in async_intent_nodes:
+            state = SpendingAgentState(
+                messages=[HumanMessage(content="Test message")],
+                user_id="test_user_123",
+                session_id="test_session",
+                user_context={
+                    "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                    "financial_context": {"has_dependents": False}
+                }
+            )
+
+            result = await node_method(state)
+            assert "messages" in result
+            assert len(result["messages"]) == 1
+
             ai_message = result["messages"][0]
             assert isinstance(ai_message, AIMessage)
             assert ai_message.additional_kwargs["agent"] == "spending_agent"
@@ -234,15 +261,17 @@ class TestSpendingAgent:
         result = self.agent._route_transaction_query(empty_state)
         assert result == "fetch_from_plaid"
     
-    def test_transaction_query_node_graphiti_not_found(self):
+    @pytest.mark.asyncio
+    async def test_transaction_query_node_graphiti_not_found(self):
         """Test _transaction_query_node when no data found in Graphiti (mock behavior)."""
-        state = {
-            "messages": [HumanMessage(content="Show me my transactions")],
-            "user_id": "test_user_123",
-            "detected_intent": "transaction_query"
-        }
-        
-        result = self.agent._transaction_query_node(state)
+        from app.ai.spending_agent import SpendingAgentState
+        state = SpendingAgentState(
+            messages=[HumanMessage(content="Show me my transactions")],
+            user_id="test_user_123",
+            session_id="test_session"
+        )
+
+        result = await self.agent._transaction_query_node(state)
         
         # Check basic response structure
         assert "messages" in result
@@ -259,7 +288,7 @@ class TestSpendingAgent:
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "transaction_query"
         assert ai_message.additional_kwargs["data_source"] == "needs_plaid_fetch"
-        assert "fetch your latest transaction data" in ai_message.content
+        assert "Let me fetch your latest transaction data" in ai_message.content
     
     @pytest.mark.asyncio
     async def test_fetch_and_process_node_success(self):
@@ -274,12 +303,8 @@ class TestSpendingAgent:
         
         # Validate response structure
         assert "messages" in result, "Result must contain 'messages' key"
-        assert "found_in_graphiti" in result, "Result must contain 'found_in_graphiti' key"
         assert isinstance(result["messages"], list), "Messages should be a list"
         assert len(result["messages"]) == 1, "Should contain exactly one message"
-        
-        # Validate state transitions
-        assert result["found_in_graphiti"] is True
         
         # Validate AI message structure
         ai_message = result["messages"][0]
@@ -299,6 +324,42 @@ class TestSpendingAgent:
                   ["successfully", "fetched", "encountered", "issue"]), \
                "Message should indicate success or error status"
     
+    @pytest.mark.asyncio
+    async def test_transaction_query_node_second_call_after_fetch(self):
+        """Test _transaction_query_node second call behavior after fetch_and_process."""
+        # Create state that simulates having been through fetch_and_process
+        from app.ai.spending_agent import SpendingAgentState
+        state = SpendingAgentState(
+            messages=[
+                HumanMessage(content="Show me my transactions"),
+                AIMessage(
+                    content="Processing data...",
+                    additional_kwargs={"intent": "transaction_fetch_and_process"}
+                )
+            ],
+            user_id="test_user_123",
+            session_id="test_session"
+        )
+
+        result = await self.agent._transaction_query_node(state)
+
+        # Check basic response structure
+        assert "messages" in result
+        assert "found_in_graphiti" in result
+        assert "transaction_insights" in result
+
+        # Should return static response without LLM call
+        assert result["found_in_graphiti"] is False
+        assert result["transaction_insights"] == []
+
+        # Check AI message content for static response
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+        expected_content = "I've processed your latest transaction data and updated your financial profile. No specific insights were found matching your current query, but your transaction history has been categorized and stored for future analysis."
+        assert ai_message.content == expected_content
+        assert ai_message.additional_kwargs["agent"] == "spending_agent"
+        assert ai_message.additional_kwargs["intent"] == "transaction_query"
+
     @pytest.mark.asyncio
     async def test_transaction_query_workflow_integration(self):
         """Test the full transaction query workflow with mocked data."""
@@ -404,10 +465,19 @@ class TestSpendingAgent:
     @pytest.mark.asyncio
     async def test_fetch_and_process_node_with_mocked_successful_fetch(self):
         """Test _fetch_and_process_node with mocked successful transaction fetch."""
-        # Mock successful transaction fetch
+        # Mock successful transaction fetch with proper PlaidTransaction fields
         mock_fetch_result = {
             "status": "success",
-            "transactions": [{"id": "tx1", "amount": 100.0}],
+            "transactions": [{
+                "transaction_id": "tx1",
+                "account_id": "acc1",
+                "amount": 100.0,
+                "name": "Test Transaction",
+                "merchant_name": "Test Merchant",
+                "date": "2024-01-15",
+                "category": ["Shopping"],
+                "pending": False
+            }],
             "total_transactions": 1
         }
         
@@ -421,7 +491,6 @@ class TestSpendingAgent:
             result = await self.agent._fetch_and_process_node(state)
             
             # Validate successful processing
-            assert result["found_in_graphiti"] is True
             assert len(result["messages"]) == 1
             
             ai_message = result["messages"][0]
@@ -448,7 +517,6 @@ class TestSpendingAgent:
             result = await self.agent._fetch_and_process_node(state)
             
             # Validate error handling
-            assert result["found_in_graphiti"] is True  # Still set to True per current logic
             assert len(result["messages"]) == 1
             
             ai_message = result["messages"][0]
@@ -799,8 +867,6 @@ class TestSpendingAgentTransactionCategorization:
 
                 # Verify basic response structure
                 assert "messages" in result
-                assert "found_in_graphiti" in result
-                assert result["found_in_graphiti"] is True
 
                 # Verify response mentions categorization
                 ai_message = result["messages"][0]

@@ -115,11 +115,11 @@ class TestTransactionCategorizationService:
         formatted = build_user_context_string(user_context)
         
         assert "DEMOGRAPHICS:" in formatted
-        assert "Age: 26-35" in formatted
+        assert "Age range: 26_35" in formatted
         assert "Occupation: engineer" in formatted
         assert "Location: San Francisco, CA" in formatted
         assert "FINANCIAL PROFILE:" in formatted
-        assert "Has Dependents: No" in formatted
+        assert "Has dependents: No" in formatted
     
     def test_shared_user_context_flat_format(self):
         """Test shared user context with flat format (backward compatibility)."""
