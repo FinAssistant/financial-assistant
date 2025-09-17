@@ -10,36 +10,39 @@ from app.core.database import user_storage
 from .mcp_clients.graphiti_client import get_graphiti_client
 
 
+# Typed profile data model
+class ExtractedProfileData(BaseModel):
+    """Typed structure for profile data extraction."""
+
+    age_range: Optional[str] = Field(None, description="Age range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65")
+    life_stage: Optional[str] = Field(None, description="Life stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement, between_jobs")
+    occupation_type: Optional[str] = Field(None, description="Job category: teacher, engineer, healthcare, unemployed, etc.")
+    location_context: Optional[str] = Field(None, description="State/region with cost of living context")
+    family_structure: Optional[str] = Field(None, description="Family structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income, etc.")
+    marital_status: Optional[str] = Field(None, description="Marital status: single, married, divorced, widowed, domestic_partnership")
+    total_dependents_count: Optional[int] = Field(None, description="Total number of dependents")
+    children_count: Optional[int] = Field(None, description="Number of children")
+    caregiving_responsibilities: Optional[str] = Field(None, description="Caregiving responsibilities: none, aging_parents, disabled_family_member, sandwich_generation")
+
+
 # Structured output model for LLM responses
 class ProfileDataExtraction(BaseModel):
     """Structured model for LLM to extract profile data from conversation."""
-    
+
     def __init_subclass__(cls, **kwargs):
         """Configure model based on LLM provider."""
         super().__init_subclass__(**kwargs)
         from app.core.config import settings
-        
+
         # Only use extra="forbid" for OpenAI structured output
         if settings.default_llm_provider == "openai":
             cls.model_config = ConfigDict(extra="forbid")
         else:
             cls.model_config = ConfigDict(extra="allow")
-    
-    extracted_data: Dict[str, Any] = Field(default_factory=dict, description="Profile data extracted from user input")
-    completion_status: str = Field(default="incomplete", description="Profile completion status: incomplete, partial, complete")
+
+    extracted_data: ExtractedProfileData = Field(default_factory=ExtractedProfileData, description="Profile data extracted from user input")
+    completion_status: str = Field(default="incomplete", description="Profile completion status: incomplete, complete")
     user_response: str = Field(description="Natural response to user - REQUIRED field, must always provide a helpful response")
-    
-    @field_validator('extracted_data', mode='before')
-    @classmethod
-    def parse_extracted_data(cls, v):
-        """Parse extracted_data if it comes as a string."""
-        if isinstance(v, str):
-            import json
-            try:
-                return json.loads(v) if v.strip() else {}
-            except json.JSONDecodeError:
-                return {}
-        return v if isinstance(v, dict) else {}
 
 
 class OnboardingState(BaseModel):
@@ -131,95 +134,31 @@ class OnboardingAgent:
         self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
         
         # Build system prompt for structured data extraction
-        system_prompt = """You are an onboarding assistant with TWO important jobs:
-            1. Extract profile data from user messages into the extracted_data field and return it as a JSON object.
-            2. Generate a helpful response to the user in the user_response field guiding them to provide the required information to complete their profile.
+        system_prompt = """You are an onboarding assistant that extracts user profile information and provides helpful responses.
 
-            CRITICAL REQUIREMENTS:
-            - You must ALWAYS return a JSON object with the following exact top-level keys:
-                1. "extracted_data": (object with extracted fields, can be empty if none provided)
-                2. "completion_status": ("complete" or "incomplete")
-                3. "user_response": (string with a natural, helpful reply to the user)
-            - "extracted_data" must contain any fields from the schema below that are mentioned in the user’s message.  
-            - If a field is not provided by the user, omit it (do NOT include nulls or placeholders).  
-            - If no profile information is present, "extracted_data" must still be an empty object: {}.  
-            - Always generate a natural, helpful response in "user_response" that acknowledges or guides the user. Never echo their input.  
-            - Update existing fields when life circumstances change (job loss, career change, family changes, moves).  
-            - Detect employment status changes and update related fields (occupation_type, life_stage, family_structure).  
+            Your job is to:
+            1. Fill in any profile fields mentioned by the user
+            2. Provide a natural, helpful response that guides them toward completing their profile
 
-            PROFILE FIELDS TO EXTRACT:
+            PROFILE FIELDS (set to null if not mentioned):
             - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
             - life_stage: student, young_professional, early_career, established_career, family_building, peak_earning, pre_retirement, retirement, between_jobs
             - occupation_type: job category (teacher, engineer, healthcare, unemployed, etc.)
             - location_context: state/region with cost of living
-            - family_structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income, etc.
+            - family_structure: single_no_dependents, single_with_dependents, married_dual_income, married_single_income, married_no_income
             - marital_status: single, married, divorced, widowed, domestic_partnership
-            - total_dependents_count: integer
-            - children_count: integer
+            - total_dependents_count: integer count
+            - children_count: integer count
             - caregiving_responsibilities: none, aging_parents, disabled_family_member, sandwich_generation
 
-            Set completion_status to "complete" only when all 9 fields are present.
+            Set completion_status to "complete" only when all 9 fields are provided.
 
-            EXTRACTION EXAMPLES:
-            - "I'm 30 years old" → "age_range": "26_35"
-            - "I work as a nurse" → "occupation_type": "healthcare"
-            - "I'm a software engineer" → "occupation_type": "engineer"
-            - "I left my job" → "occupation_type": "unemployed", "life_stage": "between_jobs"
-            - "My spouse lost their job" → update "family_structure" from "married_dual_income" to "married_single_income"
-            - "I live in California" → "location_context": "California, high cost of living"
-            - "I'm married" → "marital_status": "married"
-            - "I have two kids" → "children_count": 2
-            - "Caring for elderly parents" → "caregiving_responsibilities": "aging_parents"
+            EXAMPLES:
+            - "I'm 30, work as a nurse" → age_range: "26_35", occupation_type: "healthcare"
+            - "I left my job" → occupation_type: "unemployed", life_stage: "between_jobs"
+            - "I live in California with my spouse" → location_context: "California, high cost of living", marital_status: "married"
 
-            EXAMPLES OF FULL OUTPUT:
-
-            Example 1 - User provides profile data:
-            User: "I'm 30 years old, work as a nurse in Florida, single with no kids"
-            Response:
-            {
-                "extracted_data": {
-                    "age_range": "26_35",
-                    "life_stage": "early_career",
-                    "occupation_type": "healthcare",
-                    "location_context": "Florida, moderate cost of living",
-                    "family_structure": "single_no_dependents",
-                    "marital_status": "single",
-                    "total_dependents_count": 0,
-                    "children_count": 0,
-                    "caregiving_responsibilities": "none"
-                },
-                "completion_status": "complete",
-                "user_response": "Your profile is now complete! With your career and location, I can help tailor financial guidance to your needs."
-            }
-
-            Example 2 - User asks question but provides NO profile data:
-            User: "How should I invest my money?"
-            Response:
-            {
-                "extracted_data": {},
-                "completion_status": "incomplete",
-                "user_response": "I’d be happy to help with investment advice! First, could you tell me your age range and occupation so I can better guide you?"
-            }
-
-            Example 3 - User reports life changes:
-            User: "I have left my job in July, my spouse is taking a leave of absence starting in October"
-            Response:
-            {
-                "extracted_data": {
-                    "occupation_type": "unemployed",
-                    "life_stage": "between_jobs",
-                    "family_structure": "married_no_income"
-                },
-                "completion_status": "complete",
-                "user_response": "Thanks for sharing these important updates. Being between jobs with no household income will affect your financial planning. I can help you navigate this transition."
-            }
-
-            FINAL RULES:
-            - You must ALWAYS return valid JSON with exactly the three top-level keys: "extracted_data", "completion_status", "user_response".
-            - Never output text outside of the JSON object.
-            - Even if the user message contains greetings or small talk along with personal information, you must extract profile data and include it in "extracted_data".
-            - Treat any mention of demographics, occupation, family, goals, or location as profile data to extract.
-            """
+            Always provide a helpful user_response that acknowledges their input and guides next steps."""
 
         # Get current collected data context
         collected_context = f"Already collected: {state.collected_data}" if state.collected_data else "No data collected yet"
@@ -253,13 +192,15 @@ class OnboardingAgent:
         
         # Merge extracted data with existing collected data
         updated_collected = dict(state.collected_data)
-        updated_collected.update(response.extracted_data)
+        # Convert ExtractedProfileData to dict, excluding None values
+        extracted_dict = {k: v for k, v in response.extracted_data.model_dump().items() if v is not None}
+        updated_collected.update(extracted_dict)
         
         
         data =  {
             "messages": [ai_message],
             "collected_data": updated_collected,
-            "needs_database_update": bool(response.extracted_data),
+            "needs_database_update": bool(extracted_dict),
             "onboarding_complete": response.completion_status == "complete"
         }
 
