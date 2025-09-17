@@ -1,18 +1,18 @@
 from typing import Dict, Any, Optional
 import logging
-from .langgraph_config import get_langgraph_config
+from .orchestrator_agent import get_orchestrator_agent
 
 
-class OrchestratorAgent:
+class ConversationHandler:
     """
-    Simple orchestrator agent that processes user messages and provides basic responses.
-    Future: This will route messages to specialized agents (Onboarding, Spending, etc.).
+    Interface layer that handles conversation requests and delegates to the OrchestratorAgent.
+    This class provides a clean API for conversation handling without containing routing logic.
     """
     
     def __init__(self):
-        self.langgraph_config = get_langgraph_config()
+        self.orchestrator_agent = get_orchestrator_agent()
         self.logger = logging.getLogger(__name__)
-        self.logger.info("OrchestratorAgent initialized")
+        self.logger.info("ConversationHandler initialized")
     
     async def process_message(
         self, 
@@ -45,8 +45,8 @@ class OrchestratorAgent:
             }
         
         try:
-            # Process through LangGraph
-            result = await self.langgraph_config.invoke_conversation(
+            # Process through OrchestratorAgent
+            result = await self.orchestrator_agent.invoke_conversation(
                 user_message=user_message.strip(),
                 user_id=user_id,
                 session_id=effective_session_id
@@ -56,7 +56,7 @@ class OrchestratorAgent:
             return result
             
         except Exception as e:
-            self.logger.error(f"Orchestrator processing error: {e}")
+            self.logger.error(f"ConversationHandler processing error: {e}")
             # Error handling - return graceful fallback
             return {
                 "content": "I apologize, but I'm having trouble processing your message right now. Please try again.",
@@ -99,8 +99,8 @@ class OrchestratorAgent:
             # Use session_id or generate a default one
             effective_session_id = session_id or f"session_{user_id}"
             
-            # Stream through LangGraph
-            async for chunk in self.langgraph_config.stream_conversation(
+            # Stream through OrchestratorAgent
+            async for chunk in self.orchestrator_agent.stream_conversation(
                 user_message=user_message.strip(),
                 user_id=user_id,
                 session_id=effective_session_id
@@ -127,18 +127,18 @@ class OrchestratorAgent:
         """
         try:
             # Check if graph is initialized
-            graph_initialized = self.langgraph_config.graph is not None
+            graph_initialized = self.orchestrator_agent.graph is not None
             
             if not graph_initialized:
                 return {
                     "status": "unhealthy",
                     "graph_initialized": False,
                     "test_response_received": False,
-                    "error": "LangGraph not initialized"
+                    "error": "OrchestratorAgent not initialized"
                 }
             
             # Check if LLM is available
-            llm_available = self.langgraph_config.llm is not None
+            llm_available = self.orchestrator_agent.llm is not None
             
             
             if llm_available:
