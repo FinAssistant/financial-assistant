@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.ai.onboarding import OnboardingAgent, OnboardingState, ProfileDataExtraction
+from app.ai.onboarding import OnboardingAgent, OnboardingState, ProfileDataExtraction, ExtractedProfileData
 
 
 class TestOnboardingState:
@@ -50,26 +50,29 @@ class TestProfileDataExtraction:
         extraction = ProfileDataExtraction(
             user_response="Hello! I'd like to help you."
         )
-        
-        assert extraction.extracted_data == {}
-        assert extraction.next_questions == []
+
+        # extracted_data is now an ExtractedProfileData object with all fields None
+        assert extraction.extracted_data.age_range is None
+        assert extraction.extracted_data.occupation_type is None
+        assert extraction.extracted_data.marital_status is None
         assert extraction.completion_status == "incomplete"
         assert extraction.user_response == "Hello! I'd like to help you."
     
     def test_profile_data_extraction_complete(self):
         """Test ProfileDataExtraction with full data."""
-        extracted_data = {"age_range": "26_35", "occupation_type": "engineer"}
-        next_questions = ["What is your marital status?", "Do you have dependents?"]
-        
+        extracted_data = ExtractedProfileData(
+            age_range="26_35",
+            occupation_type="engineer"
+        )
+
         extraction = ProfileDataExtraction(
             extracted_data=extracted_data,
-            next_questions=next_questions,
             completion_status="partial",
             user_response="Great! I've noted your age and occupation."
         )
-        
-        assert extraction.extracted_data == extracted_data
-        assert extraction.next_questions == next_questions
+
+        assert extraction.extracted_data.age_range == "26_35"
+        assert extraction.extracted_data.occupation_type == "engineer"
         assert extraction.completion_status == "partial"
         assert extraction.user_response == "Great! I've noted your age and occupation."
 
@@ -154,8 +157,10 @@ class TestOnboardingAgentMethods:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={"age_range": "26_35", "occupation_type": "engineer"},
-            next_questions=["What is your marital status?"],
+            extracted_data=ExtractedProfileData(
+                age_range="26_35",
+                occupation_type="engineer"
+            ),
             completion_status="partial",
             user_response="Great! I've noted that you're 28 and work as a software engineer."
         )
@@ -192,8 +197,9 @@ class TestOnboardingAgentMethods:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={"marital_status": "single"},
-            next_questions=[],
+            extracted_data=ExtractedProfileData(
+                marital_status="single"
+            ),
             completion_status="complete",
             user_response="Perfect! Your profile is now complete."
         )
@@ -403,8 +409,10 @@ class TestOnboardingAgentIntegration:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={"age_range": "26_35", "occupation_type": "engineer"},
-            next_questions=["What is your marital status?"],
+            extracted_data=ExtractedProfileData(
+                age_range="26_35",
+                occupation_type="engineer"
+            ),
             completion_status="partial",
             user_response="Great! I've noted your age and occupation. What is your marital status?"
         )
@@ -487,8 +495,10 @@ class TestOnboardingAgentIntegration:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={"marital_status": "single", "family_structure": "single_no_dependents"},
-            next_questions=[],
+            extracted_data=ExtractedProfileData(
+                marital_status="single",
+                family_structure="single_no_dependents"
+            ),
             completion_status="complete",
             user_response="Perfect! Your profile is now complete and I can provide personalized financial advice."
         )
@@ -687,8 +697,11 @@ class TestOnboardingAgentGraphitiIntegration:
             mock_llm = Mock()
             mock_structured_llm = Mock()
             mock_response = ProfileDataExtraction(
-                extracted_data={"occupation_type": "unemployed", "life_stage": "between_jobs"},
-                completion_status="partial", 
+                extracted_data=ExtractedProfileData(
+                    occupation_type="unemployed",
+                    life_stage="between_jobs"
+                ),
+                completion_status="partial",
                 user_response="I've updated your employment status."
             )
             
@@ -791,10 +804,10 @@ class TestOnboardingAgentLifeChangeScenarios:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={
-                "occupation_type": "unemployed",
-                "life_stage": "between_jobs" 
-            },
+            extracted_data=ExtractedProfileData(
+                occupation_type="unemployed",
+                life_stage="between_jobs"
+            ),
             completion_status="partial",
             user_response="I've updated your employment status. This change will affect your financial planning."
         )
@@ -829,9 +842,9 @@ class TestOnboardingAgentLifeChangeScenarios:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={
-                "family_structure": "married_single_income"  # Updated from dual to single income
-            },
+            extracted_data=ExtractedProfileData(
+                family_structure="married_single_income"  # Updated from dual to single income
+            ),
             completion_status="partial",
             user_response="I've noted that your family will transition to single income. This is an important change for your financial planning."
         )
@@ -863,7 +876,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         mock_llm = Mock()
         mock_structured_llm = Mock()
         mock_response = ProfileDataExtraction(
-            extracted_data={},  # No new data extracted
+            extracted_data=ExtractedProfileData(),  # No new data extracted (all fields None)
             completion_status="partial",
             user_response="I'd be happy to help with investment advice based on your current situation."
         )
