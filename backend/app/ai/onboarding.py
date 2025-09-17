@@ -26,7 +26,6 @@ class ProfileDataExtraction(BaseModel):
             cls.model_config = ConfigDict(extra="allow")
     
     extracted_data: Dict[str, Any] = Field(default_factory=dict, description="Profile data extracted from user input")
-    next_questions: list[str] = Field(default_factory=list, description="Follow-up questions to ask user")
     completion_status: str = Field(default="incomplete", description="Profile completion status: incomplete, partial, complete")
     user_response: str = Field(description="Natural response to user - REQUIRED field, must always provide a helpful response")
     
