@@ -26,10 +26,10 @@ class GlobalState(BaseModel):
         description="Conversation messages with automatic LangGraph management"
     )
     
-    # Shared Data (lazy-loaded when needed)
-    connected_accounts: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        description="Basic connected account info (no real-time balances)"
+    # Shared Data (lightweight references for conversation context)
+    connected_account_ids: List[str] = Field(
+        default_factory=list,
+        description="List of connected account IDs for conversation context"
     )
     
     # Profile context (lazy-loaded and cached)
@@ -134,14 +134,14 @@ class GlobalState(BaseModel):
         if self.profile_context_timestamp is None:
             # No context built yet, will be built on next get_profile_context()
             return False
-        
+
         try:
             # Get user's last updated timestamp from database
             user_data = user_storage.get_user_by_id(user_id)
-            
+
             if not user_data:
                 return False
-            
+
             # Check if user data has been updated since we built the context
             user_updated_at = user_data.get("updated_at")
             if user_updated_at and isinstance(user_updated_at, datetime):
@@ -149,12 +149,69 @@ class GlobalState(BaseModel):
                     # Profile has been updated in database, rebuild context
                     self._build_profile_context(user_id)
                     return True
-            
+
             return False
-            
+
         except Exception:
             # If we can't check, assume no changes
             return False
+
+    def refresh_connected_accounts(self, user_id: str) -> None:
+        """
+        Refresh connected account IDs from database.
+        Called when accounts are added/removed to keep conversation context current.
+        """
+        try:
+            accounts = user_storage.get_accounts_for_conversation_context(user_id)
+            self.connected_account_ids = [account['id'] for account in accounts]
+        except Exception:
+            # Log error but don't break conversation flow
+            self.connected_account_ids = []
+
+    def has_connected_accounts(self, user_id: str) -> bool:
+        """
+        Check if user has any connected accounts.
+        Refreshes account list if empty to ensure current data.
+        """
+        if not self.connected_account_ids:
+            self.refresh_connected_accounts(user_id)
+        return len(self.connected_account_ids) > 0
+
+    def get_account_summary_for_prompt(self, user_id: str) -> str:
+        """
+        Get account summary for LLM prompts.
+        Returns human-readable summary of connected accounts.
+        """
+        try:
+            if not self.connected_account_ids:
+                self.refresh_connected_accounts(user_id)
+
+            if not self.connected_account_ids:
+                return "No connected accounts"
+
+            accounts = user_storage.get_accounts_for_conversation_context(user_id)
+            if not accounts:
+                return "No connected accounts"
+
+            account_types = {}
+            for account in accounts:
+                acc_type = account.get('account_type', 'unknown')
+                if acc_type in account_types:
+                    account_types[acc_type] += 1
+                else:
+                    account_types[acc_type] = 1
+
+            summary_parts = []
+            for acc_type, count in account_types.items():
+                if count == 1:
+                    summary_parts.append(f"1 {acc_type} account")
+                else:
+                    summary_parts.append(f"{count} {acc_type} accounts")
+
+            return f"Connected accounts: {', '.join(summary_parts)}"
+
+        except Exception:
+            return "Unable to load account information"
 
 
 class OrchestratorAgent:

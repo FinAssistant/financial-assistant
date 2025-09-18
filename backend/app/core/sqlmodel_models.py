@@ -258,12 +258,15 @@ class PersonalContextModel(SQLModel, table=True):
     # Caregiving responsibilities (affects available resources) - stored as JSON array
     caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)  # JSON array of CaregivingResponsibility values
     
+    # Completion tracking - single source of truth for profile completion
+    is_complete: bool = Field(default=False, description="True only after demographic data + Plaid account linking")
+
     # NOTE: Detailed financial info lives in Graphiti:
     # - Housing costs and moving plans
-    # - Joint vs separate finances  
+    # - Joint vs separate finances
     # - Life event planning and timelines
     # - Dependent support amounts and education costs
-    
+
     # Timestamps
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -288,6 +291,7 @@ class PersonalContextModel(SQLModel, table=True):
             'total_dependents_count': self.total_dependents_count,
             'children_count': self.children_count,
             'caregiving_responsibilities': self.caregiving_responsibilities,
+            'is_complete': self.is_complete,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
