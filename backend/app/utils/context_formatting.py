@@ -1,8 +1,8 @@
 """
-Shared utilities for formatting user context across different components.
+Shared utilities for formatting user context and managing LLM context limits across different components.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 
 def build_user_context_string(user_context: Dict[str, Any]) -> str:
@@ -76,3 +76,81 @@ def build_user_context_string(user_context: Dict[str, Any]) -> str:
             context_parts.append(f"Spending Style: {user_context['spending_personality']}")
     
     return "\n".join(context_parts) if context_parts else "Limited user context available"
+
+
+# LLM Context Management Helpers (extracted from transaction_categorization.py)
+
+# Context window limits for different LLM providers
+LLM_CONTEXT_LIMITS = {
+    "openai": 128000,     # GPT-4o
+    "anthropic": 200000,  # Claude Sonnet
+    "google": 1048576     # Gemini Flash
+}
+
+
+def get_llm_context_limit(llm) -> int:
+    """
+    Get context limit for current LLM provider.
+
+    Args:
+        llm: LLM instance with model_name attribute
+
+    Returns:
+        Context limit in tokens
+    """
+    if hasattr(llm, 'model_name'):
+        model = llm.model_name.lower()
+        if 'gpt' in model or 'openai' in model:
+            return LLM_CONTEXT_LIMITS["openai"]
+        elif 'claude' in model or 'anthropic' in model:
+            return LLM_CONTEXT_LIMITS["anthropic"]
+        elif 'gemini' in model or 'google' in model:
+            return LLM_CONTEXT_LIMITS["google"]
+
+    # Conservative default
+    return LLM_CONTEXT_LIMITS["openai"]
+
+
+def format_transaction_insights_for_llm_context(
+    data_items: List[Dict[str, Any]],
+    llm,
+    reserved_tokens: int = 1500,
+    chars_per_token: int = 4
+) -> str:
+    """
+    Format data items for LLM with dynamic truncation based on context limits.
+
+    Args:
+        data_items: List of data items to format
+        llm: LLM instance to determine context limits
+        reserved_tokens: Tokens to reserve for system prompt and response
+        chars_per_token: Estimated characters per token
+
+    Returns:
+        Formatted string that fits within context limits
+    """
+    context_limit = get_llm_context_limit(llm)
+    available_tokens = context_limit - reserved_tokens
+    max_chars = available_tokens * chars_per_token
+
+    formatted_data = []
+    char_count = 0
+
+    for item in data_items:
+        # Format each item (customize this based on data structure)
+        if isinstance(item, dict):
+            item_text = f"• {item.get('name', 'Unknown')}: {item.get('summary', 'No summary')}"
+        else:
+            item_text = f"• {str(item)}"
+
+        # Check if adding this item would exceed context limit
+        if char_count + len(item_text) > max_chars:
+            remaining_count = len(data_items) - len(formatted_data)
+            if remaining_count > 0:
+                formatted_data.append(f"... and {remaining_count} more items (truncated for context limit)")
+            break
+
+        formatted_data.append(item_text)
+        char_count += len(item_text)
+
+    return "\n".join(formatted_data)

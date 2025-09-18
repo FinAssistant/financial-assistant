@@ -230,6 +230,14 @@ class GraphitiMCPClient:
                 },
             )
 
+            # Parse response if it's a string
+            if isinstance(response, str):
+                try:
+                    response = json.loads(response)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse search response as JSON: {response[:100]}...")
+                    return {"nodes": [], "total": 0}
+
             logger.info(f"Search completed for user {user_id}: {query}")
             return response
 
@@ -284,6 +292,14 @@ class GraphitiMCPClient:
             for payload in payloads:
                 try:
                     response = await _call_tool_with_retries(tool, payload)
+                    # Parse response if it's a string
+                    if isinstance(response, str):
+                        try:
+                            response = json.loads(response)
+                        except json.JSONDecodeError:
+                            logger.debug(f"Failed to parse response as JSON: {response[:100]}...")
+                            continue
+
                     # Check different response formats
                     for field in ("nodes", "results", "items"):
                         nodes = (
@@ -311,6 +327,40 @@ class GraphitiMCPClient:
             logger.error(f"Failed to find transaction by hash {canonical_hash}: {e}")
 
         return None
+
+    async def _verify_transaction_visibility(
+        self, user_id: str, tx_hash: str, max_retries: int = 5
+    ) -> bool:
+        """
+        Verify that a stored transaction is visible/searchable with exponential backoff.
+        Ensures read-after-write consistency.
+
+        Args:
+            user_id: User ID (group_id)
+            tx_hash: Canonical transaction hash
+            max_retries: Maximum retry attempts
+
+        Returns:
+            True if transaction is visible, False otherwise
+        """
+        retry_delays = [1, 2, 5, 10, 20]  # Exponential backoff
+
+        for attempt in range(max_retries):
+            try:
+                found_transaction = await self._find_transaction_by_hash(user_id, tx_hash, max_nodes=1)
+                if found_transaction:
+                    return True
+
+                if attempt < max_retries - 1:
+                    delay = retry_delays[min(attempt, len(retry_delays) - 1)]
+                    await asyncio.sleep(delay)
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    delay = retry_delays[min(attempt, len(retry_delays) - 1)]
+                    await asyncio.sleep(delay)
+
+        return False
 
     async def store_transaction_episode(
         self, user_id: str, transaction, check_duplicate: bool = True
@@ -358,8 +408,15 @@ class GraphitiMCPClient:
                 },
             )
 
-            logger.info(f"Stored transaction episode for user {user_id}: {tx_hash[:8]}")
-            return {"found": False, "add_memory_response": response}
+            # Verify write visibility with exponential backoff for read-after-write consistency
+            is_visible = await self._verify_transaction_visibility(user_id, tx_hash)
+
+            if is_visible:
+                logger.info(f"Stored and verified transaction episode for user {user_id}: {tx_hash[:8]}")
+            else:
+                logger.warning(f"Transaction stored but not immediately visible for user {user_id}: {tx_hash[:8]}")
+
+            return {"found": False, "add_memory_response": response, "verified_visible": is_visible}
 
         except Exception as e:
             logger.error(f"Failed to store transaction episode for user {user_id}: {e}")
@@ -470,25 +527,36 @@ class GraphitiMCPClient:
                 }
             )
 
-        episode_content = f"""
-INGESTED TRANSACTION EPISODE
+        # Build natural language content that Graphiti can extract entities from
+        merchant = transaction.merchant_name or transaction.name or "Unknown Merchant"
+        amount = float(transaction.amount) if transaction.amount else 0.0
+        date = transaction.date or "unknown date"
 
-TRANSACTION_DATA: {json.dumps(core_data, ensure_ascii=False)}
+        # Get AI categorization info
+        ai_category = transaction.ai_category if hasattr(transaction, 'ai_category') else "General"
+        ai_subcategory = transaction.ai_subcategory if hasattr(transaction, 'ai_subcategory') else "Miscellaneous"
+        ai_confidence = transaction.ai_confidence if hasattr(transaction, 'ai_confidence') else 0.0
+        ai_tags = transaction.ai_tags if hasattr(transaction, 'ai_tags') else []
 
-EXTRACTION_GUIDANCE:
-- Primary entity: Transaction with canonical_hash property
-- Required properties: canonical_hash, date, amount, merchant_name, category
-- AI categorization properties: ai_category, ai_subcategory, ai_confidence, ai_tags
-- Create Merchant node from merchant_name
-- Create Category node from ai_category
-- Link Transaction -> User via group_id
-- Link Transaction -> Merchant via PURCHASED_FROM
-- Link Transaction -> Category via HAS_CATEGORY
-- Store ai_confidence and ai_reasoning as transaction properties
-- Tag spending patterns if ai_tags contain 'recurring', 'subscription', etc.
+        # Create natural language episode content for better entity extraction
+        episode_content = f"""User made a ${amount:.2f} purchase at {merchant} on {date}.
 
-SOURCE: transaction_categorization_agent
-"""
+This transaction was categorized as {ai_category} - {ai_subcategory} with {ai_confidence*100:.0f}% confidence.
+
+Transaction details:
+- Merchant: {merchant}
+- Amount: ${amount:.2f}
+- Date: {date}
+- Category: {ai_category}
+- Subcategory: {ai_subcategory}
+
+The user spent money at {merchant}, which is a {ai_category.lower()} establishment. This purchase falls under the {ai_subcategory.lower()} category.
+
+Canonical hash: {tx_hash}
+Transaction ID: {transaction.transaction_id}"""
+
+        if ai_tags:
+            episode_content += f"\nTags: {', '.join(ai_tags)}"
 
         return episode_content
 

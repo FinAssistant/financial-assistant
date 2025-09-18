@@ -7,7 +7,6 @@ with dynamic batch sizing based on context window limits.
 
 import logging
 from typing import List, Dict, Any, Optional
-from decimal import Decimal
 
 from app.models.plaid_models import (
     PlaidTransaction, 
@@ -16,7 +15,7 @@ from app.models.plaid_models import (
     TransactionBatch
 )
 from app.core.config import Settings
-from app.utils.context_formatting import build_user_context_string
+from app.utils.context_formatting import build_user_context_string, LLM_CONTEXT_LIMITS, get_llm_context_limit
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +27,8 @@ class TransactionCategorizationService:
         self.llm = llm
         self.settings = settings
         
-        # Context window limits for dynamic batch sizing
-        self.context_limits = {
-            "openai": 128000,     # GPT-4o
-            "anthropic": 200000,  # Claude Sonnet
-            "google": 1048576     # Gemini Flash
-        }
+        # Use shared context limits from context_formatting.py
+        self.context_limits = LLM_CONTEXT_LIMITS
         
         # Estimate tokens per transaction (conservative estimate)
         self.tokens_per_transaction = 150
@@ -42,11 +37,11 @@ class TransactionCategorizationService:
         self.reserved_tokens = 2000
     
     def _get_max_batch_size(self) -> int:
-        """Calculate maximum batch size based on smallest context window."""
-        min_context = min(self.context_limits.values())
-        available_tokens = min_context - self.reserved_tokens
+        """Calculate maximum batch size based on current LLM context window."""
+        llm_context = get_llm_context_limit(self.llm)
+        available_tokens = llm_context - self.reserved_tokens
         max_batch_size = available_tokens // self.tokens_per_transaction
-        
+
         # Cap at reasonable maximum to avoid very large batches
         return min(max_batch_size, 50)
     

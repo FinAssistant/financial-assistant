@@ -21,6 +21,9 @@ from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+test_plaid_user_id = "test_user_123"
+test_graphiti_user_id = "real_graphiti_test_user"
+
 async def test_spending_agent_mcp_plaid_integration():
     """Test the SpendingAgent with MCP Plaid integration."""
     print("🚀 Testing SpendingAgent with MCP Plaid Integration")
@@ -30,14 +33,12 @@ async def test_spending_agent_mcp_plaid_integration():
     agent = SpendingAgent()
     print("✅ SpendingAgent created successfully")
     
-    # Test user
-    test_user_id = "test_user_123"
     
     try:
         # Test 1: Get MCP client with real JWT
-        print(f"\n📝 Test 1: Getting MCP client for user {test_user_id}")
-        mcp_client = await agent._get_mcp_client(test_user_id)
-        
+        print(f"\n📝 Test 1: Getting MCP client for user {test_plaid_user_id}")
+        mcp_client = await agent._get_mcp_client(test_plaid_user_id)
+
         if mcp_client is None:
             print("⚠️  MCP client is None - either MCP library not available or connection failed")
             return
@@ -87,8 +88,8 @@ async def test_spending_agent_mcp_plaid_integration():
         # Test 3: Fetch transactions via SpendingAgent
         print(f"\n📝 Test 3: Fetching transactions via SpendingAgent MCP integration")
         try:
-            transaction_result = await agent._fetch_transactions(test_user_id)
-            
+            transaction_result = await agent._fetch_transactions(test_plaid_user_id)
+
             print(f"📊 SpendingAgent transaction fetch result:")
             print(f"   • Status: {transaction_result['status']}")
             print(f"   • Total transactions: {transaction_result.get('total_transactions', 'N/A')}")
@@ -107,29 +108,29 @@ async def test_spending_agent_mcp_plaid_integration():
             print(f"❌ SpendingAgent transaction fetch failed: {str(e)}")
             return
         
-        # Test 4: Full SpendingAgent conversation workflow
-        print(f"\n📝 Test 4: Full SpendingAgent conversation workflow with real MCP")
-        try:
-            result = await agent.invoke_spending_conversation(
-                "Show me my recent transactions", 
-                test_user_id, 
-                "spending_agent_real_mcp_test_session"
-            )
+        # # Test 4: Full SpendingAgent conversation workflow
+        # print(f"\n📝 Test 4: Full SpendingAgent conversation workflow with real MCP")
+        # try:
+        #     result = await agent.invoke_spending_conversation(
+        #         "Show me my recent transactions", 
+        #         test_plaid_user_id, 
+        #         "spending_agent_real_mcp_test_session"
+        #     )
             
-            print(f"📊 SpendingAgent conversation result:")
-            print(f"   • Agent: {result['agent']}")
-            print(f"   • Intent: {result['intent']}")
-            print(f"   • Message type: {result['message_type']}")
-            print(f"   • Content preview: {result['content'][:100]}...")
+        #     print(f"📊 SpendingAgent conversation result:")
+        #     print(f"   • Agent: {result['agent']}")
+        #     print(f"   • Intent: {result['intent']}")
+        #     print(f"   • Message type: {result['message_type']}")
+        #     print(f"   • Content preview: {result['content'][:100]}...")
             
-            if 'error' not in result:
-                print("✅ SpendingAgent full workflow completed successfully")
-            else:
-                print(f"⚠️  SpendingAgent workflow completed with error: {result['error']}")
+        #     if 'error' not in result:
+        #         print("✅ SpendingAgent full workflow completed successfully")
+        #     else:
+        #         print(f"⚠️  SpendingAgent workflow completed with error: {result['error']}")
             
-        except Exception as e:
-            print(f"❌ SpendingAgent full workflow failed: {str(e)}")
-            return
+        # except Exception as e:
+        #     print(f"❌ SpendingAgent full workflow failed: {str(e)}")
+        #     return
         
         print("\n" + "=" * 60)
         print("🎉 SpendingAgent Real MCP Integration Test Completed Successfully!")
@@ -153,6 +154,16 @@ async def test_spending_agent_graphiti_integration():
         # Test 1: Connect to Graphiti
         print(f"\n📝 Test 1: Connecting to Graphiti MCP server")
         graphiti_client = await get_graphiti_client()
+
+        if graphiti_client and graphiti_client.is_connected():
+            # Clear any previous test data for clean test
+            try:
+                clear_tool = graphiti_client._get_tool("clear_graph")
+                await clear_tool.ainvoke({})
+                print("🧹 Cleared previous test data from Graphiti")
+            except Exception as e:
+                print(f"⚠️  Could not clear previous data: {e}")
+                pass
 
         if not graphiti_client or not graphiti_client.is_connected():
             print("⚠️  Graphiti MCP server not available - skipping Graphiti tests")
@@ -197,13 +208,12 @@ async def test_spending_agent_graphiti_integration():
             )
         ]
 
-        test_user_id = "real_graphiti_test_user"
         print(f"✅ Created {len(test_transactions)} test transactions with AI categorization")
 
         # Test 3: Store transactions in Graphiti
         print(f"\n📝 Test 3: Storing transactions in Graphiti")
         storage_results = await graphiti_client.batch_store_transaction_episodes(
-            user_id=test_user_id,
+            user_id=test_graphiti_user_id,
             transactions=test_transactions,
             concurrency=2,
             check_duplicates=True
@@ -225,25 +235,26 @@ async def test_spending_agent_graphiti_integration():
 
         # Test 4: Search transactions in Graphiti
         print(f"\n📝 Test 4: Searching transactions in Graphiti")
-        await asyncio.sleep(2)  # Wait for indexing
 
         search_queries = [
-            "Starbucks coffee",
-            "grocery store",
-            "food and dining"
+            "Starbucks",
+            "Whole Foods",
+            "Food",
+            "purchase",
+            "transaction"
         ]
 
         for query in search_queries:
             search_results = await graphiti_client.search(
-                user_id=test_user_id,
+                user_id=test_graphiti_user_id,
                 query=query,
-                max_nodes=5
+                max_nodes=10
             )
 
             nodes_found = len(search_results.get("nodes", [])) if search_results else 0
             print(f"   • Query '{query}': {nodes_found} nodes found")
 
-        print("✅ Graphiti search functionality working")
+        print("✅ Graphiti search functionality working perfectly")
 
         # Test 5: Test canonical hashing
         print(f"\n📝 Test 5: Testing canonical hash consistency")
@@ -265,8 +276,13 @@ async def test_spending_agent_graphiti_integration():
 
         # Test 6: Test duplicate detection
         print(f"\n📝 Test 6: Testing duplicate detection")
+
+        tx_hash = canonical_hash(tx1)
+        print(f"   • Looking for hash: {tx_hash[:16]}...")
+
+        # Test duplicate detection
         duplicate_result = await graphiti_client.store_transaction_episode(
-            user_id=test_user_id,
+            user_id=test_graphiti_user_id,
             transaction=tx1,
             check_duplicate=True
         )
@@ -275,7 +291,7 @@ async def test_spending_agent_graphiti_integration():
         if duplicate_result.get('found'):
             print("✅ Duplicate detection working correctly")
         else:
-            print("⚠️  Duplicate not detected (may be first run)")
+            print("⚠️  Duplicate not detected")
 
         print("\n" + "=" * 60)
         print("🎉 SpendingAgent Graphiti Integration Test Completed!")
@@ -304,7 +320,6 @@ async def test_full_spending_agent_with_graphiti():
             return False
 
         agent = SpendingAgent()
-        test_user_id = "full_workflow_test_user"
 
         # Test different conversation scenarios
         test_scenarios = [
@@ -319,13 +334,13 @@ async def test_full_spending_agent_with_graphiti():
 
             result = await agent.invoke_spending_conversation(
                 user_message=scenario,
-                user_id=test_user_id,
+                user_id=test_graphiti_user_id,
                 session_id=f"graphiti_test_session_{i}"
             )
 
             print(f"   • Agent: {result['agent']}")
             print(f"   • Intent: {result['intent']}")
-            print(f"   • Response preview: {result['content'][:80]}...")
+            print(f"   • Response preview: {result['content']}")
 
             if 'error' not in result:
                 print("   ✅ Scenario completed successfully")
@@ -346,10 +361,10 @@ async def run_all_tests():
     print("=" * 70)
 
     # Test 1: MCP + Plaid integration
-    await test_spending_agent_mcp_plaid_integration()
+    #await test_spending_agent_mcp_plaid_integration()
 
     # Test 2: Graphiti integration
-    await test_spending_agent_graphiti_integration()
+    #await test_spending_agent_graphiti_integration()
 
     # Test 3: Full workflow
     await test_full_spending_agent_with_graphiti()

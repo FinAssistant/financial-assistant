@@ -15,7 +15,7 @@ from app.services.user_context_dao import UserContextDAOSync
 from app.services.auth_service import AuthService
 from app.services.llm_service import llm_factory
 from app.services.transaction_categorization import TransactionCategorizationService
-from app.utils.context_formatting import build_user_context_string
+from app.utils.context_formatting import build_user_context_string, format_transaction_insights_for_llm_context
 from langchain_core.messages import SystemMessage
 from app.ai.mcp_clients.graphiti_client import get_graphiti_client
 
@@ -32,9 +32,11 @@ class SpendingAgentState(MessagesState):
     """Extended state for Spending Agent with additional context."""
     user_id: str = ""
     session_id: str = ""
+    detected_intent: str = ""  # Intent detected by route_intent node
+    found_in_graphiti: bool = False  # Whether transaction data found in Graphiti
     # FIXME: Replace Dict[str, Any] with proper TypedDict if needed
     user_context: Dict[str, Any] = {}  # SQLite demographics data
-    # FIXME: Replace Dict[str, Any] with proper TypedDict if needed  
+    # FIXME: Replace Dict[str, Any] with proper TypedDict if needed
     spending_insights: Dict[str, Any] = {}  # Graphiti insights cache
 
 
@@ -139,6 +141,8 @@ class SpendingAgent:
         Returns the name of the node to route to based on detected intent.
         """
         detected_intent = state.get("detected_intent", "general_spending")
+        logger.debug(f"🔀 ROUTER: Current state keys: {list(state.keys())}")
+        logger.debug(f"🔀 ROUTER: Full detected_intent value: {repr(state.get('detected_intent'))}")
         logger.info(f"Routing to intent node: {detected_intent}")
         return detected_intent
     
@@ -397,13 +401,19 @@ class SpendingAgent:
         
         Uses LLM to accurately classify user intent with context awareness.
         """
+        logger.debug(f"🧠 INTENT_NODE: Starting intent detection with state keys: {list(state.keys())}")
+
         last_message = state["messages"][-1] if state["messages"] else None
-        
+        logger.debug(f"🧠 INTENT_NODE: Last message type: {type(last_message)}")
+
         if not isinstance(last_message, HumanMessage):
+            logger.debug("🧠 INTENT_NODE: Not a HumanMessage, defaulting to general_spending")
             return {"detected_intent": "general_spending"}
-        
+
         user_input = last_message.content
         user_context = state.get("user_context", {})
+        logger.debug(f"🧠 INTENT_NODE: User input: {repr(user_input)}")
+        logger.debug(f"🧠 INTENT_NODE: User context keys: {list(user_context.keys()) if user_context else 'None'}")
         
         # Build context-aware intent detection prompt using shared utility
         context_str = build_user_context_string(user_context)
@@ -438,14 +448,16 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
                 ]
                 response = self.llm.invoke(llm_messages)
                 detected_intent = response.content.strip().lower()
-                
+                logger.debug(f"🧠 INTENT_NODE: Raw LLM response: {repr(response.content)}")
+                logger.debug(f"🧠 INTENT_NODE: Processed intent: {repr(detected_intent)}")
+
                 # Validate response is one of expected intents
                 valid_intents = ["spending_analysis", "budget_planning", "optimization", "transaction_query", "general_spending"]
                 if detected_intent not in valid_intents:
                     logger.warning(f"LLM returned invalid intent: {detected_intent}, using fallback detection")
                     detected_intent = self._fallback_intent_detection(user_input)
                     logger.info(f"Fallback detected intent: {detected_intent}")
-                    
+
                 logger.info(f"LLM detected intent: {detected_intent}")
             else:
                 # Fallback to keyword-based detection if LLM unavailable
@@ -457,6 +469,7 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
             detected_intent = self._fallback_intent_detection(user_input)
             logger.info(f"Fallback detected intent after error: {detected_intent}")
         
+        logger.debug(f"🧠 INTENT_NODE: Returning intent result: {{'detected_intent': {repr(detected_intent)}}}")
         return {"detected_intent": detected_intent}
     
     def _fallback_intent_detection(self, user_input: str) -> str:
@@ -702,6 +715,8 @@ Generate personalized spending optimization recommendations now."""
         Uses message history to determine if this is a second call (after fetch_and_process).
         """
         user_id = state.get("user_id", "")
+        logger.debug(f"📊 TRANSACTION_QUERY_NODE: Starting with user_id: {user_id}")
+        logger.debug(f"📊 TRANSACTION_QUERY_NODE: State keys: {list(state.keys())}")
 
         # Check if we've already been through fetch_and_process by looking for its AIMessage
         messages = state.get("messages", [])
@@ -718,11 +733,14 @@ Generate personalized spending optimization recommendations now."""
         # Search Graphiti for transaction insights
         found_in_graphiti = False
         transaction_insights = []
+        logger.debug(f"📊 TRANSACTION_QUERY_NODE: User query: {repr(user_query)}")
 
         try:
             graphiti_client = await get_graphiti_client()
+            logger.debug(f"📊 TRANSACTION_QUERY_NODE: Graphiti client connected: {graphiti_client.is_connected() if graphiti_client else False}")
             if graphiti_client and graphiti_client.is_connected():
                 # Search for transaction insights based on user query
+                logger.debug(f"📊 TRANSACTION_QUERY_NODE: Starting Graphiti search for user {user_id} with query: {repr(user_query)}")
                 search_results = await graphiti_client.search(
                     user_id=user_id,
                     query=user_query,
@@ -730,6 +748,8 @@ Generate personalized spending optimization recommendations now."""
                 )
 
                 # Parse search results
+                logger.debug(f"📊 TRANSACTION_QUERY_NODE: Raw search results type: {type(search_results)}")
+                logger.debug(f"📊 TRANSACTION_QUERY_NODE: Raw search results: {search_results}")
                 if search_results and isinstance(search_results, dict):
                     nodes = search_results.get("nodes", [])
                     if nodes:
@@ -753,19 +773,25 @@ Generate personalized spending optimization recommendations now."""
             # Generate LLM-powered response for existing transaction insights
             logger.info(f"Returning {len(transaction_insights)} transaction insights from Graphiti for user {user_id}")
 
+            # Format transaction data with dynamic context limit management
+            transaction_data = format_transaction_insights_for_llm_context(
+                data_items=transaction_insights,
+                llm=self.llm,
+                reserved_tokens=1500  # Reserve space for system prompt and response
+            )
+
             system_prompt = f"""You are a transaction analysis expert presenting transaction insights to the user.
 
 USER CONTEXT:
 {user_context_str}
 
-AVAILABLE DATA:
-- Found {len(transaction_insights)} transaction insights in user's history
-- Data was previously processed and stored in your knowledge base
+TRANSACTION DATA:
+{transaction_data}
 
 INSTRUCTIONS:
-1. Provide a comprehensive analysis of their transaction data relevant to their query
-2. Use specific details from the transaction insights where available
-3. Consider their user context when presenting the information
+1. Analyze the specific transaction data provided above
+2. Focus on details relevant to the user's query: "{user_query}"
+3. Use specific names, amounts, and details from the transaction data
 4. Offer actionable insights and patterns you notice
 5. Maintain a professional yet approachable tone
 6. Keep response informative and personalized (2-3 paragraphs)
@@ -802,8 +828,7 @@ Generate a personalized transaction analysis response now."""
         
         return {
             "messages": [response],
-            "found_in_graphiti": found_in_graphiti,
-            "transaction_insights": transaction_insights
+            "found_in_graphiti": found_in_graphiti
         }
     
     def _general_spending_node(self, state: SpendingAgentState) -> Dict[str, Any]:
@@ -811,7 +836,8 @@ Generate a personalized transaction analysis response now."""
         Specialized node for general spending inquiries and introductory guidance.
         Uses LLM to provide personalized welcome and guidance based on user context.
         """
-        
+        logger.debug(f"💬 GENERAL_SPENDING_NODE: Starting with state keys: {list(state.keys())}")
+
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
         
