@@ -30,22 +30,23 @@ so that I can access core functionality while the AI learns my preferences over 
 1. Conversational onboarding flow guided by LangGraph Onboarding Agent with progress awareness
 2. Natural language extraction of demographic data into PersonalContextModel (age_range, marital_status, has_dependents)
 3. LLM-guided account connection process with contextual explanations and Plaid Link integration
-4. Clear "Ready to Use" completion state communicated conversationally and reflected in app functionality
+4. Clear "Ready to Use" completion state achieved only after successful Plaid account connection, communicated conversationally and reflected in app functionality
 5. Conversation state persistence across sessions using LangGraph checkpointing and SQLite storage
 
 **Technical Implementation (references architecture/data-models.md):**
 6. PersonalContextModel creation and SQLite persistence for structured data
 7. LangGraph Onboarding Agent initialization with user context
 8. Integration with existing authentication system and user profile
-9. Wizard completion triggers user.profile_complete = True update
+9. Secure storage of Plaid access tokens (in SQLite DB for POC)
+10. Wizard completion triggers PersonalContext.is_complete = True update
 
 **User Experience:**
-10. Conversational completion celebration and seamless transition to main app
-11. Clear conversational indication that ongoing learning will enhance recommendations  
-12. Natural language ability to modify essential information through conversational profile updates
+11. Conversational completion celebration and seamless transition to main app
+12. Clear conversational indication that ongoing learning will enhance recommendations
+13. Natural language ability to modify essential information through conversational profile updates
 
 **Dependencies:** Requires completion of Epic 1 authentication and MCP server foundation, AND Story 2.0 (LLM Provider Integration & Agent Foundation).
-    
+
 
 ## Story 2.1b: Conversational Profile Discovery  
 
@@ -75,29 +76,58 @@ so that recommendations become increasingly personalized without requiring lengt
 13. Ability to explicitly correct or update learned preferences
 
 **Parallel Track:** Runs continuously alongside user interactions, enhancing all other Epic 2 stories over time.
-    
 
-## Story 2.2: Plaid Integration and Account Connection
 
-As a user,I want to securely connect my bank accounts, credit cards, and loans with AI guidance,so that the system can analyze my complete financial picture safely and easily.
+## Story 2.1c: UI Completion State Management
+
+As a user,
+I want the interface to only show relevant features based on my onboarding completion status,
+so that I'm not confused by features I can't use until setup is complete.
 
 **Acceptance Criteria:**
 
-1.  Plaid Link integration in React frontend within wizard flow
-    
-2.  Onboarding Agent access to Plaid APIs via MCP server tools
-    
-3.  Secure storage of Plaid access tokens (in-memory for POC)
-    
-4.  Account list display with balances and account types
-    
-5.  Error handling for connection failures with AI assistance
-    
-6.  Account disconnection capability
-    
-7.  AI explanations for why each account type is beneficial to connect
+**Incomplete Onboarding UI:**
+1. Show only chatbot interface and profile completion progress indicator
+2. Display collected profile data in a progress-aware format
+3. Hide main navigation and dashboard features until "Ready to Use" state
+4. Clear visual indication of onboarding progress and next steps
 
-**Dependencies:** Requires Story 2.0 (LLM Provider Integration & Agent Foundation) and Story 2.1a (Essential Onboarding Setup) for user profile foundation and "Ready to Use" state.
+**Completion State Detection:**
+5. Use PersonalContext model as single source of truth for completion status
+6. Real-time updates to UI state based on completion changes
+7. Seamless transition to full app interface upon completion
+
+**User Experience:**
+8. Clear progress indication showing onboarding steps completed
+9. Encouraging messaging about benefits of completing setup
+10. No broken or empty states visible to incomplete users
+
+**Dependencies:** Requires Story 2.0 (LLM Provider Integration & Agent Foundation) and Story 2.1a (Essential Onboarding Setup) for completion state logic.
+
+
+## Story 2.2: Account Management and Optimization
+
+As a user, I want to view and manage my connected accounts with AI guidance for account portfolio optimization, so that I can maintain healthy account connections and maximize financial data completeness.
+
+**Acceptance Criteria:**
+
+**Account Display and Management:**
+1. Comprehensive account list display with balances, account types, and connection status
+2. Account disconnection capability with confirmation and impact explanation
+3. Account health monitoring (connection status, last sync, error states)
+4. Real-time balance updates and account status refresh
+
+**Error Recovery and Maintenance:**
+5. Intelligent error handling for expired tokens, bank changes, and connection issues
+6. AI-assisted troubleshooting with step-by-step reconnection guidance
+7. Proactive notifications for accounts requiring attention
+
+**Account Portfolio Optimization:**
+8. AI-driven analysis of account coverage gaps (missing account types)
+9. Personalized prompts to connect additional beneficial accounts
+10. Smart recommendations for account consolidation or optimization opportunities
+
+**Dependencies:** Requires Story 2.0 (LLM Provider Integration & Agent Foundation) and Story 2.1a (Essential Onboarding Setup) for initial account connection foundation.
     
 
 ## Story 2.3: Spending Agent - Transaction Analysis and Insights

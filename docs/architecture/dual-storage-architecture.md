@@ -150,6 +150,18 @@ The dual-storage architecture directly enables Epic 2.1's two-phase approach:
 - MCP server provides unified tool interface to both storage types
 - Global state in LangGraph coordinates cross-system data access
 
+## Completion State Consolidation
+
+**Current Issue**: "Ready to Use" completion state was originally fragmented across multiple storage systems:
+- User.onboarding_progress (primary flag)
+- PersonalContext model (profile data)
+- LangGraph SQLite checkpointer (conversation state)
+- GlobalState.connected_accounts (Plaid connection status)
+
+**Current Approach**: Use PersonalContext model as single source of truth for completion state. PersonalContext is only marked complete after both demographic data collection AND successful Plaid account linking, eliminating the need for complex aggregation logic.
+
+**Future Simplification**: Remove redundant completion flags from User model and other locations once PersonalContext-based completion is fully validated.
+
 ### Migration Strategy
 - PersonalContext can be migrated between structured storage systems
 - Graphiti content grows organically and doesn't require migration
