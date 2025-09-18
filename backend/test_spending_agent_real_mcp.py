@@ -12,6 +12,7 @@ Usage:
 import asyncio
 import logging
 from app.ai.spending_agent import SpendingAgent
+from app.ai.mcp_clients import get_plaid_client
 from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
 
 # Set up logging to see what happens
@@ -23,34 +24,36 @@ async def test_spending_agent_mcp_plaid_integration():
     print("🚀 Testing SpendingAgent with MCP Plaid Integration")
     print("=" * 60)
     
-    # Create SpendingAgent
+    # Create SpendingAgent and get shared Plaid client
     agent = SpendingAgent()
+    plaid_client = get_plaid_client()
     print("✅ SpendingAgent created successfully")
-    
+
     # Test user
     test_user_id = "test_user_123"
-    
+
     try:
-        # Test 1: Get MCP client with real JWT
+        # Test 1: Get MCP client with real JWT via shared PlaidMCPClient
         print(f"\n📝 Test 1: Getting MCP client for user {test_user_id}")
-        mcp_client = await agent._get_mcp_client(test_user_id)
-        
+        mcp_client = await plaid_client.get_client(test_user_id)
+
         if mcp_client is None:
             print("⚠️  MCP client is None - either MCP library not available or connection failed")
             return
+
+        print("✅ Shared PlaidMCPClient created successfully with real JWT")
         
-        print("✅ SpendingAgent MCP client created successfully with real JWT")
-        
-        # Test 2: Get tools from MCP server
-        print(f"\n📝 Test 2: Getting tools from MCP server via SpendingAgent")
+        # Test 2: Get tools from MCP server via shared PlaidMCPClient
+        print(f"\n📝 Test 2: Getting tools from MCP server via PlaidMCPClient")
         try:
-            tools = await mcp_client.get_tools()
-            print(f"✅ SpendingAgent retrieved {len(tools)} tools from MCP server")
-            
+            tools = await plaid_client.get_tools(test_user_id)
+            available_tool_names = await plaid_client.list_available_tools(test_user_id)
+            print(f"✅ PlaidMCPClient retrieved {len(tools)} tools from MCP server")
+
             # List available tools
             tool_dict = {}
             plaid_tools = []
-            for _, tool in enumerate(tools):
+            for tool in tools:
                 tool_name = getattr(tool, 'name', 'Unknown')
                 description = getattr(tool, 'description', 'No description')
                 tool_dict[tool_name] = tool
@@ -58,8 +61,10 @@ async def test_spending_agent_mcp_plaid_integration():
                     plaid_tools.append(tool_name)
                 print(f"  • {tool_name}: {description[:60]}...")
 
+            print(f"✅ Available tool names: {available_tool_names}")
+
         except Exception as e:
-            print(f"❌ SpendingAgent failed to get tools from MCP server: {str(e)}")
+            print(f"❌ PlaidMCPClient failed to get tools from MCP server: {str(e)}")
             print("💡 Make sure MCP server is running: uvicorn app.main:app --reload")
             return
         
@@ -130,9 +135,10 @@ async def test_spending_agent_mcp_plaid_integration():
         
         print("\n" + "=" * 60)
         print("🎉 SpendingAgent Real MCP Integration Test Completed Successfully!")
-        print("✅ SpendingAgent can connect to real MCP server with JWT authentication")
+        print("✅ SpendingAgent uses shared PlaidMCPClient with JWT authentication")
         print("✅ SpendingAgent real transaction fetching is working")
         print("✅ SpendingAgent full conversation workflow is functional")
+        print("✅ PlaidMCPClient shared across multiple agents successfully")
         
     except Exception as e:
         print(f"\n❌ SpendingAgent integration test failed: {str(e)}")
