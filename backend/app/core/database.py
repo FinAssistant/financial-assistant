@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
+import uuid
 
 from .config import settings
 from .sqlmodel_models import (
@@ -340,8 +341,6 @@ class SQLiteUserStorage:
         Returns the created account data.
         Raises ValueError if account already exists.
         """
-        import uuid
-
         await self._ensure_initialized()
         async with self.session_factory() as session:
             try:
