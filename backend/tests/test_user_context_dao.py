@@ -235,19 +235,20 @@ class TestUserContextDAOSync:
     
     def test_run_async_no_event_loop(self, dao_sync):
         """Test _run_async when no event loop exists."""
-        async def dummy_coro():
-            return "test_result"
-        
+        # Use a mock coroutine instead of a real async function to avoid unawaited warnings
+        mock_coro = Mock()
+        mock_coro.__await__ = Mock(return_value=iter([]))
+
         with patch('asyncio.get_event_loop', side_effect=RuntimeError("No event loop")), \
              patch('asyncio.new_event_loop') as mock_new_loop, \
              patch('asyncio.set_event_loop') as mock_set_loop:
-            
+
             mock_loop = Mock()
             mock_new_loop.return_value = mock_loop
             mock_loop.run_until_complete.return_value = "test_result"
-            
-            result = dao_sync._run_async(dummy_coro())
-            
+
+            result = dao_sync._run_async(mock_coro)
+
             assert result == "test_result"
             mock_new_loop.assert_called_once()
             mock_set_loop.assert_called()

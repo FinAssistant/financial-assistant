@@ -98,8 +98,8 @@ def get_llm_context_limit(llm) -> int:
     Returns:
         Context limit in tokens
     """
-    if hasattr(llm, 'model_name'):
-        model = llm.model_name.lower()
+    if hasattr(llm, 'model_name') and llm.model_name:
+        model = str(llm.model_name).lower()
         if 'gpt' in model or 'openai' in model:
             return LLM_CONTEXT_LIMITS["openai"]
         elif 'claude' in model or 'anthropic' in model:
@@ -107,7 +107,7 @@ def get_llm_context_limit(llm) -> int:
         elif 'gemini' in model or 'google' in model:
             return LLM_CONTEXT_LIMITS["google"]
 
-    # Conservative default
+    # Conservative default for tests and unknown models
     return LLM_CONTEXT_LIMITS["openai"]
 
 

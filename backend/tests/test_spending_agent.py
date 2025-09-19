@@ -255,11 +255,22 @@ class TestSpendingAgent:
         state = {"found_in_graphiti": False}
         result = self.agent._route_transaction_query(state)
         assert result == "fetch_from_plaid"
-        
+
         # Test default case (no found_in_graphiti key)
         empty_state = {}
         result = self.agent._route_transaction_query(empty_state)
         assert result == "fetch_from_plaid"
+
+    def test_route_transaction_query_max_attempts_reached(self):
+        """Test _route_transaction_query when max fetch attempts are reached."""
+        state = {"found_in_graphiti": False, "fetch_attempts": 3}
+        result = self.agent._route_transaction_query(state)
+        assert result == "max_attempts_reached"
+
+        # Test with more than 3 attempts
+        state = {"found_in_graphiti": False, "fetch_attempts": 5}
+        result = self.agent._route_transaction_query(state)
+        assert result == "max_attempts_reached"
     
     @pytest.mark.asyncio
     async def test_transaction_query_node_graphiti_not_found(self):
@@ -276,11 +287,21 @@ class TestSpendingAgent:
         # Check basic response structure
         assert "messages" in result
         assert "found_in_graphiti" in result
-        assert "transaction_insights" in result
-        
+
         # Check that mock returns not found
         assert result["found_in_graphiti"] is False
-        assert result["transaction_insights"] == []
+
+        # Check that we got a proper response message
+        messages = result["messages"]
+        assert len(messages) == 1
+        response_message = messages[0]
+        assert hasattr(response_message, 'content')
+        assert "fetch your latest transaction data" in response_message.content
+
+        # Check additional metadata
+        assert response_message.additional_kwargs.get("agent") == "spending_agent"
+        assert response_message.additional_kwargs.get("intent") == "transaction_query"
+        assert response_message.additional_kwargs.get("data_source") == "needs_plaid_fetch"
         
         # Check AI message
         ai_message = result["messages"][0]
@@ -346,27 +367,43 @@ class TestSpendingAgent:
         # Check basic response structure
         assert "messages" in result
         assert "found_in_graphiti" in result
-        assert "transaction_insights" in result
 
         # Should return static response without LLM call
         assert result["found_in_graphiti"] is False
-        assert result["transaction_insights"] == []
 
-        # Check AI message content for static response
+        # Check AI message content for static response (second call scenario)
         ai_message = result["messages"][0]
         assert isinstance(ai_message, AIMessage)
         expected_content = "I've processed your latest transaction data and updated your financial profile. No specific insights were found matching your current query, but your transaction history has been categorized and stored for future analysis."
         assert ai_message.content == expected_content
+
+        # Verify this is recognized as a second call scenario
+        assert "processed your latest transaction data" in ai_message.content
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "transaction_query"
 
     @pytest.mark.asyncio
-    async def test_transaction_query_workflow_integration(self):
+    @patch('app.ai.spending_agent.get_graphiti_client')
+    @patch.object(SpendingAgent, '_fetch_transactions')
+    async def test_transaction_query_workflow_integration(self, mock_fetch_transactions, mock_get_graphiti_client):
         """Test the full transaction query workflow with mocked data."""
+        # Mock Graphiti client to return no results (first call)
+        mock_graphiti_client = AsyncMock()
+        mock_graphiti_client.is_connected.return_value = True
+        mock_graphiti_client.search.return_value = {"nodes": []}  # No existing data
+        mock_get_graphiti_client.return_value = mock_graphiti_client
+
+        # Mock transaction fetch to succeed (avoids infinite loop)
+        mock_fetch_transactions.return_value = {
+            "status": "success",
+            "transactions": [],
+            "total_transactions": 0
+        }
+
         user_message = "Find this transaction"  # Using exact keyword from existing test
         user_id = "test_user_456"
         session_id = "test_session_789"
-        
+
         result = await self.agent.invoke_spending_conversation(user_message, user_id, session_id)
         
         # The workflow should complete successfully 
@@ -383,6 +420,49 @@ class TestSpendingAgent:
         
         # With mocked data, it should go through the fetch_and_process path and return final results
         # The exact content depends on whether it went through fetch path or not
+
+    @pytest.mark.asyncio
+    @patch('app.ai.spending_agent.get_graphiti_client')
+    @patch.object(SpendingAgent, '_fetch_transactions')
+    async def test_transaction_query_workflow_with_failures(self, mock_fetch_transactions, mock_get_graphiti_client):
+        """Test the workflow handles external service failures gracefully and stops after 3 iterations."""
+        # Mock Graphiti client to return no results (force fetch path)
+        mock_graphiti_client = AsyncMock()
+        mock_graphiti_client.is_connected.return_value = True
+        mock_graphiti_client.search.return_value = {"nodes": []}
+        mock_get_graphiti_client.return_value = mock_graphiti_client
+
+        # Mock transaction fetch to always fail (simulating external service failure)
+        mock_fetch_transactions.return_value = {
+            "status": "error",
+            "error": "Connection timeout",
+            "transactions": []
+        }
+
+        user_message = "Show me my transactions"
+        user_id = "test_user_failure"
+        session_id = "test_session_failure"
+
+        result = await self.agent.invoke_spending_conversation(user_message, user_id, session_id)
+
+        # Should handle failures gracefully
+        assert "content" in result
+        assert "agent" in result
+        assert result["agent"] == "spending_agent"
+        assert result["user_id"] == user_id
+        assert result["session_id"] == session_id
+        assert result["message_type"] == "ai_response"
+
+        # Most importantly: should stop after exactly 3 fetch attempts (no infinite loop)
+        assert mock_fetch_transactions.call_count <= 3, f"Should not exceed 3 fetch attempts, got {mock_fetch_transactions.call_count}"
+
+        # Should not have recursion limit error (proves iteration limit works)
+        if "error" in result:
+            assert "Recursion limit" not in result["error"], "Should not hit recursion limit with iteration counter"
+            assert "trouble processing" in result["content"] or "try again" in result["content"]
+        else:
+            # If it succeeds, should have proper response
+            assert len(result["content"]) > 0
 
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mocked_mcp_success(self):

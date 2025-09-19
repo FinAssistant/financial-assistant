@@ -329,19 +329,18 @@ class TestGraphitiClientTransactionStorage:
             transaction, user_id, tx_hash
         )
 
-        # Verify content structure
-        assert "INGESTED TRANSACTION EPISODE" in content
-        assert "TRANSACTION_DATA:" in content
+        # Verify content structure with new natural language format
+        assert "User made a" in content
+        assert "purchase at" in content
+        assert "categorized as" in content
         assert tx_hash in content
-        assert user_id in content
         assert str(transaction.amount) in content
         assert transaction.merchant_name in content
-        assert "EXTRACTION_GUIDANCE:" in content
 
         # Verify AI categorization is included
         assert transaction.ai_category in content
         assert transaction.ai_subcategory in content
-        assert str(transaction.ai_confidence) in content
+        assert str(int(transaction.ai_confidence * 100)) in content
 
     def test_build_transaction_episode_content_without_ai_fields(
         self, mock_graphiti_client
@@ -362,12 +361,14 @@ class TestGraphitiClientTransactionStorage:
             transaction, user_id, tx_hash
         )
 
-        # Should still work without AI fields
-        assert "INGESTED TRANSACTION EPISODE" in content
+        # Should still work without AI fields with new natural language format
+        assert "User made a" in content
+        assert "purchase at" in content
         assert tx_hash in content
-        assert user_id in content
-        # Should not contain AI categorization data
-        assert "ai_category" not in content or "null" in content
+        # Should handle None AI fields gracefully
+        assert "None - None" in content  # Shows None fields handled
+        assert "general establishment" in content  # Fallback category
+        assert "miscellaneous category" in content  # Fallback subcategory
 
 
 class TestTransactionStorageIntegration:

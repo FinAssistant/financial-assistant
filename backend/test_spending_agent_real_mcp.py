@@ -26,7 +26,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Consistent test user for all tests
-TEST_USER_ID = "integration_test_user"
+TEST_USER_ID_PLAID = "integration_test_user_plaid"
+TEST_USER_ID_GRAPHITI = "integration_test_user_graphiti"
+TEST_USER_ID_FULL = "integration_test_user_full"  # For full integration test
 
 async def get_connected_graphiti_client():
     """Get connected Graphiti client or None if unavailable."""
@@ -131,8 +133,8 @@ async def test_1_plaid_integration_only():
         print("✅ SpendingAgent created")
 
         # Test MCP client creation with JWT
-        print(f"\n🔑 Creating MCP client for user: {TEST_USER_ID}")
-        mcp_client = await agent._get_mcp_client(TEST_USER_ID)
+        print(f"\n🔑 Creating MCP client for user: {TEST_USER_ID_PLAID}")
+        mcp_client = await agent._get_mcp_client(TEST_USER_ID_PLAID)
 
         if mcp_client is None:
             print("❌ MCP client creation failed")
@@ -154,16 +156,14 @@ async def test_1_plaid_integration_only():
 
         exchange_success = await test_exchange_public_token(tool_dict, public_token)
         if not exchange_success:
-            print("❌ Public token exchange failed")
             return False
-        print("✅ Public token exchange successful")
 
         # Small delay for token storage
         await asyncio.sleep(1)
 
         # Test transaction fetching
         print("\n📊 Fetching transactions...")
-        transaction_result = await agent._fetch_transactions(TEST_USER_ID)
+        transaction_result = await agent._fetch_transactions(TEST_USER_ID_PLAID)
 
         print(f"📈 Transaction fetch result:")
         print(f"   • Status: {transaction_result['status']}")
@@ -208,7 +208,7 @@ async def test_2_graphiti_integration_only():
         # Store transactions in Graphiti
         print("\n💾 Storing transactions in Graphiti...")
         storage_success = await store_mock_transactions_in_graphiti(
-            graphiti_client, TEST_USER_ID, mock_transactions, show_results=True
+            graphiti_client, TEST_USER_ID_GRAPHITI, mock_transactions, show_results=True
         )
 
         if not storage_success:
@@ -221,7 +221,7 @@ async def test_2_graphiti_integration_only():
 
         for query in search_queries:
             search_results = await graphiti_client.search(
-                user_id=TEST_USER_ID,
+                user_id=TEST_USER_ID_GRAPHITI,
                 query=query,
                 max_nodes=10
             )
@@ -254,9 +254,9 @@ async def test_3_full_integration():
         print("✅ Plaid sandbox setup successful")
 
         # Step 2: Create SpendingAgent and setup MCP client
-        print(f"\n🤖 Creating SpendingAgent and MCP client for user: {TEST_USER_ID}")
+        print(f"\n🤖 Creating SpendingAgent and MCP client for user: {TEST_USER_ID_FULL}")
         agent = SpendingAgent(test_transaction_limit=5)  # Limit transactions for testing
-        mcp_client = await agent._get_mcp_client(TEST_USER_ID)
+        mcp_client = await agent._get_mcp_client(TEST_USER_ID_FULL)
 
         if mcp_client is None:
             print("❌ MCP client creation failed")
@@ -293,7 +293,7 @@ async def test_3_full_integration():
             try:
                 result = await agent.invoke_spending_conversation(
                     user_message=scenario,
-                    user_id=TEST_USER_ID,
+                    user_id=TEST_USER_ID_FULL,
                     session_id=f"full_integration_test_{i}"
                 )
 
@@ -319,7 +319,7 @@ async def test_3_full_integration():
         graphiti_client = await get_connected_graphiti_client()
         if graphiti_client:
             search_results = await graphiti_client.search(
-                user_id=TEST_USER_ID,
+                user_id=TEST_USER_ID_FULL,
                 query="transaction",
                 max_nodes=5
             )
@@ -360,8 +360,8 @@ async def run_all_tests():
     }
 
     # Run tests in sequence
-    # results["plaid_only"] = await test_1_plaid_integration_only()
-    # results["graphiti_only"] = await test_2_graphiti_integration_only()
+    results["plaid_only"] = await test_1_plaid_integration_only()
+    results["graphiti_only"] = await test_2_graphiti_integration_only()
     results["full_integration"] = await test_3_full_integration()
 
     # Summary

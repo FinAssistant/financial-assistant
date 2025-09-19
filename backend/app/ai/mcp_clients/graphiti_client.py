@@ -541,7 +541,7 @@ class GraphitiMCPClient:
         # Create natural language episode content for better entity extraction
         episode_content = f"""User made a ${amount:.2f} purchase at {merchant} on {date}.
 
-This transaction was categorized as {ai_category} - {ai_subcategory} with {ai_confidence*100:.0f}% confidence.
+This transaction was categorized as {ai_category} - {ai_subcategory} with {(ai_confidence or 0)*100:.0f}% confidence.
 
 Transaction details:
 - Merchant: {merchant}
@@ -550,7 +550,7 @@ Transaction details:
 - Category: {ai_category}
 - Subcategory: {ai_subcategory}
 
-The user spent money at {merchant}, which is a {ai_category.lower()} establishment. This purchase falls under the {ai_subcategory.lower()} category.
+The user spent money at {merchant}, which is a {(ai_category or 'general').lower()} establishment. This purchase falls under the {(ai_subcategory or 'miscellaneous').lower()} category.
 
 Canonical hash: {tx_hash}
 Transaction ID: {transaction.transaction_id}"""

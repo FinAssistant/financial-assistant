@@ -34,6 +34,7 @@ class SpendingAgentState(MessagesState):
     session_id: str = ""
     detected_intent: str = ""  # Intent detected by route_intent node
     found_in_graphiti: bool = False  # Whether transaction data found in Graphiti
+    fetch_attempts: int = 0  # Track number of fetch attempts to prevent infinite loops
     # FIXME: Replace Dict[str, Any] with proper TypedDict if needed
     user_context: Dict[str, Any] = {}  # SQLite demographics data
     # FIXME: Replace Dict[str, Any] with proper TypedDict if needed
@@ -122,7 +123,8 @@ class SpendingAgent:
             self._route_transaction_query,
             {
                 "found_in_graphiti": END,
-                "fetch_from_plaid": "fetch_and_process"
+                "fetch_from_plaid": "fetch_and_process",
+                "max_attempts_reached": END
             }
         )
         
@@ -150,15 +152,21 @@ class SpendingAgent:
     def _route_transaction_query(self, state: SpendingAgentState) -> str:
         """
         Router function for transaction query conditional routing.
-        
-        Returns routing decision based on whether data was found in Graphiti.
+
+        Returns routing decision based on whether data was found in Graphiti
+        and the number of fetch attempts to prevent infinite loops.
         """
         found_in_graphiti = state.get("found_in_graphiti", False)
+        fetch_attempts = state.get("fetch_attempts", 0)
+
         if found_in_graphiti:
             logger.info("Transaction data found in Graphiti, routing to END")
             return "found_in_graphiti"
+        elif fetch_attempts >= 3:
+            logger.info(f"Maximum fetch attempts ({fetch_attempts}) reached, routing to END to prevent infinite loop")
+            return "max_attempts_reached"
         else:
-            logger.info("Transaction data not found in Graphiti, routing to fetch from Plaid")
+            logger.info(f"Transaction data not found in Graphiti, routing to fetch from Plaid (attempt {fetch_attempts + 1})")
             return "fetch_from_plaid"
     
     async def _get_mcp_client(self, user_id: str) -> MultiServerMCPClient:
@@ -745,8 +753,18 @@ Generate personalized spending optimization recommendations now."""
 
         try:
             graphiti_client = await get_graphiti_client()
-            logger.debug(f"📊 TRANSACTION_QUERY_NODE: Graphiti client connected: {graphiti_client.is_connected() if graphiti_client else False}")
-            if graphiti_client and graphiti_client.is_connected():
+            # Check connection status (handle both real client and async mock)
+            is_connected = False
+            if graphiti_client:
+                connection_result = graphiti_client.is_connected()
+                # Handle async mock vs real client
+                if hasattr(connection_result, '__await__'):
+                    is_connected = await connection_result
+                else:
+                    is_connected = connection_result
+
+            logger.debug(f"📊 TRANSACTION_QUERY_NODE: Graphiti client connected: {is_connected}")
+            if graphiti_client and is_connected:
                 # Search for transaction insights based on user query
                 logger.debug(f"📊 TRANSACTION_QUERY_NODE: Starting Graphiti search for user {user_id} with query: {repr(user_query)}")
                 search_results = await graphiti_client.search(
@@ -899,8 +917,9 @@ Generate a personalized introduction and guidance now."""
         Fetches transactions, applies AI categorization, and stores results in Graphiti.
         """
         user_id = state.get("user_id", "")
-        logger.info(f"Fetching fresh transaction data from Plaid for user {user_id}")
-        
+        current_attempts = state.get("fetch_attempts", 0) + 1
+        logger.info(f"Fetching fresh transaction data from Plaid for user {user_id} (attempt {current_attempts})")
+
         # Fetch transactions from Plaid via MCP tools
         transaction_result = await self._fetch_transactions(user_id)
         
@@ -978,7 +997,8 @@ Generate a personalized introduction and guidance now."""
         )
         
         return {
-            "messages": [response]
+            "messages": [response],
+            "fetch_attempts": current_attempts
         }
     
     async def invoke_spending_conversation(self, user_message: str, user_id: str, session_id: str) -> Dict[str, Any]:

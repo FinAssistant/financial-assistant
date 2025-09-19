@@ -76,12 +76,9 @@ class TestTransactionCategorizationService:
         """Test dynamic batch size calculation."""
         max_batch_size = categorization_service._get_max_batch_size()
         
-        # Should be based on smallest context window (OpenAI: 128k)
-        expected_available = 128000 - 2000  # context - reserved
-        expected_max = min(expected_available // 150, 50)  # tokens per txn, capped at 50
-        
-        assert max_batch_size == expected_max
-        assert max_batch_size <= 50  # Reasonable cap
+        # Should be capped at 25 based on completion token limits and performance
+        assert max_batch_size == 25
+        assert max_batch_size <= 25  # New reasonable cap
     
     def test_create_categorization_prompt(self, categorization_service, sample_transactions):
         """Test categorization prompt creation."""
