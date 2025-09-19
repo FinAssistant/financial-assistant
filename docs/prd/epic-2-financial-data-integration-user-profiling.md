@@ -139,7 +139,7 @@ As a user, I want my transactions automatically categorized, analyzed, and trans
 ### Technical Foundation
 1. Spending Agent implementation as LangGraph subgraph with MCP tool access
 2. Intelligent transaction fetching via MCP server Plaid tools with incremental updates
-3. AI-powered transaction categorization with continuous user feedback learning
+3. AI-powered transaction categorization (user feedback learning planned for future iteration)
 4. Transaction accuracy features: re-categorization, split transactions, pending transaction management
 
 ### Analysis & Intelligence
