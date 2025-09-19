@@ -32,18 +32,31 @@ class TransactionCategorizationService:
         
         # Estimate tokens per transaction (conservative estimate)
         self.tokens_per_transaction = 150
-        
+
         # Reserve tokens for system prompt and response
         self.reserved_tokens = 2000
+
+        # Max completion tokens for structured output (conservative limit)
+        self.max_completion_tokens = 3500  # Leave buffer below 4096 limit
     
     def _get_max_batch_size(self) -> int:
-        """Calculate maximum batch size based on current LLM context window."""
+        """Calculate maximum batch size based on context window and completion limits."""
         llm_context = get_llm_context_limit(self.llm)
-        available_tokens = llm_context - self.reserved_tokens
-        max_batch_size = available_tokens // self.tokens_per_transaction
+
+        # Calculate based on input context limit
+        available_input_tokens = llm_context - self.reserved_tokens
+        max_by_input = available_input_tokens // self.tokens_per_transaction
+
+        # Calculate based on completion token limit (more restrictive)
+        # Assume ~80 tokens per transaction in structured output
+        tokens_per_response = 80
+        max_by_completion = self.max_completion_tokens // tokens_per_response
+
+        # Use the more restrictive limit
+        max_batch_size = min(max_by_input, max_by_completion)
 
         # Cap at reasonable maximum to avoid very large batches
-        return min(max_batch_size, 50)
+        return min(max_batch_size, 25)  # Reduced from 50 to 25
     
     def _create_categorization_prompt(self, transactions: List[PlaidTransaction]) -> str:
         """Create the system prompt for transaction categorization."""

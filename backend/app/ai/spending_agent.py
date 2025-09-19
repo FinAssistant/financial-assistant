@@ -5,7 +5,7 @@ This agent provides conversational financial analysis, spending patterns, and
 personalized recommendations through natural language interaction.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END, START, MessagesState
 import logging
@@ -48,11 +48,12 @@ class SpendingAgent:
     specialized nodes for spending-related conversations.
     """
     
-    def __init__(self):
+    def __init__(self, test_transaction_limit: Optional[int] = None):
         self.graph = None
         self._user_context_dao = UserContextDAOSync()
         self._auth_service = AuthService()
         self._mcp_clients = {}  # Cache MCP clients per user_id
+        self.test_transaction_limit = test_transaction_limit  # Hard limit for testing
         
         # Initialize LLM client for intelligent responses and analysis
         try:
@@ -336,7 +337,6 @@ class SpendingAgent:
                 }
             
             # Fetch transactions using the MCP tool
-            # FIXME we should use the cursor/pagination parameters
             result = await transaction_tool.ainvoke({})
             
             # Parse the JSON response
@@ -344,10 +344,18 @@ class SpendingAgent:
                 parsed_result = json.loads(result)
             else:
                 parsed_result = result
-            
+
+            # Apply test transaction limit if configured (just for testing)
+            if hasattr(self, 'test_transaction_limit') and self.test_transaction_limit and parsed_result.get('transactions'):
+                original_count = len(parsed_result['transactions'])
+                if original_count > self.test_transaction_limit:
+                    parsed_result['transactions'] = parsed_result['transactions'][:self.test_transaction_limit]
+                    parsed_result['total_transactions'] = self.test_transaction_limit
+                    logger.info(f"Limited transactions from {original_count} to {self.test_transaction_limit} for testing")
+
             logger.info(f"Fetched {parsed_result.get('total_transactions', 0)} transactions for user {user_id}")
             return parsed_result
-            
+
         except Exception as e:
             logger.error(f"Error fetching transactions for user {user_id}: {str(e)}")
             return {
