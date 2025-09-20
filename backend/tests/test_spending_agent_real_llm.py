@@ -47,11 +47,11 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def disable_mocking():
-    """Disable the auto-mocking for these integration tests."""
-    # This fixture runs automatically and does nothing,
-    # but it prevents the conftest.py auto-mocking from interfering
-    yield
+def mock_llm_factory():
+    """Override the global mock_llm_factory fixture to allow real LLM calls."""
+    # This autouse fixture with the same name overrides the conftest.py one
+    # and does nothing, allowing real LLM calls to work
+    yield None
 
 
 class TestSpendingAgentRealLLM:
@@ -613,10 +613,10 @@ class TestSpendingAgentRealLLMTransactionCategorization:
             # Execute the real LLM integration
             result = await agent._fetch_and_process_node(state)
 
-            # Verify basic response structure
+            # Verify basic response structure (fetch_and_process_node only returns messages)
             assert "messages" in result
-            assert "found_in_graphiti" in result
-            assert result["found_in_graphiti"] is True
+            assert isinstance(result["messages"], list)
+            assert len(result["messages"]) == 1
 
             # Verify response content mentions categorization
             ai_message = result["messages"][0]
