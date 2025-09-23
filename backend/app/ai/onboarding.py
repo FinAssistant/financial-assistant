@@ -219,6 +219,9 @@ class OnboardingAgent:
             1. Fill in any profile fields mentioned by the user
             2. Provide a natural, helpful response that guides them toward completing their profile
             3. After collecting demographic info, guide users to connect their bank accounts for personalized insights
+            4. When users want to connect accounts, use the available tools to generate a Plaid link for them
+
+            TOOL USAGE: If you have tools available and the user wants to connect accounts or asks for a link, you MUST use the plaid_link_token_tool to generate the actual connection link.
 
             PROFILE FIELDS (set to null if not mentioned):
             - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
