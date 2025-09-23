@@ -95,6 +95,32 @@ class OnboardingAgent:
             self.logger.warning(f"Failed to check connected accounts for user {user_id}: {e}")
             return False
 
+    def _get_account_summary(self, user_id: str) -> str:
+        """Get account summary for LLM prompts."""
+        try:
+            accounts = user_storage.get_accounts_for_conversation_context(user_id)
+            if not accounts:
+                return "No connected accounts"
+
+            account_types = {}
+            for account in accounts:
+                acc_type = account.get('account_type', 'unknown')
+                if acc_type in account_types:
+                    account_types[acc_type] += 1
+                else:
+                    account_types[acc_type] = 1
+
+            summary_parts = []
+            for acc_type, count in account_types.items():
+                if count == 1:
+                    summary_parts.append(f"1 {acc_type} account")
+                else:
+                    summary_parts.append(f"{count} {acc_type} accounts")
+
+            return f"Connected accounts: {', '.join(summary_parts)}"
+        except Exception:
+            return "Unable to load account information"
+
     def _create_plaid_link_tool(self, user_id: str):
         """Create a LangChain tool for Plaid link token generation bound to specific user."""
         async def plaid_link_token_tool() -> str:
@@ -186,18 +212,13 @@ class OnboardingAgent:
         user_id = config["configurable"]["user_id"]
         has_accounts = self._has_connected_accounts(user_id)
 
-        # Build system prompt for structured data extraction
-        account_guidance = "" if has_accounts else """
-
-            IMPORTANT: After collecting demographic information, guide users to connect their bank accounts for personalized financial insights.
-            This is essential for providing accurate spending analysis and budgeting advice."""
-
-        system_prompt = f"""You are an onboarding assistant that extracts user profile information and provides helpful responses.
+        # STATIC system prompt - no dynamic changes for easier debugging
+        system_prompt = """You are an onboarding assistant that extracts user profile information and provides helpful responses.
 
             Your job is to:
             1. Fill in any profile fields mentioned by the user
             2. Provide a natural, helpful response that guides them toward completing their profile
-            3. After collecting demographic info, guide users to connect their bank accounts for personalized insights{account_guidance}
+            3. After collecting demographic info, guide users to connect their bank accounts for personalized insights
 
             PROFILE FIELDS (set to null if not mentioned):
             - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
@@ -209,8 +230,6 @@ class OnboardingAgent:
             - total_dependents_count: integer count
             - children_count: integer count
             - caregiving_responsibilities: none, aging_parents, disabled_family_member, sandwich_generation
-
-            Set completion_status to "complete" only when all 9 demographic fields are provided AND user has connected bank accounts.
 
             EXAMPLES:
             - "I'm 30, work as a nurse" → age_range: "26_35", occupation_type: "healthcare"
@@ -229,9 +248,13 @@ class OnboardingAgent:
                 continue  # Skip orchestrator routing
             filtered_messages.append(msg)
 
+        # Get account status for context
+        account_summary = self._get_account_summary(user_id)
+
         messages = [
             SystemMessage(content=system_prompt),
-            SystemMessage(content=collected_context)
+            SystemMessage(content=collected_context),
+            SystemMessage(content=account_summary)
         ] + filtered_messages  # Use filtered messages
 
         self.logger.info(f"Onboarding LLM messages: {[msg.content for msg in messages]}")
@@ -265,19 +288,12 @@ class OnboardingAgent:
         extracted_dict = {k: v for k, v in response.extracted_data.model_dump().items() if v is not None}
         updated_collected.update(extracted_dict)
 
-        # Determine true completion status (demographics + accounts)
-        # DESIGN DECISION: LLM only checks demographic fields and returns completion_status="complete"
-        # when all 9 fields are provided. Our business logic then adds the account requirement.
-        # This separation keeps LLM focused on data extraction while business logic handles completion rules.
-        demographic_complete = response.completion_status == "complete"
-        # has_accounts already defined above
-        truly_complete = demographic_complete and has_accounts
-
+        # LLM only handles data extraction - completion logic moved to separate node
         data =  {
             "messages": [ai_message],
             "collected_data": updated_collected,
             "needs_database_update": bool(extracted_dict),
-            "onboarding_complete": truly_complete  # Override LLM completion with business logic
+            # Don't set onboarding_complete here - moved to check_completion node
         }
 
         self.logger.info(f"Onboarding LLM response and collected data: {data}")
@@ -426,8 +442,83 @@ class OnboardingAgent:
                 return False
         return True
 
-    def _check_profile_complete(self, state: OnboardingState) -> str:
-        """Check if profile is complete and route accordingly."""
+    def _handle_account_connection(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
+        """Handle system messages about account connections."""
+        user_id = config["configurable"]["user_id"]
+
+        # Check if user now has connected accounts
+        has_accounts = self._has_connected_accounts(user_id)
+        account_summary = self._get_account_summary(user_id)
+
+        self.logger.info(f"Handling account connection for user {user_id}: has_accounts={has_accounts}")
+
+        # Create congratulatory response
+        if has_accounts:
+            congratulations = f"🎉 Congratulations! I can see you've successfully connected your accounts ({account_summary}). This is a huge step toward getting personalized financial insights!"
+        else:
+            congratulations = "I see there was an attempt to connect accounts, but I don't see any connected accounts yet. Please try the account connection process again."
+
+        ai_message = AIMessage(
+            content=congratulations,
+            additional_kwargs={"agent": "onboarding"}
+        )
+
+        return {
+            "messages": [ai_message],
+            # Let check_completion node handle completion logic
+        }
+
+    def _check_completion(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
+        """Dedicated node to check profile completion status."""
+        user_id = config["configurable"]["user_id"]
+
+        # Check demographic completion (all 9 fields present)
+        required_fields = [
+            'age_range', 'life_stage', 'occupation_type', 'location_context',
+            'family_structure', 'marital_status', 'total_dependents_count',
+            'children_count', 'caregiving_responsibilities'
+        ]
+
+        demographic_complete = all(
+            field in state.collected_data and state.collected_data[field] is not None
+            for field in required_fields
+        )
+
+        # Check account connection
+        has_accounts = self._has_connected_accounts(user_id)
+
+        # Determine true completion status
+        truly_complete = demographic_complete and has_accounts
+
+        self.logger.info(f"Completion check for user {user_id}: demographic_complete={demographic_complete}, has_accounts={has_accounts}, truly_complete={truly_complete}")
+
+        return {
+            "onboarding_complete": truly_complete
+        }
+
+    def _route_message_type(self, state: OnboardingState) -> str:
+        """Route based on message type - static routing logic."""
+        # Check if we have a system message about account connections
+        has_account_connection_message = any(
+            isinstance(msg, HumanMessage) and
+            msg.content.startswith("SYSTEM:") and
+            "connected" in msg.content.lower()
+            for msg in state.messages
+        )
+
+        if has_account_connection_message:
+            self.logger.info("Routing to account connection handler")
+            return "handle_account_connection"
+        else:
+            self.logger.info("Routing to read database for normal processing")
+            return "read_database"
+
+    def _route_after_processing(self, state: OnboardingState) -> str:
+        """Route after LLM processing or account connection handling."""
+        return "check_completion"
+
+    def _route_completion(self, state: OnboardingState) -> str:
+        """Route based on completion status."""
         if state.onboarding_complete:
             return "update_global_state"
         else:
@@ -445,23 +536,61 @@ class OnboardingAgent:
             return "update_database"
     
     def graph_compile(self) -> StateGraph:
-        """Compile and return the onboarding subgraph."""
+        """
+        Compile and return the onboarding subgraph with dedicated routing nodes.
+
+        Flow: START → route_message_type → [read_database → call_llm | handle_account_connection] → check_completion → store_memory → update_database → [update_global_state → END | END]
+
+        Benefits: System messages skip DB read, both paths converge at completion check, static routing for debugging
+        """
         if self._graph is None:
             onb_builder = StateGraph(OnboardingState)
             
-            # Add nodes - simplified linear workflow
+            # Add nodes - new structure with dedicated routing
             onb_builder.add_node("read_database", self._read_db)
             onb_builder.add_node("call_llm", self._call_llm)
+            onb_builder.add_node("handle_account_connection", self._handle_account_connection)
+            onb_builder.add_node("check_completion", self._check_completion)
             onb_builder.add_node("store_memory", self._store_memory)
             onb_builder.add_node("update_database", self._update_db)
             onb_builder.add_node("update_global_state", self._update_main_graph)
 
-            # Add linear edges - ReadDB -> Call LLM -> Store Memory -> Update DB -> Update Global -> END
-            onb_builder.add_edge(START, "read_database")
+            # Define edges and routing with new structure
+            # Route based on message type directly from START
+            onb_builder.add_conditional_edges(
+                START,
+                self._route_message_type,
+                {"read_database": "read_database", "handle_account_connection": "handle_account_connection"}
+            )
+
+
+            # Normal flow: read_database → call_llm
             onb_builder.add_edge("read_database", "call_llm")
-            onb_builder.add_edge("call_llm", "store_memory")
-            onb_builder.add_edge("store_memory", "update_database")            
-            onb_builder.add_edge("update_database", "update_global_state")
+
+            # Both LLM and account connection handling go to completion check
+            onb_builder.add_conditional_edges(
+                "call_llm",
+                self._route_after_processing,
+                {"check_completion": "check_completion"}
+            )
+
+            onb_builder.add_conditional_edges(
+                "handle_account_connection",
+                self._route_after_processing,
+                {"check_completion": "check_completion"}
+            )
+
+            # After completion check, store memory
+            onb_builder.add_edge("check_completion", "store_memory")
+            onb_builder.add_edge("store_memory", "update_database")
+
+            # Route based on completion status
+            onb_builder.add_conditional_edges(
+                "update_database",
+                self._route_completion,
+                {"update_global_state": "update_global_state", "end": END}
+            )
+
             onb_builder.add_edge("update_global_state", END)
 
             self._graph = onb_builder.compile()

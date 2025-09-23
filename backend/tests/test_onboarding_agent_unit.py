@@ -185,7 +185,8 @@ class TestOnboardingAgentMethods:
             expected_collected = {"age_range": "26_35", "occupation_type": "engineer"}
             assert result["collected_data"] == expected_collected
             assert result["needs_database_update"] is True
-            assert result["onboarding_complete"] is False
+            # onboarding_complete moved to _check_completion node
+            assert "onboarding_complete" not in result
 
             # Verify LLM was called correctly
             mock_llm_factory.create_llm.assert_called_once()
@@ -214,7 +215,8 @@ class TestOnboardingAgentMethods:
 
             result = agent._call_llm(sample_state, sample_config)
 
-            assert result["onboarding_complete"] is True
+            # onboarding_complete moved to _check_completion node
+            assert "onboarding_complete" not in result
             assert result["needs_database_update"] is True
 
             ai_message = result["messages"][0]
@@ -344,21 +346,89 @@ class TestOnboardingAgentMethods:
         
         assert isinstance(result["profile_context_timestamp"], datetime)
     
-    def test_check_profile_complete_not_complete(self, agent):
-        """Test _check_profile_complete when profile is not complete."""
+    def test_route_completion_not_complete(self, agent):
+        """Test _route_completion when profile is not complete."""
         state = OnboardingState(onboarding_complete=False)
-        
-        result = agent._check_profile_complete(state)
-        
+
+        result = agent._route_completion(state)
+
         assert result == "end"
-    
-    def test_check_profile_complete_complete(self, agent):
-        """Test _check_profile_complete when profile is complete."""
+
+    def test_route_completion_complete(self, agent):
+        """Test _route_completion when profile is complete."""
         state = OnboardingState(onboarding_complete=True)
-        
-        result = agent._check_profile_complete(state)
-        
+
+        result = agent._route_completion(state)
+
         assert result == "update_global_state"
+
+    def test_check_completion_not_complete_missing_demographics(self, agent, sample_config):
+        """Test _check_completion when demographics are incomplete."""
+        state = OnboardingState(
+            collected_data={"age_range": "26_35"}  # Missing other required fields
+        )
+
+        with patch.object(agent, '_has_connected_accounts', return_value=True):
+            result = agent._check_completion(state, sample_config)
+
+            assert result["onboarding_complete"] is False
+
+    def test_check_completion_complete(self, agent, sample_config):
+        """Test _check_completion when both demographics and accounts are complete."""
+        complete_demographics = {
+            "age_range": "26_35",
+            "life_stage": "early_career",
+            "occupation_type": "engineer",
+            "location_context": "California",
+            "family_structure": "single_no_dependents",
+            "marital_status": "single",
+            "total_dependents_count": 0,
+            "children_count": 0,
+            "caregiving_responsibilities": "none"
+        }
+        state = OnboardingState(collected_data=complete_demographics)
+
+        with patch.object(agent, '_has_connected_accounts', return_value=True):
+            result = agent._check_completion(state, sample_config)
+
+            assert result["onboarding_complete"] is True
+
+    def test_route_message_type_normal_message(self, agent):
+        """Test _route_message_type with normal user message."""
+        state = OnboardingState(
+            messages=[HumanMessage(content="I'm 28 and work as an engineer")]
+        )
+
+        result = agent._route_message_type(state)
+
+        assert result == "read_database"
+
+    def test_route_message_type_system_message(self, agent):
+        """Test _route_message_type with system message about accounts."""
+        state = OnboardingState(
+            messages=[HumanMessage(content="SYSTEM: User successfully connected 2 bank accounts")]
+        )
+
+        result = agent._route_message_type(state)
+
+        assert result == "handle_account_connection"
+
+    def test_handle_account_connection_success(self, agent, sample_config):
+        """Test _handle_account_connection when accounts are connected."""
+        state = OnboardingState(
+            messages=[HumanMessage(content="SYSTEM: User connected accounts")]
+        )
+
+        with patch.object(agent, '_has_connected_accounts', return_value=True), \
+             patch.object(agent, '_get_account_summary', return_value="2 checking accounts, 1 savings account"):
+
+            result = agent._handle_account_connection(state, sample_config)
+
+            assert "messages" in result
+            ai_message = result["messages"][0]
+            assert isinstance(ai_message, AIMessage)
+            assert "Congratulations" in ai_message.content
+            assert "2 checking accounts, 1 savings account" in ai_message.content
 
 
 class TestOnboardingAgentGraph:
@@ -497,7 +567,12 @@ class TestOnboardingAgentIntegration:
         mock_user_storage.get_user_by_id.return_value = {"id": "test_user_123"}
         mock_user_storage.get_personal_context.return_value = {
             "age_range": "26_35",
-            "occupation_type": "engineer"
+            "occupation_type": "engineer",
+            "life_stage": "early_career",
+            "location_context": "California",
+            "total_dependents_count": 0,
+            "children_count": 0,
+            "caregiving_responsibilities": "none"
         }
         
         mock_llm = Mock()
@@ -545,8 +620,17 @@ class TestOnboardingAgentIntegration:
             **{**updated_state.model_dump(), **db_update_result}
         )
         
+        # Check completion status first (new step in workflow)
+        completion_result = agent._check_completion(updated_state, config)
+        updated_state = OnboardingState(
+            **{**updated_state.model_dump(), **completion_result}
+        )
+
+        # Since completion status changed, need to update database again
+        final_db_update = agent._update_db(updated_state, config)
+
         # Check completion routing
-        route = agent._check_profile_complete(updated_state)
+        route = agent._route_completion(updated_state)
         assert route == "update_global_state"
         
         # Update global state
