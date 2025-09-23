@@ -344,7 +344,7 @@ class ConnectedAccountModel(SQLModel, table=True):
     """
     __tablename__ = "connected_accounts"
 
-    id: int = Field(primary_key=True, autoincrement=True)  # Auto-incrementing integer primary key
+    id: int = Field(default=None, primary_key=True)  # Auto-incrementing integer primary key
     user_id: str = Field(foreign_key="users.id", index=True)
     plaid_account_id: str = Field(max_length=255, index=True)  # Plaid's account identifier
     plaid_item_id: str = Field(max_length=255, index=True)  # Plaid's item identifier
