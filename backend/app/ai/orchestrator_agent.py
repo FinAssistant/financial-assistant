@@ -64,22 +64,21 @@ class GlobalState(BaseModel):
         Now takes user_id as parameter since it's not in state.
         """
         try:
-            # Fetch user data from SQLite
-            user_data = user_storage.get_user_by_id(user_id)
-            
-            if not user_data:
-                self.profile_context = "User profile not found."
-                self.profile_context_timestamp = datetime.now()
-                return
-            
-            if not user_data.get("profile_complete", False):
+            # Get structured personal context data (single source of truth for completion)
+            personal_context = user_storage.get_personal_context(user_id)
+
+            # Check completion status from PersonalContext.is_complete (not deprecated User.profile_complete)
+            is_complete = personal_context.get("is_complete", False) if personal_context else False
+
+            # Update GlobalState profile_complete to match authoritative source
+            self.profile_complete = is_complete
+
+            if not is_complete:
                 self.profile_context = "User has not completed their profile setup. Provide general financial guidance."
                 self.profile_context_timestamp = datetime.now()
                 return
             
-            # Get structured personal context data (new architecture)
-            personal_context = user_storage.get_personal_context(user_id)
-            
+            # Build context from PersonalContextModel (already fetched above)
             if personal_context:
                 # Build context from PersonalContextModel
                 context_parts = []
@@ -136,19 +135,25 @@ class GlobalState(BaseModel):
             return False
 
         try:
-            # Get user's last updated timestamp from database
+            # Check PersonalContext updates (authoritative source for completion status)
+            personal_context = user_storage.get_personal_context(user_id)
+            if personal_context:
+                personal_updated_at = personal_context.get("updated_at")
+                if personal_updated_at and isinstance(personal_updated_at, datetime):
+                    if personal_updated_at > self.profile_context_timestamp:
+                        # PersonalContext has been updated, rebuild context
+                        self._build_profile_context(user_id)
+                        return True
+
+            # Also check user data for any other updates
             user_data = user_storage.get_user_by_id(user_id)
-
-            if not user_data:
-                return False
-
-            # Check if user data has been updated since we built the context
-            user_updated_at = user_data.get("updated_at")
-            if user_updated_at and isinstance(user_updated_at, datetime):
-                if user_updated_at > self.profile_context_timestamp:
-                    # Profile has been updated in database, rebuild context
-                    self._build_profile_context(user_id)
-                    return True
+            if user_data:
+                user_updated_at = user_data.get("updated_at")
+                if user_updated_at and isinstance(user_updated_at, datetime):
+                    if user_updated_at > self.profile_context_timestamp:
+                        # User data has been updated, rebuild context
+                        self._build_profile_context(user_id)
+                        return True
 
             return False
 
@@ -290,11 +295,11 @@ class OrchestratorAgent:
         Demonstrates proper LangGraph pattern with config usage.
         """
         # Get user context from config (standard LangGraph pattern)
-        # user_id = config["configurable"]["user_id"]
-        
-        # Get profile context (lazy loaded and cached)
-        # profile_context = state.get_profile_context(user_id)
-        
+        user_id = config["configurable"]["user_id"]
+
+        # Get profile context (lazy loaded and cached) - this also updates state.profile_complete
+        profile_context = state.get_profile_context(user_id)
+
         # Build consolidated system prompt with all context
         profile_status = "complete" if state.profile_complete else "incomplete"
         profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"
