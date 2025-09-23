@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END, START, add_messages
 import logging
 from app.services.llm_service import llm_factory
@@ -93,6 +94,44 @@ class OnboardingAgent:
         except Exception as e:
             self.logger.warning(f"Failed to check connected accounts for user {user_id}: {e}")
             return False
+
+    def _create_plaid_link_tool(self, user_id: str):
+        """Create a LangChain tool for Plaid link token generation bound to specific user."""
+        async def plaid_link_token_tool() -> str:
+            """Create a Plaid Link token for connecting bank accounts.
+
+            Use this tool when the user wants to connect their bank accounts.
+            Returns a link token that can be used with Plaid Link widget.
+            """
+            try:
+                self.logger.info(f"Creating Plaid link token for user: {user_id}")
+
+                # Call the plaid_create_link_token MCP tool directly
+                result = await self._plaid_client.call_tool(
+                    user_id=user_id,
+                    tool_name="plaid_create_link_token",
+                    user_id=user_id
+                )
+
+                if result.get("status") == "error":
+                    error = result.get("error", "Unknown error")
+                    self.logger.error(f"Failed to create Plaid link token for user {user_id}: {error}")
+                    return f"Unable to create link token: {error}. Please try again or contact support."
+
+                # Extract and return link token
+                link_token = result.get("link_token")
+                if link_token:
+                    self.logger.info(f"Successfully created Plaid link token for user: {user_id}")
+                    return f"Created Plaid Link token: {link_token}. Please use this token to connect your bank account through Plaid Link."
+                else:
+                    self.logger.error(f"No link token in response for user {user_id}: {result}")
+                    return "Link token not found in response. Please try again or contact support."
+
+            except Exception as e:
+                self.logger.error(f"Exception creating Plaid link token for user {user_id}: {str(e)}")
+                return f"Failed to create link token: {str(e)}. Please try again or contact support."
+
+        return tool(plaid_link_token_tool)
     
     def _read_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Read user and personal context data from SQLite database."""
@@ -144,9 +183,7 @@ class OnboardingAgent:
 
         self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
         
-        # Check if user has connected accounts
-        user_id = config["configurable"]["user_id"]
-        has_accounts = self._has_connected_accounts(user_id)
+        # has_accounts already checked above for tool binding
 
         # Build system prompt for structured data extraction
         account_guidance = "" if has_accounts else """
@@ -198,9 +235,23 @@ class OnboardingAgent:
 
         self.logger.info(f"Onboarding LLM messages: {[msg.content for msg in messages]}")
         
-        # Use structured output with the ProfileDataExtraction model
-        structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
-        
+        # Check if user has connected accounts to determine if tools are needed
+        user_id = config["configurable"]["user_id"]
+        has_accounts = self._has_connected_accounts(user_id)
+
+        # Bind Plaid link tool if user doesn't have accounts connected
+        if not has_accounts:
+            plaid_tool = self._create_plaid_link_tool(user_id)
+            tools = [plaid_tool]
+
+            # Bind tools and use structured output
+            structured_llm = llm.bind_tools(tools).with_structured_output(ProfileDataExtraction, method="function_calling")
+            self.logger.info(f"LLM bound with Plaid link tool for user {user_id} (no accounts connected)")
+        else:
+            # No tools needed - user already has accounts
+            structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
+            self.logger.info(f"LLM without tools for user {user_id} (accounts already connected)")
+
         response = structured_llm.invoke(messages)
 
         self.logger.info(f"Onboarding LLM response: {response}")
