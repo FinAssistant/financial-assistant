@@ -8,6 +8,7 @@ import logging
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
 from .mcp_clients.graphiti_client import get_graphiti_client
+from .mcp_clients.plaid_client import get_plaid_client
 
 
 # Typed profile data model
@@ -81,7 +82,17 @@ class OnboardingAgent:
         """Initialize the onboarding agent."""
         self._graph = None
         self.logger = logging.getLogger(__name__)
+        self._plaid_client = get_plaid_client()
         self.logger.info("OnboardingAgent initialized")
+
+    def _has_connected_accounts(self, user_id: str) -> bool:
+        """Check if user has any connected accounts."""
+        try:
+            accounts_count = user_storage.get_connected_accounts_count(user_id)
+            return accounts_count > 0
+        except Exception as e:
+            self.logger.warning(f"Failed to check connected accounts for user {user_id}: {e}")
+            return False
     
     def _read_db(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """Read user and personal context data from SQLite database."""
@@ -133,12 +144,22 @@ class OnboardingAgent:
 
         self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
         
+        # Check if user has connected accounts
+        user_id = config["configurable"]["user_id"]
+        has_accounts = self._has_connected_accounts(user_id)
+
         # Build system prompt for structured data extraction
-        system_prompt = """You are an onboarding assistant that extracts user profile information and provides helpful responses.
+        account_guidance = "" if has_accounts else """
+
+            IMPORTANT: After collecting demographic information, guide users to connect their bank accounts for personalized financial insights.
+            This is essential for providing accurate spending analysis and budgeting advice."""
+
+        system_prompt = f"""You are an onboarding assistant that extracts user profile information and provides helpful responses.
 
             Your job is to:
             1. Fill in any profile fields mentioned by the user
             2. Provide a natural, helpful response that guides them toward completing their profile
+            3. After collecting demographic info, guide users to connect their bank accounts for personalized insights{account_guidance}
 
             PROFILE FIELDS (set to null if not mentioned):
             - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
@@ -151,7 +172,7 @@ class OnboardingAgent:
             - children_count: integer count
             - caregiving_responsibilities: none, aging_parents, disabled_family_member, sandwich_generation
 
-            Set completion_status to "complete" only when all 9 fields are provided.
+            Set completion_status to "complete" only when all 9 demographic fields are provided AND user has connected bank accounts.
 
             EXAMPLES:
             - "I'm 30, work as a nurse" → age_range: "26_35", occupation_type: "healthcare"
@@ -195,13 +216,20 @@ class OnboardingAgent:
         # Convert ExtractedProfileData to dict, excluding None values
         extracted_dict = {k: v for k, v in response.extracted_data.model_dump().items() if v is not None}
         updated_collected.update(extracted_dict)
-        
-        
+
+        # Determine true completion status (demographics + accounts)
+        # DESIGN DECISION: LLM only checks demographic fields and returns completion_status="complete"
+        # when all 9 fields are provided. Our business logic then adds the account requirement.
+        # This separation keeps LLM focused on data extraction while business logic handles completion rules.
+        demographic_complete = response.completion_status == "complete"
+        has_accounts = self._has_connected_accounts(user_id)
+        truly_complete = demographic_complete and has_accounts
+
         data =  {
             "messages": [ai_message],
             "collected_data": updated_collected,
             "needs_database_update": bool(extracted_dict),
-            "onboarding_complete": response.completion_status == "complete"
+            "onboarding_complete": truly_complete  # Override LLM completion with business logic
         }
 
         self.logger.info(f"Onboarding LLM response and collected data: {data}")
@@ -278,10 +306,17 @@ class OnboardingAgent:
             else:
                 self.logger.info(f"No valid data to save for user {user_id}")
             
-            # Update user's profile_complete flag if onboarding is complete
+            # Update PersonalContext.is_complete as single source of truth for completion state
+            # This consolidates both demographic completion and account connection status
+            completion_update = {'is_complete': state.onboarding_complete}
+            user_storage.create_or_update_personal_context(user_id, completion_update)
+            self.logger.info(f"Updated PersonalContext.is_complete={state.onboarding_complete} for user {user_id}")
+
+            # DEPRECATED: Update user's profile_complete flag for backward compatibility only
+            # TODO: Remove User.profile_complete field entirely - PersonalContext.is_complete is the single source of truth
             if state.onboarding_complete:
-                self.logger.info(f"Marking profile complete for user {user_id}")
                 user_storage.update_user(user_id, {"profile_complete": True})
+                self.logger.info(f"DEPRECATED: Updated User.profile_complete for backward compatibility")
             
             return {"needs_database_update": False}
             
