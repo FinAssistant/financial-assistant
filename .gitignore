@@ -57,3 +57,6 @@ uv.lock
 
 # Architecture conversations
 claude-conversations/
+
+# Python venv
+*.venv/

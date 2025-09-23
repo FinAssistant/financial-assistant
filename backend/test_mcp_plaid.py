@@ -93,7 +93,10 @@ async def test_exchange_public_token(tool_dict, public_token):
                 result = json.loads(result)
 
             if result.get("status") == "success":
-                print("✅ Public token exchange successful")
+                if result.get("skipped_exchange"):
+                    print("✅ Exchange skipped - using existing access token (sandbox)")
+                else:
+                    print("✅ Public token exchange successful")
                 await asyncio.sleep(1)  # Small delay to allow token storage
                 return True
             else:
@@ -144,7 +147,6 @@ async def test_mcp_plaid_integration(public_token: str, jwt_token: str):
     print("-" * 30)
     exchange_success = await test_exchange_public_token(tool_dict, public_token)
     if not exchange_success:
-        print("❌ Stopping tests: Public token exchange failed.")
         return False
 
     # Small delay to allow token storage

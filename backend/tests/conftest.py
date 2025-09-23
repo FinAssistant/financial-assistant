@@ -61,10 +61,18 @@ def test_user_id():
     return "test_user_123"
 
 
-@pytest.fixture  
+@pytest.fixture
 def test_session_id():
     """Standard test session ID."""
     return "test_session_123"
+
+
+# Import shared transaction fixtures
+from tests.fixtures.transaction_fixtures import (
+    sample_transactions,
+    clear_transactions_for_llm,
+    mock_transactions_with_amazon
+)
 
 
 # Print test environment info

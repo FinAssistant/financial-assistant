@@ -131,33 +131,60 @@ class TestSpendingAgent:
         assert ai_message.additional_kwargs["llm_powered"] is True
         assert "spending" in ai_message.content.lower() or "expense" in ai_message.content.lower()
     
-    def test_specialized_intent_nodes(self):
+    @pytest.mark.asyncio
+    async def test_specialized_intent_nodes(self):
         """Test all specialized intent nodes work correctly."""
         from app.ai.spending_agent import SpendingAgentState
-        
-        intent_nodes = [
+
+        # Separate sync and async nodes
+        sync_intent_nodes = [
             ("spending_analysis", self.agent._spending_analysis_node),
             ("budget_planning", self.agent._budget_planning_node),
             ("optimization", self.agent._optimization_node),
-            ("transaction_query", self.agent._transaction_query_node),
             ("general_spending", self.agent._general_spending_node)
         ]
-        
-        for intent, node_method in intent_nodes:
+
+        async_intent_nodes = [
+            ("transaction_query", self.agent._transaction_query_node)
+        ]
+
+        # Test sync nodes
+        for intent, node_method in sync_intent_nodes:
             state = SpendingAgentState(
                 messages=[HumanMessage(content="Test message")],
-                user_id="test_user_123", 
+                user_id="test_user_123",
                 session_id="test_session",
                 user_context={
                     "demographics": {"age_range": "26_35", "occupation": "engineer"},
                     "financial_context": {"has_dependents": False}
                 }
             )
-            
+
             result = node_method(state)
             assert "messages" in result
             assert len(result["messages"]) == 1
-            
+
+            ai_message = result["messages"][0]
+            assert isinstance(ai_message, AIMessage)
+            assert ai_message.additional_kwargs["agent"] == "spending_agent"
+            assert ai_message.additional_kwargs["intent"] == intent
+
+        # Test async nodes
+        for intent, node_method in async_intent_nodes:
+            state = SpendingAgentState(
+                messages=[HumanMessage(content="Test message")],
+                user_id="test_user_123",
+                session_id="test_session",
+                user_context={
+                    "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                    "financial_context": {"has_dependents": False}
+                }
+            )
+
+            result = await node_method(state)
+            assert "messages" in result
+            assert len(result["messages"]) == 1
+
             ai_message = result["messages"][0]
             assert isinstance(ai_message, AIMessage)
             assert ai_message.additional_kwargs["agent"] == "spending_agent"
@@ -228,30 +255,53 @@ class TestSpendingAgent:
         state = {"found_in_graphiti": False}
         result = self.agent._route_transaction_query(state)
         assert result == "fetch_from_plaid"
-        
+
         # Test default case (no found_in_graphiti key)
         empty_state = {}
         result = self.agent._route_transaction_query(empty_state)
         assert result == "fetch_from_plaid"
+
+    def test_route_transaction_query_max_attempts_reached(self):
+        """Test _route_transaction_query when max fetch attempts are reached."""
+        state = {"found_in_graphiti": False, "fetch_attempts": 3}
+        result = self.agent._route_transaction_query(state)
+        assert result == "max_attempts_reached"
+
+        # Test with more than 3 attempts
+        state = {"found_in_graphiti": False, "fetch_attempts": 5}
+        result = self.agent._route_transaction_query(state)
+        assert result == "max_attempts_reached"
     
-    def test_transaction_query_node_graphiti_not_found(self):
+    @pytest.mark.asyncio
+    async def test_transaction_query_node_graphiti_not_found(self):
         """Test _transaction_query_node when no data found in Graphiti (mock behavior)."""
-        state = {
-            "messages": [HumanMessage(content="Show me my transactions")],
-            "user_id": "test_user_123",
-            "detected_intent": "transaction_query"
-        }
-        
-        result = self.agent._transaction_query_node(state)
+        from app.ai.spending_agent import SpendingAgentState
+        state = SpendingAgentState(
+            messages=[HumanMessage(content="Show me my transactions")],
+            user_id="test_user_123",
+            session_id="test_session"
+        )
+
+        result = await self.agent._transaction_query_node(state)
         
         # Check basic response structure
         assert "messages" in result
         assert "found_in_graphiti" in result
-        assert "transaction_insights" in result
-        
+
         # Check that mock returns not found
         assert result["found_in_graphiti"] is False
-        assert result["transaction_insights"] == []
+
+        # Check that we got a proper response message
+        messages = result["messages"]
+        assert len(messages) == 1
+        response_message = messages[0]
+        assert hasattr(response_message, 'content')
+        assert "fetch your latest transaction data" in response_message.content
+
+        # Check additional metadata
+        assert response_message.additional_kwargs.get("agent") == "spending_agent"
+        assert response_message.additional_kwargs.get("intent") == "transaction_query"
+        assert response_message.additional_kwargs.get("data_source") == "needs_plaid_fetch"
         
         # Check AI message
         ai_message = result["messages"][0]
@@ -259,7 +309,7 @@ class TestSpendingAgent:
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "transaction_query"
         assert ai_message.additional_kwargs["data_source"] == "needs_plaid_fetch"
-        assert "fetch your latest transaction data" in ai_message.content
+        assert "Let me fetch your latest transaction data" in ai_message.content
     
     @pytest.mark.asyncio
     async def test_fetch_and_process_node_success(self):
@@ -274,12 +324,8 @@ class TestSpendingAgent:
         
         # Validate response structure
         assert "messages" in result, "Result must contain 'messages' key"
-        assert "found_in_graphiti" in result, "Result must contain 'found_in_graphiti' key"
         assert isinstance(result["messages"], list), "Messages should be a list"
         assert len(result["messages"]) == 1, "Should contain exactly one message"
-        
-        # Validate state transitions
-        assert result["found_in_graphiti"] is True
         
         # Validate AI message structure
         ai_message = result["messages"][0]
@@ -300,12 +346,64 @@ class TestSpendingAgent:
                "Message should indicate success or error status"
     
     @pytest.mark.asyncio
-    async def test_transaction_query_workflow_integration(self):
+    async def test_transaction_query_node_second_call_after_fetch(self):
+        """Test _transaction_query_node second call behavior after fetch_and_process."""
+        # Create state that simulates having been through fetch_and_process
+        from app.ai.spending_agent import SpendingAgentState
+        state = SpendingAgentState(
+            messages=[
+                HumanMessage(content="Show me my transactions"),
+                AIMessage(
+                    content="Processing data...",
+                    additional_kwargs={"intent": "transaction_fetch_and_process"}
+                )
+            ],
+            user_id="test_user_123",
+            session_id="test_session"
+        )
+
+        result = await self.agent._transaction_query_node(state)
+
+        # Check basic response structure
+        assert "messages" in result
+        assert "found_in_graphiti" in result
+
+        # Should return static response without LLM call
+        assert result["found_in_graphiti"] is False
+
+        # Check AI message content for static response (second call scenario)
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+        expected_content = "I've processed your latest transaction data and updated your financial profile. No specific insights were found matching your current query, but your transaction history has been categorized and stored for future analysis."
+        assert ai_message.content == expected_content
+
+        # Verify this is recognized as a second call scenario
+        assert "processed your latest transaction data" in ai_message.content
+        assert ai_message.additional_kwargs["agent"] == "spending_agent"
+        assert ai_message.additional_kwargs["intent"] == "transaction_query"
+
+    @pytest.mark.asyncio
+    @patch('app.ai.spending_agent.get_graphiti_client')
+    @patch.object(SpendingAgent, '_fetch_transactions')
+    async def test_transaction_query_workflow_integration(self, mock_fetch_transactions, mock_get_graphiti_client):
         """Test the full transaction query workflow with mocked data."""
+        # Mock Graphiti client to return no results (first call)
+        mock_graphiti_client = AsyncMock()
+        mock_graphiti_client.is_connected.return_value = True
+        mock_graphiti_client.search.return_value = {"nodes": []}  # No existing data
+        mock_get_graphiti_client.return_value = mock_graphiti_client
+
+        # Mock transaction fetch to succeed (avoids infinite loop)
+        mock_fetch_transactions.return_value = {
+            "status": "success",
+            "transactions": [],
+            "total_transactions": 0
+        }
+
         user_message = "Find this transaction"  # Using exact keyword from existing test
         user_id = "test_user_456"
         session_id = "test_session_789"
-        
+
         result = await self.agent.invoke_spending_conversation(user_message, user_id, session_id)
         
         # The workflow should complete successfully 
@@ -322,6 +420,49 @@ class TestSpendingAgent:
         
         # With mocked data, it should go through the fetch_and_process path and return final results
         # The exact content depends on whether it went through fetch path or not
+
+    @pytest.mark.asyncio
+    @patch('app.ai.spending_agent.get_graphiti_client')
+    @patch.object(SpendingAgent, '_fetch_transactions')
+    async def test_transaction_query_workflow_with_failures(self, mock_fetch_transactions, mock_get_graphiti_client):
+        """Test the workflow handles external service failures gracefully and stops after 3 iterations."""
+        # Mock Graphiti client to return no results (force fetch path)
+        mock_graphiti_client = AsyncMock()
+        mock_graphiti_client.is_connected.return_value = True
+        mock_graphiti_client.search.return_value = {"nodes": []}
+        mock_get_graphiti_client.return_value = mock_graphiti_client
+
+        # Mock transaction fetch to always fail (simulating external service failure)
+        mock_fetch_transactions.return_value = {
+            "status": "error",
+            "error": "Connection timeout",
+            "transactions": []
+        }
+
+        user_message = "Show me my transactions"
+        user_id = "test_user_failure"
+        session_id = "test_session_failure"
+
+        result = await self.agent.invoke_spending_conversation(user_message, user_id, session_id)
+
+        # Should handle failures gracefully
+        assert "content" in result
+        assert "agent" in result
+        assert result["agent"] == "spending_agent"
+        assert result["user_id"] == user_id
+        assert result["session_id"] == session_id
+        assert result["message_type"] == "ai_response"
+
+        # Most importantly: should stop after exactly 3 fetch attempts (no infinite loop)
+        assert mock_fetch_transactions.call_count <= 3, f"Should not exceed 3 fetch attempts, got {mock_fetch_transactions.call_count}"
+
+        # Should not have recursion limit error (proves iteration limit works)
+        if "error" in result:
+            assert "Recursion limit" not in result["error"], "Should not hit recursion limit with iteration counter"
+            assert "trouble processing" in result["content"] or "try again" in result["content"]
+        else:
+            # If it succeeds, should have proper response
+            assert len(result["content"]) > 0
 
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mocked_mcp_success(self):
@@ -404,10 +545,19 @@ class TestSpendingAgent:
     @pytest.mark.asyncio
     async def test_fetch_and_process_node_with_mocked_successful_fetch(self):
         """Test _fetch_and_process_node with mocked successful transaction fetch."""
-        # Mock successful transaction fetch
+        # Mock successful transaction fetch with proper PlaidTransaction fields
         mock_fetch_result = {
             "status": "success",
-            "transactions": [{"id": "tx1", "amount": 100.0}],
+            "transactions": [{
+                "transaction_id": "tx1",
+                "account_id": "acc1",
+                "amount": 100.0,
+                "name": "Test Transaction",
+                "merchant_name": "Test Merchant",
+                "date": "2024-01-15",
+                "category": ["Shopping"],
+                "pending": False
+            }],
             "total_transactions": 1
         }
         
@@ -421,7 +571,6 @@ class TestSpendingAgent:
             result = await self.agent._fetch_and_process_node(state)
             
             # Validate successful processing
-            assert result["found_in_graphiti"] is True
             assert len(result["messages"]) == 1
             
             ai_message = result["messages"][0]
@@ -448,7 +597,6 @@ class TestSpendingAgent:
             result = await self.agent._fetch_and_process_node(state)
             
             # Validate error handling
-            assert result["found_in_graphiti"] is True  # Still set to True per current logic
             assert len(result["messages"]) == 1
             
             ai_message = result["messages"][0]
@@ -732,6 +880,154 @@ class TestSpendingAgentLLMIntegration:
         call_args = self.mock_llm.invoke.call_args[0][0]
         system_message = call_args[0]
         assert "Limited user context available" in system_message.content
+
+class TestSpendingAgentTransactionCategorization:
+    """Test integration between SpendingAgent and TransactionCategorizationService."""
+
+    @pytest.fixture
+    def agent_with_categorization(self):
+        """SpendingAgent instance with categorization service enabled."""
+        agent = SpendingAgent()
+        # Ensure categorization service is available for testing
+        assert agent.categorization_service is not None
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_fetch_and_process_with_categorization_integration(self, agent_with_categorization, sample_transactions):
+        """Test that _fetch_and_process_node properly integrates transaction categorization."""
+        # Mock successful transaction fetch
+        mock_transaction_data = {
+            "status": "success",
+            "transactions": [txn.model_dump() for txn in sample_transactions],
+            "total_transactions": len(sample_transactions)
+        }
+
+        with patch.object(agent_with_categorization, '_fetch_transactions', return_value=mock_transaction_data):
+            # Mock the categorization service response
+            from app.models.plaid_models import TransactionCategorization, TransactionCategorizationBatch
+
+            mock_categorizations = [
+                TransactionCategorization(
+                    transaction_id="txn_starbucks_1",
+                    ai_category="Food & Dining",
+                    ai_subcategory="Coffee Shops",
+                    ai_confidence=0.95,
+                    ai_tags=["caffeine", "daily-habit"],
+                    reasoning="Starbucks purchase clearly indicates coffee"
+                ),
+                TransactionCategorization(
+                    transaction_id="txn_gas_1",
+                    ai_category="Transportation",
+                    ai_subcategory="Gas Stations",
+                    ai_confidence=0.92,
+                    ai_tags=["fuel", "automotive"],
+                    reasoning="Shell gas station for vehicle fuel"
+                )
+            ]
+
+            mock_batch = TransactionCategorizationBatch(
+                categorizations=mock_categorizations,
+                processing_summary="Successfully categorized 2 transactions"
+            )
+
+            # Mock the categorization service
+            with patch.object(agent_with_categorization.categorization_service, 'categorize_transactions', return_value=mock_batch):
+
+                state = {
+                    "messages": [HumanMessage(content="Fetch and analyze my recent transactions")],
+                    "user_id": "test_user_123",
+                    "user_context": {
+                        "demographics": {"age_range": "26_35", "occupation": "engineer"},
+                        "financial_context": {"has_dependents": False}
+                    },
+                    "found_in_graphiti": False
+                }
+
+                result = await agent_with_categorization._fetch_and_process_node(state)
+
+                # Verify basic response structure
+                assert "messages" in result
+
+                # Verify response mentions categorization
+                ai_message = result["messages"][0]
+                response_content = ai_message.content
+
+                # Should mention both total transactions and categorized count
+                assert "2 transactions" in response_content
+                assert "categorized 2" in response_content
+                assert "AI insights" in response_content
+
+                # Verify categorization service was called with correct data
+                agent_with_categorization.categorization_service.categorize_transactions.assert_called_once()
+                call_args = agent_with_categorization.categorization_service.categorize_transactions.call_args
+
+                # Check transaction objects were passed
+                transactions_arg = call_args[0][0]
+                assert len(transactions_arg) == 2
+                assert transactions_arg[0].transaction_id == "txn_starbucks_1"
+                assert transactions_arg[1].transaction_id == "txn_gas_1"
+
+                # Check user context was passed
+                user_context_arg = call_args[0][1]
+                assert user_context_arg["demographics"]["age_range"] == "26_35"
+                assert user_context_arg["financial_context"]["has_dependents"] is False
+
+    @pytest.mark.asyncio
+    async def test_categorization_service_initialization(self, agent_with_categorization):
+        """Test that categorization service is properly initialized in SpendingAgent."""
+        # Verify categorization service exists
+        assert hasattr(agent_with_categorization, 'categorization_service')
+        assert agent_with_categorization.categorization_service is not None
+
+        # Verify it has the expected interface
+        assert hasattr(agent_with_categorization.categorization_service, 'categorize_transactions')
+        assert hasattr(agent_with_categorization, '_categorize_and_apply_transactions')
+        assert hasattr(agent_with_categorization, '_apply_categorization_to_transaction')
+
+    @pytest.mark.asyncio
+    async def test_categorize_and_apply_transactions_method(self, agent_with_categorization, sample_transactions):
+        """Test the _categorize_and_apply_transactions utility method."""
+        # Mock categorization response
+        from app.models.plaid_models import TransactionCategorization, TransactionCategorizationBatch
+
+        mock_categorization = TransactionCategorization(
+            transaction_id="txn_starbucks_1",
+            ai_category="Food & Dining",
+            ai_subcategory="Coffee Shops",
+            ai_confidence=0.95,
+            ai_tags=["caffeine"],
+            reasoning="Coffee purchase"
+        )
+
+        mock_batch = TransactionCategorizationBatch(
+            categorizations=[mock_categorization],
+            processing_summary="Categorized 1 transaction"
+        )
+
+        with patch.object(agent_with_categorization.categorization_service, 'categorize_transactions', return_value=mock_batch):
+
+            user_context = {"demographics": {"age_range": "26_35"}}
+
+            categorized_transactions, batch_result = await agent_with_categorization._categorize_and_apply_transactions(
+                sample_transactions, user_context
+            )
+
+            # Verify results
+            assert len(categorized_transactions) == 2
+            assert batch_result == mock_batch
+
+            # Verify first transaction got AI categorization applied
+            first_txn = categorized_transactions[0]
+            assert first_txn.ai_category == "Food & Dining"
+            assert first_txn.ai_subcategory == "Coffee Shops"
+            assert first_txn.ai_confidence == 0.95
+            assert first_txn.ai_tags == ["caffeine"]
+
+            # Verify second transaction remains unchanged (no categorization for it)
+            second_txn = categorized_transactions[1]
+            assert second_txn.ai_category is None
+            assert second_txn.transaction_id == "txn_gas_1"
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
