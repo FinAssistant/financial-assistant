@@ -109,8 +109,7 @@ class OnboardingAgent:
                 # Call the plaid_create_link_token MCP tool directly
                 result = await self._plaid_client.call_tool(
                     user_id=user_id,
-                    tool_name="plaid_create_link_token",
-                    user_id=user_id
+                    tool_name="plaid_create_link_token"
                 )
 
                 if result.get("status") == "error":
@@ -182,8 +181,10 @@ class OnboardingAgent:
         # No tool binding for simplified workflow - memory storage handled in separate node
 
         self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
-        
-        # has_accounts already checked above for tool binding
+
+        # Check if user has connected accounts
+        user_id = config["configurable"]["user_id"]
+        has_accounts = self._has_connected_accounts(user_id)
 
         # Build system prompt for structured data extraction
         account_guidance = "" if has_accounts else """
@@ -235,10 +236,6 @@ class OnboardingAgent:
 
         self.logger.info(f"Onboarding LLM messages: {[msg.content for msg in messages]}")
         
-        # Check if user has connected accounts to determine if tools are needed
-        user_id = config["configurable"]["user_id"]
-        has_accounts = self._has_connected_accounts(user_id)
-
         # Bind Plaid link tool if user doesn't have accounts connected
         if not has_accounts:
             plaid_tool = self._create_plaid_link_tool(user_id)
@@ -273,7 +270,7 @@ class OnboardingAgent:
         # when all 9 fields are provided. Our business logic then adds the account requirement.
         # This separation keeps LLM focused on data extraction while business logic handles completion rules.
         demographic_complete = response.completion_status == "complete"
-        has_accounts = self._has_connected_accounts(user_id)
+        # has_accounts already defined above
         truly_complete = demographic_complete and has_accounts
 
         data =  {

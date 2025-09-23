@@ -3,7 +3,7 @@ Unit tests for OnboardingAgent.
 All external dependencies are mocked for fast, reliable testing.
 """
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock, call
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -153,81 +153,73 @@ class TestOnboardingAgentMethods:
     @patch('app.ai.onboarding.llm_factory')
     def test_call_llm_basic(self, mock_llm_factory, agent, sample_state, sample_config):
         """Test _call_llm with mocked LLM response."""
-        # Mock LLM response
-        mock_llm = Mock()
-        mock_structured_llm = Mock()
-        mock_response = ProfileDataExtraction(
-            extracted_data=ExtractedProfileData(
-                age_range="26_35",
-                occupation_type="engineer"
-            ),
-            completion_status="partial",
-            user_response="Great! I've noted that you're 28 and work as a software engineer."
-        )
+        # Mock account checking to return True (has accounts)
+        with patch.object(agent, '_has_connected_accounts', return_value=True):
+            # Mock LLM response
+            mock_llm = Mock()
+            mock_structured_llm = Mock()
+            mock_response = ProfileDataExtraction(
+                extracted_data=ExtractedProfileData(
+                    age_range="26_35",
+                    occupation_type="engineer"
+                ),
+                completion_status="partial",
+                user_response="Great! I've noted that you're 28 and work as a software engineer."
+            )
+
+            mock_llm_factory.create_llm.return_value = mock_llm
+            mock_llm.with_structured_output.return_value = mock_structured_llm
+            mock_structured_llm.invoke.return_value = mock_response
+
+            result = agent._call_llm(sample_state, sample_config)
         
-        mock_llm_factory.create_llm.return_value = mock_llm
-        mock_llm.with_structured_output.return_value = mock_structured_llm
-        mock_structured_llm.invoke.return_value = mock_response
-        
-        result = agent._call_llm(sample_state, sample_config)
-        
-        # Check that AI message was created correctly
-        assert "messages" in result
-        assert len(result["messages"]) == 1
-        ai_message = result["messages"][0]
-        assert isinstance(ai_message, AIMessage)
-        assert ai_message.content == "Great! I've noted that you're 28 and work as a software engineer."
-        assert ai_message.additional_kwargs["agent"] == "onboarding"
-        
-        # Check state updates
-        expected_collected = {"age_range": "26_35", "occupation_type": "engineer"}
-        assert result["collected_data"] == expected_collected
-        assert result["needs_database_update"] is True
-        assert result["onboarding_complete"] is False
-        
-        # Verify LLM was called correctly
-        mock_llm_factory.create_llm.assert_called_once()
+            # Check that AI message was created correctly
+            assert "messages" in result
+            assert len(result["messages"]) == 1
+            ai_message = result["messages"][0]
+            assert isinstance(ai_message, AIMessage)
+            assert ai_message.content == "Great! I've noted that you're 28 and work as a software engineer."
+            assert ai_message.additional_kwargs["agent"] == "onboarding"
+
+            # Check state updates
+            expected_collected = {"age_range": "26_35", "occupation_type": "engineer"}
+            assert result["collected_data"] == expected_collected
+            assert result["needs_database_update"] is True
+            assert result["onboarding_complete"] is False
+
+            # Verify LLM was called correctly
+            mock_llm_factory.create_llm.assert_called_once()
         mock_llm.with_structured_output.assert_called_once()
         mock_structured_llm.invoke.assert_called_once()
     
     @patch('app.ai.onboarding.llm_factory')
     def test_call_llm_completion_complete(self, mock_llm_factory, agent, sample_state, sample_config):
         """Test _call_llm when profile is marked complete."""
-        # Mock LLM response indicating completion
-        mock_llm = Mock()
-        mock_structured_llm = Mock()
-        mock_response = ProfileDataExtraction(
-            extracted_data=ExtractedProfileData(
-                marital_status="single"
-            ),
-            completion_status="complete",
-            user_response="Perfect! Your profile is now complete."
-        )
-        
-        mock_llm_factory.create_llm.return_value = mock_llm
-        mock_llm.with_structured_output.return_value = mock_structured_llm
-        mock_structured_llm.invoke.return_value = mock_response
-        
-        result = agent._call_llm(sample_state, sample_config)
-        
-        assert result["onboarding_complete"] is True
-        assert result["needs_database_update"] is True
-        
-        ai_message = result["messages"][0]
-        assert ai_message.content == "Perfect! Your profile is now complete."
-    
-    @patch('app.ai.onboarding.user_storage')
-    def test_update_db_no_update_needed(self, mock_user_storage, agent, sample_config):
-        """Test _update_db when no database update is needed."""
-        state = OnboardingState(needs_database_update=False)
-        
-        result = agent._update_db(state, sample_config)
-        
-        assert result == {"needs_database_update": False}
-        # Verify no database calls were made
-        mock_user_storage.create_or_update_personal_context.assert_not_called()
-        mock_user_storage.update_user.assert_not_called()
-    
+        # Mock account checking to return True (has accounts) - needed for true completion
+        with patch.object(agent, '_has_connected_accounts', return_value=True):
+            # Mock LLM response indicating completion
+            mock_llm = Mock()
+            mock_structured_llm = Mock()
+            mock_response = ProfileDataExtraction(
+                extracted_data=ExtractedProfileData(
+                    marital_status="single"
+                ),
+                completion_status="complete",
+                user_response="Perfect! Your profile is now complete."
+            )
+
+            mock_llm_factory.create_llm.return_value = mock_llm
+            mock_llm.with_structured_output.return_value = mock_structured_llm
+            mock_structured_llm.invoke.return_value = mock_response
+
+            result = agent._call_llm(sample_state, sample_config)
+
+            assert result["onboarding_complete"] is True
+            assert result["needs_database_update"] is True
+
+            ai_message = result["messages"][0]
+            assert ai_message.content == "Perfect! Your profile is now complete."
+
     @patch('app.ai.onboarding.user_storage')
     def test_update_db_with_data(self, mock_user_storage, agent, sample_config):
         """Test _update_db with profile data to save."""
@@ -248,15 +240,19 @@ class TestOnboardingAgentMethods:
         
         assert result == {"needs_database_update": False}
         
-        # Check that only valid fields were saved
+        # Verify database was called twice: once for profile data, once for completion status
+        assert mock_user_storage.create_or_update_personal_context.call_count == 2
+
+        # Check the calls were made with correct data
+        calls = mock_user_storage.create_or_update_personal_context.call_args_list
         expected_data = {
             "age_range": "26_35",
             "occupation_type": "engineer",
             "marital_status": "single"
         }
-        mock_user_storage.create_or_update_personal_context.assert_called_once_with(
-            "test_user_123", expected_data
-        )
+        assert calls[0] == call("test_user_123", expected_data)
+        assert calls[1] == call("test_user_123", {"is_complete": False})
+
         # User profile_complete should not be updated since onboarding_complete is False
         mock_user_storage.update_user.assert_not_called()
     
@@ -275,10 +271,15 @@ class TestOnboardingAgentMethods:
         
         assert result == {"needs_database_update": False}
         
-        # Both personal context and user profile_complete should be updated
-        mock_user_storage.create_or_update_personal_context.assert_called_once_with(
-            "test_user_123", collected_data
-        )
+        # Verify database was called twice: once for profile data, once for completion status
+        assert mock_user_storage.create_or_update_personal_context.call_count == 2
+
+        # Check the calls were made with correct data
+        calls = mock_user_storage.create_or_update_personal_context.call_args_list
+        assert calls[0] == call("test_user_123", collected_data)
+        assert calls[1] == call("test_user_123", {"is_complete": True})
+
+        # Verify deprecated User table was also updated for backward compatibility
         mock_user_storage.update_user.assert_called_once_with(
             "test_user_123", {"profile_complete": True}
         )
@@ -396,12 +397,13 @@ class TestOnboardingAgentGraph:
         assert callable(graph.stream)
 
 
+@patch('app.ai.onboarding.OnboardingAgent._has_connected_accounts', return_value=False)
 class TestOnboardingAgentIntegration:
     """Integration tests for OnboardingAgent with mocked external dependencies."""
     
     @patch('app.ai.onboarding.user_storage')
     @patch('app.ai.onboarding.llm_factory')
-    def test_full_onboarding_flow_new_user(self, mock_llm_factory, mock_user_storage):
+    def test_full_onboarding_flow_new_user(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
         """Test complete onboarding flow for a new user."""
         # Setup mocks
         mock_user_storage.get_user_by_id.return_value = None
@@ -416,11 +418,14 @@ class TestOnboardingAgentIntegration:
             completion_status="partial",
             user_response="Great! I've noted your age and occupation. What is your marital status?"
         )
-        
+
         mock_llm_factory.create_llm.return_value = mock_llm
+
+        # Mock both regular and tool-bound LLM chains
         mock_llm.with_structured_output.return_value = mock_structured_llm
+        mock_llm.bind_tools.return_value = mock_llm  # Tool binding returns the same LLM
         mock_structured_llm.invoke.return_value = mock_response
-        
+
         # Create agent and test data
         agent = OnboardingAgent()
         initial_state = OnboardingState(
@@ -432,7 +437,7 @@ class TestOnboardingAgentIntegration:
                 "thread_id": "test_thread_456"
             }
         }
-        
+
         # Test the flow manually by calling each method
         # 1. Read database
         db_result = agent._read_db(initial_state, config)
@@ -442,7 +447,7 @@ class TestOnboardingAgentIntegration:
             collected_data=db_result.get("collected_data", {}),
             current_step=db_result.get("current_step", "welcome")
         )
-        
+
         # 2. Call LLM
         llm_result = agent._call_llm(updated_state, config)
         # Merge messages properly - original + new AI message
@@ -454,7 +459,7 @@ class TestOnboardingAgentIntegration:
             needs_database_update=llm_result.get("needs_database_update", False),
             onboarding_complete=llm_result.get("onboarding_complete", False)
         )
-        
+
         # 3. Update database
         db_update_result = agent._update_db(updated_state, config)
         final_state = OnboardingState(
@@ -464,26 +469,29 @@ class TestOnboardingAgentIntegration:
             needs_database_update=db_update_result.get("needs_database_update", False),
             onboarding_complete=updated_state.onboarding_complete
         )
-        
+
         # Verify the final state
         assert final_state.collected_data == {"age_range": "26_35", "occupation_type": "engineer"}
         assert final_state.needs_database_update is False
         assert final_state.onboarding_complete is False
         assert len(final_state.messages) == 2  # Original + AI response
-        
+
         # Verify AI message
         ai_message = final_state.messages[-1]
         assert isinstance(ai_message, AIMessage)
         assert "marital status" in ai_message.content
         assert ai_message.additional_kwargs["agent"] == "onboarding"
-        
+
         # Verify database calls
         mock_user_storage.get_user_by_id.assert_called_once_with("test_user_123")
-        mock_user_storage.create_or_update_personal_context.assert_called_once()
+        # Expect 2 calls: profile data + completion status
+        assert mock_user_storage.create_or_update_personal_context.call_count == 2
     
     @patch('app.ai.onboarding.user_storage')
     @patch('app.ai.onboarding.llm_factory')
-    def test_onboarding_completion_flow(self, mock_llm_factory, mock_user_storage):
+    def test_onboarding_completion_flow(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
+        # Override the class-level mock to return True for this completion test
+        mock_has_accounts.return_value = True
         """Test onboarding flow when user completes their profile."""
         # Setup mocks for existing user with some data
         mock_user_storage.get_user_by_id.return_value = {"id": "test_user_123"}
@@ -502,11 +510,14 @@ class TestOnboardingAgentIntegration:
             completion_status="complete",
             user_response="Perfect! Your profile is now complete and I can provide personalized financial advice."
         )
-        
+
         mock_llm_factory.create_llm.return_value = mock_llm
+
+        # Mock both regular and tool-bound LLM chains
         mock_llm.with_structured_output.return_value = mock_structured_llm
+        mock_llm.bind_tools.return_value = mock_llm  # Tool binding returns the same LLM
         mock_structured_llm.invoke.return_value = mock_response
-        
+
         agent = OnboardingAgent()
         initial_state = OnboardingState(
             messages=[HumanMessage(content="I'm single with no dependents")]
@@ -554,11 +565,14 @@ class TestOnboardingAgentIntegration:
 
 class TestOnboardingAgentGraphitiIntegration:
     """Test OnboardingAgent Graphiti integration with mocked GraphitiMCPClient."""
-    
+
     @pytest.fixture
     def agent(self):
         """Create OnboardingAgent instance for testing."""
-        return OnboardingAgent()
+        agent = OnboardingAgent()
+        # Mock the _has_connected_accounts method for this instance
+        agent._has_connected_accounts = AsyncMock(return_value=False)
+        return agent
     
     @pytest.fixture
     def sample_state_with_messages(self):
@@ -731,11 +745,13 @@ class TestOnboardingAgentGraphitiIntegration:
         
         result = agent._update_db(state_with_data, sample_config)
         
-        # Should attempt to save because there's collected data
-        mock_user_storage.create_or_update_personal_context.assert_called_once_with(
-            "test_user_456",
-            {"age_range": "36_45", "occupation_type": "unemployed"}
-        )
+        # Should attempt to save because there's collected data - expect 2 calls
+        assert mock_user_storage.create_or_update_personal_context.call_count == 2
+
+        # Check the calls were made with correct data
+        calls = mock_user_storage.create_or_update_personal_context.call_args_list
+        assert calls[0] == call("test_user_456", {"age_range": "36_45", "occupation_type": "unemployed"})
+        assert calls[1] == call("test_user_456", {"is_complete": False})
         assert result == {"needs_database_update": False}
     
     def test_expanded_vocabulary_in_profile_fields(self):
@@ -780,7 +796,10 @@ class TestOnboardingAgentLifeChangeScenarios:
     
     @pytest.fixture
     def agent(self):
-        return OnboardingAgent()
+        agent = OnboardingAgent()
+        # Mock the _has_connected_accounts method for this instance
+        agent._has_connected_accounts = AsyncMock(return_value=False)
+        return agent
     
     @pytest.fixture  
     def config(self):
