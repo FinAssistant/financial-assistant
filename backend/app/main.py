@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 
 from app.core.config import settings
-from app.routers import auth, conversation
+from app.routers import auth, conversation, plaid
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,7 @@ def create_app() -> FastAPI:
     # Include API routers
     app.include_router(auth.router)
     app.include_router(conversation.router)
+    app.include_router(plaid.router)
     
     # Mount FastMCP server at /mcp
     try:

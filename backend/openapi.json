@@ -258,6 +258,207 @@
           }
         ]
       }
+    },
+    "/api/plaid/exchange": {
+      "post": {
+        "tags": [
+          "plaid"
+        ],
+        "summary": "Exchange Public Token",
+        "description": "Exchange Plaid public token for access token and store account information.\n\nThis endpoint:\n1. Exchanges the public token for an access token via Plaid API\n2. Retrieves account information from Plaid\n3. Stores encrypted access tokens and account data in the database\n4. Returns success confirmation with connected account details\n\nThe frontend should call this endpoint after successful Plaid Link completion.",
+        "operationId": "exchange_public_token_api_plaid_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaidTokenExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaidTokenExchangeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/plaid/accounts": {
+      "get": {
+        "tags": [
+          "plaid"
+        ],
+        "summary": "Get Connected Accounts",
+        "description": "Get all connected accounts for the authenticated user.\n\nReturns a list of connected account information without sensitive data.",
+        "operationId": "get_connected_accounts_api_plaid_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Get Connected Accounts Api Plaid Accounts Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/plaid/accounts/{account_id}": {
+      "delete": {
+        "tags": [
+          "plaid"
+        ],
+        "summary": "Disconnect Account",
+        "description": "Disconnect (deactivate) a connected account.\n\nThis soft-deletes the account by setting is_active=False.",
+        "operationId": "disconnect_account_api_plaid_accounts__account_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Disconnect Account Api Plaid Accounts  Account Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Api Health Check",
+        "description": "API health check endpoint.",
+        "operationId": "api_health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{full_path}": {
+      "get": {
+        "summary": "Serve React App",
+        "description": "Serve React app for client-side routing.",
+        "operationId": "serve_react_app__full_path__get",
+        "parameters": [
+          {
+            "name": "full_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Full Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -501,6 +702,68 @@
         ],
         "title": "MessageResponse",
         "description": "Simple message response."
+      },
+      "PlaidTokenExchangeRequest": {
+        "properties": {
+          "public_token": {
+            "type": "string",
+            "title": "Public Token",
+            "description": "Public token from Plaid Link"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "Optional session ID for conversation resumption"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_token"
+        ],
+        "title": "PlaidTokenExchangeRequest",
+        "description": "Request model for exchanging Plaid public token."
+      },
+      "PlaidTokenExchangeResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Operation status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable message"
+          },
+          "accounts_connected": {
+            "type": "integer",
+            "title": "Accounts Connected",
+            "description": "Number of accounts connected"
+          },
+          "account_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Account Ids",
+            "description": "List of connected account IDs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "message",
+          "accounts_connected"
+        ],
+        "title": "PlaidTokenExchangeResponse",
+        "description": "Response model for token exchange endpoint."
       },
       "RegisterRequest": {
         "properties": {

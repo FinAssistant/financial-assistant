@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 
-from app.core.auth import get_current_user_id
+from app.routers.auth import get_current_user
 from app.core.database import user_storage
 from app.core.sqlmodel_models import ConnectedAccountCreate
 from app.services.plaid_service import PlaidService
@@ -23,11 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/plaid", tags=["plaid"])
 
 # Initialize PlaidService
-plaid_service = PlaidService(
-    client_id=settings.plaid_client_id,
-    secret=settings.plaid_secret,
-    environment=settings.plaid_environment
-)
+plaid_service = PlaidService()
 
 
 class PlaidTokenExchangeRequest(BaseModel):
@@ -47,7 +43,7 @@ class PlaidTokenExchangeResponse(BaseModel):
 @router.post("/exchange", response_model=PlaidTokenExchangeResponse)
 async def exchange_public_token(
     request: PlaidTokenExchangeRequest,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user)
 ) -> PlaidTokenExchangeResponse:
     """
     Exchange Plaid public token for access token and store account information.
@@ -169,7 +165,7 @@ async def exchange_public_token(
 
 @router.get("/accounts", response_model=List[Dict[str, Any]])
 async def get_connected_accounts(
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user)
 ) -> List[Dict[str, Any]]:
     """
     Get all connected accounts for the authenticated user.
@@ -210,7 +206,7 @@ async def get_connected_accounts(
 @router.delete("/accounts/{account_id}")
 async def disconnect_account(
     account_id: str,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Disconnect (deactivate) a connected account.

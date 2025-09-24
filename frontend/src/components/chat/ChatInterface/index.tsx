@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { MessageCircle, Send } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import {
@@ -30,6 +30,10 @@ import {
 } from "./styles";
 import { DefaultChatTransport } from "ai";
 import { logout } from "../../../store/slices/authSlice";
+import { PlaidConnect } from "../../onboarding/PlaidConnect";
+import { parseMessageForPlaidData, extractGuidanceText } from "../../../utils/messageUtils";
+import { useExchangePublicTokenApiPlaidExchangePostMutation } from "../../../store/api/generated";
+import { PlaidLinkError, PlaidLinkOnEvent, PlaidLinkOnExit, PlaidLinkOnExitMetadata, PlaidLinkOnSuccess } from "react-plaid-link";
 
 interface ChatInterfaceProps {
   className?: string;
@@ -51,15 +55,49 @@ const UserMessage = () => (
   </UserMessageContainer>
 );
 
-const AssistantMessage = () => (
-  <AssistantMessageContainer>
-    <MessagePrimitive.Root>
-      <MessageBubble>
-        <MessagePrimitive.Content />
-      </MessageBubble>
-    </MessagePrimitive.Root>
-  </AssistantMessageContainer>
-);
+// Enhanced AssistantMessage that can handle Plaid integration
+const AssistantMessage = ({
+  onPlaidSuccess,
+  onPlaidEvent,
+  onPlaidExit
+}: {
+  onPlaidSuccess?: PlaidLinkOnSuccess;
+  onPlaidEvent?: PlaidLinkOnEvent;
+  onPlaidExit?: PlaidLinkOnExit;
+}) => {
+  return (
+    <AssistantMessageContainer>
+      <MessagePrimitive.Root>
+        <MessageBubble>
+          <MessagePrimitive.Content
+            components={{
+              Text: ({ text }) => {
+                const plaidData = parseMessageForPlaidData(text);
+
+                if (plaidData && onPlaidSuccess && onPlaidEvent && onPlaidExit) {
+                  const guidanceText = extractGuidanceText(text);
+                  return (
+                    <>
+                      {guidanceText && <p>{guidanceText}</p>}
+                      <PlaidConnect
+                        linkToken={plaidData.link_token}
+                        onSuccess={onPlaidSuccess}
+                        onEvent={onPlaidEvent}
+                        onExit={onPlaidExit}
+                      />
+                    </>
+                  );
+                }
+
+                return <p>{text}</p>;
+              }
+            }}
+          />
+        </MessageBubble>
+      </MessagePrimitive.Root>
+    </AssistantMessageContainer>
+  );
+};
 
 // Loading indicator component for when assistant is thinking
 const AssistantThinking = () => (
@@ -74,6 +112,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
   const currentSessionId = useSelector(selectCurrentSessionId);
   const token = useSelector(selectToken);
   const isAuthenticated = useSelector(selectIsAuthenticated);
+  const [exchangeToken, { isLoading: isExchanging }] = useExchangePublicTokenApiPlaidExchangePostMutation();
+  const [plaidError, setPlaidError] = useState<string | null>(null);
 
   // Initialize session ID if not exists
   useEffect(() => {
@@ -109,6 +149,44 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
       fetch: customFetch,
     }),
   });
+
+  // Plaid event handlers
+  const handlePlaidSuccess = async (publicToken: string, _metadata: any) => {
+    try {
+      setPlaidError(null);
+      const result = await exchangeToken({
+        plaidTokenExchangeRequest: {
+          public_token: publicToken,
+          session_id: currentSessionId
+        }
+      }).unwrap();
+
+      console.log('Plaid connection successful:', result);
+
+      // Backend automatically injects system message and continues conversation
+      // No manual message sending needed - the backend handles conversation flow
+
+    } catch (error: any) {
+      console.error('Plaid connection error:', error);
+      setPlaidError(error.data?.error?.message || error.message || 'Failed to connect account');
+    }
+  };
+
+  const handlePlaidEvent = (eventName: string, metadata: any) => {
+    console.error('Plaid Link event:', eventName, metadata);
+  };
+
+  const handlePlaidExit = (error: PlaidLinkError | null, metadata: PlaidLinkOnExitMetadata) => {
+    if (error) {
+      console.error('Plaid Link error on exit:', error, metadata);
+      setPlaidError(error.display_message || error.error_message || 'An error occurred during Plaid connection');
+    } else {
+      // For user cancellation, we can show a local message or let them continue manually
+      // The backend conversation flow remains uninterrupted
+      console.log('User cancelled Plaid connection');
+      setPlaidError(null);
+    }
+  };
 
   // Show simple message if not authenticated (should not happen due to routing)
   if (!isAuthenticated || !token) {
@@ -178,7 +256,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
               <ThreadPrimitive.Messages
                 components={{
                   UserMessage,
-                  AssistantMessage,
+                  AssistantMessage: () => (
+                    <AssistantMessage
+                      onPlaidSuccess={handlePlaidSuccess}
+                      onPlaidEvent={handlePlaidEvent}
+                      onPlaidExit={handlePlaidExit}
+                    />
+                  ),
                   EditComposer: () => null,
                 }}
               />
@@ -186,6 +270,36 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
               <ThreadPrimitive.If running>
                 <AssistantThinking />
               </ThreadPrimitive.If>
+
+              {/* Plaid error display */}
+              {plaidError && (
+                <div style={{
+                  margin: '16px',
+                  padding: '12px 16px',
+                  backgroundColor: '#fee2e2',
+                  color: '#dc2626',
+                  borderRadius: '6px',
+                  border: '1px solid #fecaca',
+                  fontSize: '14px'
+                }}>
+                  <strong>Connection Error:</strong> {plaidError}
+                </div>
+              )}
+
+              {/* Plaid loading indicator */}
+              {isExchanging && (
+                <div style={{
+                  margin: '16px',
+                  padding: '12px 16px',
+                  backgroundColor: '#f0f9ff',
+                  color: '#0369a1',
+                  borderRadius: '6px',
+                  border: '1px solid #bae6fd',
+                  fontSize: '14px'
+                }}>
+                  <strong>Processing:</strong> Connecting your account...
+                </div>
+              )}
             </ThreadPrimitive.Viewport>
 
             <ComposerPrimitive.Root className="composer-root">

@@ -1,5 +1,5 @@
 import { baseApi as api } from "./baseApi";
-export const addTagTypes = ["authentication", "conversation"] as const;
+export const addTagTypes = ["authentication", "conversation", "plaid"] as const;
 const injectedRtkApi = api
   .enhanceEndpoints({
     addTagTypes,
@@ -71,6 +71,52 @@ const injectedRtkApi = api
         query: () => ({ url: `/conversation/health` }),
         providesTags: ["conversation"],
       }),
+      exchangePublicTokenApiPlaidExchangePost: build.mutation<
+        ExchangePublicTokenApiPlaidExchangePostApiResponse,
+        ExchangePublicTokenApiPlaidExchangePostApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/api/plaid/exchange`,
+          method: "POST",
+          body: queryArg.plaidTokenExchangeRequest,
+        }),
+        invalidatesTags: ["plaid"],
+      }),
+      getConnectedAccountsApiPlaidAccountsGet: build.query<
+        GetConnectedAccountsApiPlaidAccountsGetApiResponse,
+        GetConnectedAccountsApiPlaidAccountsGetApiArg
+      >({
+        query: () => ({ url: `/api/plaid/accounts` }),
+        providesTags: ["plaid"],
+      }),
+      disconnectAccountApiPlaidAccountsAccountIdDelete: build.mutation<
+        DisconnectAccountApiPlaidAccountsAccountIdDeleteApiResponse,
+        DisconnectAccountApiPlaidAccountsAccountIdDeleteApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/api/plaid/accounts/${queryArg.accountId}`,
+          method: "DELETE",
+        }),
+        invalidatesTags: ["plaid"],
+      }),
+      healthCheckHealthGet: build.query<
+        HealthCheckHealthGetApiResponse,
+        HealthCheckHealthGetApiArg
+      >({
+        query: () => ({ url: `/health` }),
+      }),
+      apiHealthCheckApiHealthGet: build.query<
+        ApiHealthCheckApiHealthGetApiResponse,
+        ApiHealthCheckApiHealthGetApiArg
+      >({
+        query: () => ({ url: `/api/health` }),
+      }),
+      serveReactAppFullPathGet: build.query<
+        ServeReactAppFullPathGetApiResponse,
+        ServeReactAppFullPathGetApiArg
+      >({
+        query: (queryArg) => ({ url: `/${queryArg.fullPath}` }),
+      }),
     }),
     overrideExisting: false,
   });
@@ -106,6 +152,34 @@ export type SendMessageNonStreamingConversationMessagePostApiArg = {
 export type HealthCheckConversationHealthGetApiResponse =
   /** status 200 Successful Response */ ConversationHealthResponse;
 export type HealthCheckConversationHealthGetApiArg = void;
+export type ExchangePublicTokenApiPlaidExchangePostApiResponse =
+  /** status 200 Successful Response */ PlaidTokenExchangeResponse;
+export type ExchangePublicTokenApiPlaidExchangePostApiArg = {
+  plaidTokenExchangeRequest: PlaidTokenExchangeRequest;
+};
+export type GetConnectedAccountsApiPlaidAccountsGetApiResponse =
+  /** status 200 Successful Response */ {
+    [key: string]: any;
+  }[];
+export type GetConnectedAccountsApiPlaidAccountsGetApiArg = void;
+export type DisconnectAccountApiPlaidAccountsAccountIdDeleteApiResponse =
+  /** status 200 Successful Response */ {
+    [key: string]: any;
+  };
+export type DisconnectAccountApiPlaidAccountsAccountIdDeleteApiArg = {
+  accountId: string;
+};
+export type HealthCheckHealthGetApiResponse =
+  /** status 200 Successful Response */ any;
+export type HealthCheckHealthGetApiArg = void;
+export type ApiHealthCheckApiHealthGetApiResponse =
+  /** status 200 Successful Response */ any;
+export type ApiHealthCheckApiHealthGetApiArg = void;
+export type ServeReactAppFullPathGetApiResponse =
+  /** status 200 Successful Response */ any;
+export type ServeReactAppFullPathGetApiArg = {
+  fullPath: string;
+};
 export type AuthResponse = {
   access_token: string;
   token_type?: string;
@@ -169,6 +243,22 @@ export type ConversationHealthResponse = {
   test_response_received: boolean;
   error?: string | null;
 };
+export type PlaidTokenExchangeResponse = {
+  /** Operation status */
+  status: string;
+  /** Human-readable message */
+  message: string;
+  /** Number of accounts connected */
+  accounts_connected: number;
+  /** List of connected account IDs */
+  account_ids?: string[];
+};
+export type PlaidTokenExchangeRequest = {
+  /** Public token from Plaid Link */
+  public_token: string;
+  /** Optional session ID for conversation resumption */
+  session_id?: string | null;
+};
 export const {
   useRegisterAuthRegisterPostMutation,
   useLoginAuthLoginPostMutation,
@@ -177,4 +267,10 @@ export const {
   useSendMessageConversationSendPostMutation,
   useSendMessageNonStreamingConversationMessagePostMutation,
   useHealthCheckConversationHealthGetQuery,
+  useExchangePublicTokenApiPlaidExchangePostMutation,
+  useGetConnectedAccountsApiPlaidAccountsGetQuery,
+  useDisconnectAccountApiPlaidAccountsAccountIdDeleteMutation,
+  useHealthCheckHealthGetQuery,
+  useApiHealthCheckApiHealthGetQuery,
+  useServeReactAppFullPathGetQuery,
 } = injectedRtkApi;
