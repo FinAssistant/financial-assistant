@@ -151,7 +151,7 @@ class TestOnboardingAgentMethods:
         assert result["current_step"] == "welcome"
     
     @patch('app.ai.onboarding.llm_factory')
-    def test_call_llm_basic(self, mock_llm_factory, agent, sample_state, sample_config):
+    async def test_call_llm_basic(self, mock_llm_factory, agent, sample_state, sample_config):
         """Test _call_llm with mocked LLM response."""
         # Mock account checking to return True (has accounts)
         with patch.object(agent, '_has_connected_accounts', return_value=True):
@@ -171,7 +171,7 @@ class TestOnboardingAgentMethods:
             mock_llm.with_structured_output.return_value = mock_structured_llm
             mock_structured_llm.invoke.return_value = mock_response
 
-            result = agent._call_llm(sample_state, sample_config)
+            result = await agent._call_llm(sample_state, sample_config)
         
             # Check that AI message was created correctly
             assert "messages" in result
@@ -194,7 +194,7 @@ class TestOnboardingAgentMethods:
         mock_structured_llm.invoke.assert_called_once()
     
     @patch('app.ai.onboarding.llm_factory')
-    def test_call_llm_completion_complete(self, mock_llm_factory, agent, sample_state, sample_config):
+    async def test_call_llm_completion_complete(self, mock_llm_factory, agent, sample_state, sample_config):
         """Test _call_llm when profile is marked complete."""
         # Mock account checking to return True (has accounts) - needed for true completion
         with patch.object(agent, '_has_connected_accounts', return_value=True):
@@ -213,7 +213,7 @@ class TestOnboardingAgentMethods:
             mock_llm.with_structured_output.return_value = mock_structured_llm
             mock_structured_llm.invoke.return_value = mock_response
 
-            result = agent._call_llm(sample_state, sample_config)
+            result = await agent._call_llm(sample_state, sample_config)
 
             # onboarding_complete moved to _check_completion node
             assert "onboarding_complete" not in result
@@ -473,7 +473,7 @@ class TestOnboardingAgentIntegration:
     
     @patch('app.ai.onboarding.user_storage')
     @patch('app.ai.onboarding.llm_factory')
-    def test_full_onboarding_flow_new_user(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
+    async def test_full_onboarding_flow_new_user(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
         """Test complete onboarding flow for a new user."""
         # Setup mocks
         mock_user_storage.get_user_by_id.return_value = None
@@ -498,6 +498,12 @@ class TestOnboardingAgentIntegration:
 
         # Create agent and test data
         agent = OnboardingAgent()
+
+        # Mock the Plaid MCP client tool retrieval
+        mock_plaid_tool = Mock()
+        mock_plaid_tool.name = "create_link_token"
+        agent._plaid_client.get_tool_by_name = AsyncMock(return_value=mock_plaid_tool)
+
         initial_state = OnboardingState(
             messages=[HumanMessage(content="I'm 28 and work as a software engineer")]
         )
@@ -519,7 +525,7 @@ class TestOnboardingAgentIntegration:
         )
 
         # 2. Call LLM
-        llm_result = agent._call_llm(updated_state, config)
+        llm_result = await agent._call_llm(updated_state, config)
         # Merge messages properly - original + new AI message
         all_messages = updated_state.messages + llm_result.get("messages", [])
         updated_state = OnboardingState(
@@ -559,7 +565,7 @@ class TestOnboardingAgentIntegration:
     
     @patch('app.ai.onboarding.user_storage')
     @patch('app.ai.onboarding.llm_factory')
-    def test_onboarding_completion_flow(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
+    async def test_onboarding_completion_flow(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
         # Override the class-level mock to return True for this completion test
         mock_has_accounts.return_value = True
         """Test onboarding flow when user completes their profile."""
@@ -610,7 +616,7 @@ class TestOnboardingAgentIntegration:
             **{**initial_state.model_dump(), **db_result}
         )
         
-        llm_result = agent._call_llm(updated_state, config)
+        llm_result = await agent._call_llm(updated_state, config)
         updated_state = OnboardingState(
             **{**updated_state.model_dump(), **llm_result}
         )
@@ -773,7 +779,7 @@ class TestOnboardingAgentGraphitiIntegration:
             source_description="onboarding_agent"
         )
     
-    def test_enhanced_profile_change_detection_prompts(self, agent):
+    async def test_enhanced_profile_change_detection_prompts(self, agent):
         """Test that the system prompt includes enhanced change detection."""
         # This test verifies the prompt includes the new life change detection capabilities
         sample_state = OnboardingState(
@@ -807,7 +813,7 @@ class TestOnboardingAgentGraphitiIntegration:
             mock_llm.with_structured_output.return_value = mock_structured_llm
             mock_structured_llm.invoke.return_value = mock_response
             
-            result = agent._call_llm(sample_state, config)
+            result = await agent._call_llm(sample_state, config)
             
             # Verify the structured LLM was called (which means prompt was built)
             mock_structured_llm.invoke.assert_called_once()
@@ -895,7 +901,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         }
     
     @patch('app.ai.onboarding.llm_factory')
-    def test_job_loss_scenario(self, mock_llm_factory, agent, config):
+    async def test_job_loss_scenario(self, mock_llm_factory, agent, config):
         """Test handling of job loss scenario."""
         # User with existing job data reports job loss
         state = OnboardingState(
@@ -919,7 +925,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_structured_llm.invoke.return_value = mock_response
         
-        result = agent._call_llm(state, config)
+        result = await agent._call_llm(state, config)
         
         # Should detect the job loss and update employment status
         assert result["collected_data"]["occupation_type"] == "unemployed"
@@ -930,7 +936,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         assert "employment status" in ai_message.content
     
     @patch('app.ai.onboarding.llm_factory')
-    def test_family_income_change_scenario(self, mock_llm_factory, agent, config):
+    async def test_family_income_change_scenario(self, mock_llm_factory, agent, config):
         """Test handling of family income change scenario."""
         state = OnboardingState(
             messages=[HumanMessage(content="My wife is taking a leave of absence starting in October")],
@@ -956,7 +962,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_structured_llm.invoke.return_value = mock_response
         
-        result = agent._call_llm(state, config)
+        result = await agent._call_llm(state, config)
         
         # Should detect family income structure change
         expected_data = {
@@ -968,7 +974,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         assert result["needs_database_update"] is True
     
     @patch('app.ai.onboarding.llm_factory') 
-    def test_no_life_changes_scenario(self, mock_llm_factory, agent, config):
+    async def test_no_life_changes_scenario(self, mock_llm_factory, agent, config):
         """Test that casual conversation doesn't trigger unnecessary updates."""
         state = OnboardingState(
             messages=[HumanMessage(content="How should I invest my savings?")],
@@ -988,7 +994,7 @@ class TestOnboardingAgentLifeChangeScenarios:
         mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_structured_llm.invoke.return_value = mock_response
         
-        result = agent._call_llm(state, config)
+        result = await agent._call_llm(state, config)
         
         # Should not extract new data or trigger update for general questions
         assert result["collected_data"] == {"age_range": "36_45", "occupation_type": "engineer"}

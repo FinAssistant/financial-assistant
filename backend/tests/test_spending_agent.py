@@ -495,7 +495,7 @@ class TestSpendingAgent:
             assert result["transactions"][1]["amount"] == 120.00
 
             # Verify PlaidMCPClient call_tool was called with correct parameters
-            self.agent._plaid_client.call_tool.assert_called_once_with("test_user_mcp", "get_all_transactions", user_id="test_user_mcp")
+            self.agent._plaid_client.call_tool.assert_called_once_with("test_user_mcp", "get_all_transactions")
 
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mocked_mcp_no_tool(self):
@@ -519,7 +519,7 @@ class TestSpendingAgent:
             assert result["transactions"] == []
 
             # Verify PlaidMCPClient call_tool was called with correct parameters
-            self.agent._plaid_client.call_tool.assert_called_once_with("test_user_no_tool", "get_all_transactions", user_id="test_user_no_tool")
+            self.agent._plaid_client.call_tool.assert_called_once_with("test_user_no_tool", "get_all_transactions")
 
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mcp_unavailable(self):
