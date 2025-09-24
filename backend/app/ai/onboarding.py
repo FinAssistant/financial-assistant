@@ -598,9 +598,6 @@ class OnboardingAgent:
         else:
             return "check_completion"  # Mark as complete
 
-    def _route_after_processing(self, state: OnboardingState) -> str:
-        """Route after LLM processing or account connection handling."""
-        return "check_completion"
 
     def _route_completion(self, state: OnboardingState) -> str:
         """Route based on completion status."""
@@ -657,11 +654,8 @@ class OnboardingAgent:
             # Route after LLM - always go to completion check first
             onb_builder.add_edge("call_llm", "check_completion")
 
-            onb_builder.add_conditional_edges(
-                "handle_account_connection",
-                self._route_after_processing,
-                {"check_completion": "check_completion"}
-            )
+            # After handling account connection, always check completion
+            onb_builder.add_edge("handle_account_connection", "check_completion")
 
             # After guide_account_connection, route to final completion check
             onb_builder.add_conditional_edges(
