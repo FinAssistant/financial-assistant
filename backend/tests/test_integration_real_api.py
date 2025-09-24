@@ -211,16 +211,17 @@ class TestRealLLMService:
 class TestRealConversationFlow:
     """Integration tests for full conversation flow with real API."""
     
-    def test_real_conversation_greeting(self):
+    @pytest.mark.asyncio
+    async def test_real_conversation_greeting(self):
         """Test real conversation with greeting."""
         # Temporarily disable mocking for this test by patching the factory
         with pytest.MonkeyPatch().context() as m:
             # Remove any existing patches
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
-            
-            result = config.invoke_conversation(
+
+            result = await config.invoke_conversation(
                 user_message="Hello there!",
                 user_id="real_test_user",
                 session_id="real_test_session"
@@ -231,14 +232,15 @@ class TestRealConversationFlow:
             assert len(result["content"]) > 10  # Real response should be substantial
             assert any(greet in result["content"].lower() for greet in ["hello", "hi", "hey", "greetings"])
     
-    def test_real_conversation_financial_question(self):
+    @pytest.mark.asyncio
+    async def test_real_conversation_financial_question(self):
         """Test real conversation with financial question."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
-            
-            result = config.invoke_conversation(
+
+            result = await config.invoke_conversation(
                 user_message="How should I invest my money?",
                 user_id="real_test_user_2",
                 session_id="real_test_session_2"
@@ -251,27 +253,28 @@ class TestRealConversationFlow:
             content_lower = result["content"].lower()
             assert any(word in content_lower for word in ["profile", "age", "occupation", "about", "share", "tell", "help", "information"])
     
-    def test_real_small_talk_agent(self):
+    @pytest.mark.asyncio
+    async def test_real_small_talk_agent(self):
         """Test real small talk agent with API."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
-            
+
             # Test small talk node directly
             from app.ai.orchestrator_agent import GlobalState
             from langchain_core.messages import HumanMessage
-            
+
             state = GlobalState()
             state.messages = [HumanMessage(content="How's your day going?")]
-            
+
             test_config = {
                 "configurable": {
                     "user_id": "real_test_user_3",
                     "thread_id": "real_test_thread"
                 }
             }
-            
+
             result = config._small_talk_node(state, test_config)
             
             assert "messages" in result
@@ -280,13 +283,14 @@ class TestRealConversationFlow:
             assert len(response.content) > 10  # Should be a real response
             assert response.additional_kwargs.get("agent") == "small_talk"
     
-    def test_real_streaming_conversation(self):
+    @pytest.mark.asyncio
+    async def test_real_streaming_conversation(self):
         """Test real streaming conversation."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
-            
+
             chunks = []
             for chunk in config.stream_conversation(
                 user_message="Hello!",
@@ -305,21 +309,22 @@ class TestRealConversationFlow:
 class TestRealOnboardingDatabase:
     """Test real onboarding database updates with OpenAI API."""
     
-    def test_onboarding_saves_profile_to_database(self, clean_database):
+    @pytest.mark.asyncio
+    async def test_onboarding_saves_profile_to_database(self, clean_database):
         """Test that onboarding properly saves profile data to database."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
             user_id = "database_test_user"
             session_id = "database_test_session"
-            
+
             print("\n--- Database Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
-            
+
             # Step 1: Start onboarding
-            result1 = config.invoke_conversation(
+            result1 = await config.invoke_conversation(
                 user_message="I need financial advice. Can you help me?",
                 user_id=user_id,
                 session_id=session_id
@@ -328,11 +333,11 @@ class TestRealOnboardingDatabase:
             assert result1["agent"] == "onboarding"
             
             # Step 2: Provide comprehensive profile data
-            profile_data = """I'm 30 years old (26-35 age range), early career professional working as a nurse. 
-            I live in Florida with moderate cost of living. I'm single with no dependents, never married. 
+            profile_data = """I'm 30 years old (26-35 age range), early career professional working as a nurse.
+            I live in Florida with moderate cost of living. I'm single with no dependents, never married.
             No children, no caregiving responsibilities. My family structure is single with no dependents."""
-            
-            result2 = config.invoke_conversation(
+
+            result2 = await config.invoke_conversation(
                 user_message=profile_data,
                 user_id=user_id,
                 session_id=session_id
@@ -343,8 +348,8 @@ class TestRealOnboardingDatabase:
             
             # Step 3: Complete profile if needed
             completion = "Yes, that's all correct. I'm ready for financial guidance now."
-            
-            result3 = config.invoke_conversation(
+
+            result3 = await config.invoke_conversation(
                 user_message=completion,
                 user_id=user_id,
                 session_id=session_id
@@ -374,7 +379,7 @@ class TestRealOnboardingDatabase:
                 print("User not found in main users table - checking if profile completion was recorded elsewhere")
                 # The fact that we can route to other agents means completion was recorded somewhere
                 # Let's test by asking a financial question
-                test_result = config.invoke_conversation(
+                test_result = await config.invoke_conversation(
                     user_message="What investment options do you recommend?",
                     user_id=user_id,
                     session_id=session_id
@@ -384,7 +389,8 @@ class TestRealOnboardingDatabase:
             
             print("✅ Database verification passed!")
 
-    def test_profile_context_in_next_agent_prompt(self, clean_database):
+    @pytest.mark.asyncio
+    async def test_profile_context_in_next_agent_prompt(self, clean_database):
         """Test that after onboarding completes, the profile context is included in next agent's system prompt."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
@@ -398,7 +404,7 @@ class TestRealOnboardingDatabase:
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
 
             # Step 1: Complete onboarding
-            result1 = config.invoke_conversation(
+            result1 = await config.invoke_conversation(
                 user_message="I need financial advice. Can you help me?",
                 user_id=user_id,
                 session_id=session_id
@@ -410,7 +416,7 @@ class TestRealOnboardingDatabase:
             I live in New York with high cost of living. I'm married with 2 children.
             No elderly parent caregiving responsibilities."""
 
-            result2 = config.invoke_conversation(
+            result2 = await config.invoke_conversation(
                 user_message=profile_data,
                 user_id=user_id,
                 session_id=session_id
@@ -418,7 +424,7 @@ class TestRealOnboardingDatabase:
             print(f"Onboarding result: {result2['agent']} - {result2['content'][:100]}...")
 
             # Step 3: Ask a financial question that should route to another agent
-            result3 = config.invoke_conversation(
+            result3 = await config.invoke_conversation(
                 user_message="I want to start investing in index funds. What should I consider?",
                 user_id=user_id,
                 session_id=session_id
@@ -498,21 +504,22 @@ class TestRealOnboardingDatabase:
 class TestRealOnboardingComplete:
     """Test real onboarding completion flow with OpenAI API."""
     
-    def test_complete_onboarding_then_route_to_investment(self, clean_database):
+    @pytest.mark.asyncio
+    async def test_complete_onboarding_then_route_to_investment(self, clean_database):
         """Test full onboarding completion then routing to investment agent."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
             user_id = "complete_onboard_test_user"
             session_id = "complete_onboard_session"
-            
+
             print("\n--- Investment Test Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
-            
-            # Step 1: Start onboarding with investment question 
-            result1 = config.invoke_conversation(
+
+            # Step 1: Start onboarding with investment question
+            result1 = await config.invoke_conversation(
                 user_message="I want to start investing my money. What should I do?",
                 user_id=user_id,
                 session_id=session_id
@@ -530,7 +537,7 @@ class TestRealOnboardingComplete:
             a high cost of living area. I'm single with no dependents and no caregiving responsibilities. 
             I'm not married and have a domestic partnership status."""
             
-            result2 = config.invoke_conversation(
+            result2 = await config.invoke_conversation(
                 user_message=comprehensive_response,
                 user_id=user_id,
                 session_id=session_id
@@ -543,7 +550,7 @@ class TestRealOnboardingComplete:
             follow_up_response = """I have no children, so 0 dependents total. I live alone with no family 
             structure complexities - just single with no dependents. My occupation is in tech/engineering field."""
             
-            result3 = config.invoke_conversation(
+            result3 = await config.invoke_conversation(
                 user_message=follow_up_response,
                 user_id=user_id,
                 session_id=session_id
@@ -555,7 +562,7 @@ class TestRealOnboardingComplete:
             # Step 4: Confirm completion or provide final details
             confirmation_response = """Yes, that all sounds right. I'm ready to get investment advice now."""
             
-            result4 = config.invoke_conversation(
+            result4 = await config.invoke_conversation(
                 user_message=confirmation_response,
                 user_id=user_id,
                 session_id=session_id
@@ -566,7 +573,7 @@ class TestRealOnboardingComplete:
             assert result4["agent"] in ["onboarding", "investment"]
             
             # Step 5: Now ask investment question again - should route to investment agent
-            final_result = config.invoke_conversation(
+            final_result = await config.invoke_conversation(
                 user_message="Now that my profile is complete, what investment strategy do you recommend?",
                 user_id=user_id,
                 session_id=session_id
@@ -602,21 +609,22 @@ class TestRealOnboardingComplete:
             if user_data:
                 assert user_data.get("profile_complete") is True, "User should be marked as profile complete"
     
-    def test_complete_onboarding_then_route_to_spending(self, clean_database):
+    @pytest.mark.asyncio
+    async def test_complete_onboarding_then_route_to_spending(self, clean_database):
         """Test full onboarding completion then routing to spending agent."""
         with pytest.MonkeyPatch().context() as m:
             m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
-            
+
             config = get_orchestrator_agent()
             user_id = "complete_onboard_spending_user"
             session_id = "complete_onboard_spending_session"
-            
+
             print("\n--- Spending Test Setup via Fixture ---")
             print(f"Available users: {clean_database}")
             assert user_id in clean_database, f"Expected user {user_id} to be created by fixture"
-            
+
             # Step 1: Start with budgeting question
-            result1 = config.invoke_conversation(
+            result1 = await config.invoke_conversation(
                 user_message="I need help with my budget and tracking expenses.",
                 user_id=user_id,
                 session_id=session_id
@@ -631,7 +639,7 @@ class TestRealOnboardingComplete:
             have 2 children so that's 2 total dependents. No caregiving responsibilities for aging parents. 
             My marital status is married. I think that covers everything for my profile - I'm ready for budgeting help now."""
             
-            result2 = config.invoke_conversation(
+            result2 = await config.invoke_conversation(
                 user_message=complete_profile,
                 user_id=user_id,
                 session_id=session_id
@@ -644,7 +652,7 @@ class TestRealOnboardingComplete:
             assert result2["agent"] in ["onboarding", "spending"]
             
             # Step 3: Ask spending question - should route to spending agent
-            spending_result = config.invoke_conversation(
+            spending_result = await config.invoke_conversation(
                 user_message="Perfect! Now help me create a family budget for our household expenses.",
                 user_id=user_id,
                 session_id=session_id
@@ -870,25 +878,26 @@ class TestRealMultiProviderConversationFlow:
         (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
         (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
     ])
-    def test_real_provider_conversation_greeting(self, provider, env_key):
+    @pytest.mark.asyncio
+    async def test_real_provider_conversation_greeting(self, provider, env_key):
         """Test real conversation greeting for each provider."""
         if not os.getenv(env_key):
             pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
-        
+
         # Temporarily override the default provider for this test
         original_provider = os.getenv('DEFAULT_LLM_PROVIDER')
-        
+
         try:
             # Set the provider for this test
             os.environ['DEFAULT_LLM_PROVIDER'] = provider.value
-            
+
             with pytest.MonkeyPatch().context() as m:
                 # Remove any existing patches
                 m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
                 
                 config = get_orchestrator_agent()
-                
-                result = config.invoke_conversation(
+
+                result = await config.invoke_conversation(
                     user_message="Hello there!",
                     user_id=f"real_test_user_{provider.value}",
                     session_id=f"real_test_session_{provider.value}"
@@ -913,24 +922,25 @@ class TestRealMultiProviderConversationFlow:
         (LLMProvider.ANTHROPIC, "ANTHROPIC_API_KEY"),
         (LLMProvider.GOOGLE, "GOOGLE_API_KEY"),
     ])
-    def test_real_provider_financial_question(self, provider, env_key):
+    @pytest.mark.asyncio
+    async def test_real_provider_financial_question(self, provider, env_key):
         """Test real conversation with financial question for each provider."""
         if not os.getenv(env_key):
             pytest.skip(f"Skipping {provider.value} test - {env_key} not set")
-        
+
         # Temporarily override the default provider for this test
         original_provider = os.getenv('DEFAULT_LLM_PROVIDER')
-        
+
         try:
             # Set the provider for this test
             os.environ['DEFAULT_LLM_PROVIDER'] = provider.value
-            
+
             with pytest.MonkeyPatch().context() as m:
                 m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
                 
                 config = get_orchestrator_agent()
-                
-                result = config.invoke_conversation(
+
+                result = await config.invoke_conversation(
                     user_message="How should I invest my money?",
                     user_id=f"real_test_user_2_{provider.value}",
                     session_id=f"real_test_session_2_{provider.value}"

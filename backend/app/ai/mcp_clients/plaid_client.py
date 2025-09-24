@@ -170,18 +170,17 @@ class PlaidMCPClient:
             Dict containing the tool result or error information
 
         Examples:
-            # Create link token
+            # Create link token (tool needs user_id parameter)
             result = await client.call_tool(user_id, "create_link_token", user_id=user_id)
 
-            # Exchange public token
-            result = await client.call_tool(user_id, "exchange_public_token",
-                                          user_id=user_id, public_token=token)
+            # Exchange public token (no user_id needed - uses JWT auth)
+            result = await client.call_tool(user_id, "exchange_public_token", public_token=token)
 
-            # Get accounts
-            result = await client.call_tool(user_id, "get_accounts", user_id=user_id)
+            # Get accounts (no user_id needed - uses JWT auth)
+            result = await client.call_tool(user_id, "get_accounts")
 
-            # Get transactions
-            result = await client.call_tool(user_id, "get_all_transactions", user_id=user_id)
+            # Get transactions (no user_id needed - uses JWT auth)
+            result = await client.call_tool(user_id, "get_all_transactions")
         """
         try:
             tool = await self.get_tool_by_name(user_id, tool_name)

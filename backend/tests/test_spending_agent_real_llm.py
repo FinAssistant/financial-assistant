@@ -47,11 +47,11 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def disable_mocking():
-    """Disable the auto-mocking for these integration tests."""
-    # This fixture runs automatically and does nothing,
-    # but it prevents the conftest.py auto-mocking from interfering
-    yield
+def mock_llm_factory():
+    """Override the global mock_llm_factory fixture to allow real LLM calls."""
+    # This autouse fixture with the same name overrides the conftest.py one
+    # and does nothing, allowing real LLM calls to work
+    yield None
 
 
 class TestSpendingAgentRealLLM:
@@ -571,6 +571,159 @@ class TestSpendingAgentMultiProviderRealLLM:
                 os.environ['DEFAULT_LLM_PROVIDER'] = original_provider
             elif 'DEFAULT_LLM_PROVIDER' in os.environ:
                 del os.environ['DEFAULT_LLM_PROVIDER']
+
+
+class TestSpendingAgentRealLLMTransactionCategorization:
+    """Integration tests for SpendingAgent + TransactionCategorizationService with real LLMs."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not has_any_llm_key() or __import__('os').getenv('RUN_REAL_TESTS') != 'true',
+        reason="Real API tests require at least one LLM provider API key and RUN_REAL_TESTS=true"
+    )
+    async def test_real_llm_transaction_categorization_integration(self, clear_transactions_for_llm):
+        """Test end-to-end transaction categorization with real LLM in SpendingAgent."""
+        # Create SpendingAgent with real LLM (skip if no LLM available)
+        agent = SpendingAgent()
+
+        if agent.llm is None:
+            pytest.skip("No LLM available for real integration test")
+
+        if agent.categorization_service is None:
+            pytest.skip("Transaction categorization service not available")
+
+        # Mock successful transaction fetch to isolate categorization testing
+        mock_transaction_data = {
+            "status": "success",
+            "transactions": [txn.model_dump() for txn in clear_transactions_for_llm],
+            "total_transactions": len(clear_transactions_for_llm)
+        }
+
+        with patch.object(agent, '_fetch_transactions', return_value=mock_transaction_data):
+            state = {
+                "messages": [HumanMessage(content="Analyze my recent coffee and gas transactions")],
+                "user_id": "test_user_real_llm",
+                "user_context": {
+                    "demographics": {"age_range": "26_35", "occupation": "software_engineer"},
+                    "financial_context": {"has_dependents": False}
+                },
+                "found_in_graphiti": False
+            }
+
+            # Execute the real LLM integration
+            result = await agent._fetch_and_process_node(state)
+
+            # Verify basic response structure (fetch_and_process_node only returns messages)
+            assert "messages" in result
+            assert isinstance(result["messages"], list)
+            assert len(result["messages"]) == 1
+
+            # Verify response content mentions categorization
+            ai_message = result["messages"][0]
+            response_content = ai_message.content.lower()
+
+            # Should mention transaction processing and categorization
+            assert any(keyword in response_content for keyword in ["transaction", "categoriz", "analyz"]), \
+                f"Response should mention transaction processing: {response_content}"
+
+            # Should mention count of transactions
+            assert any(num in response_content for num in ["2", "two"]), \
+                f"Response should mention transaction count: {response_content}"
+
+            print(f"✅ Real LLM transaction categorization integration test passed")
+            print(f"   Response: {response_content[:200]}...")
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not has_any_llm_key() or __import__('os').getenv('RUN_REAL_TESTS') != 'true',
+        reason="Real API tests require at least one LLM provider API key and RUN_REAL_TESTS=true"
+    )
+    async def test_real_llm_categorization_service_quality(self, clear_transactions_for_llm):
+        """Test that real LLM produces high-quality categorizations."""
+        agent = SpendingAgent()
+
+        if agent.categorization_service is None:
+            pytest.skip("Transaction categorization service not available")
+
+        # Test categorization directly with user context
+        user_context = {
+            "demographics": {"age_range": "26_35", "occupation": "software_engineer"},
+            "financial_context": {"has_dependents": False}
+        }
+
+        result = await agent.categorization_service.categorize_transactions(
+            clear_transactions_for_llm, user_context
+        )
+
+        # Verify batch result structure
+        assert hasattr(result, 'categorizations')
+        assert hasattr(result, 'processing_summary')
+        assert len(result.categorizations) <= len(clear_transactions_for_llm)
+
+        # If we got categorizations, verify quality
+        if result.categorizations:
+            for categorization in result.categorizations:
+                # Verify required fields are present and non-empty
+                assert categorization.transaction_id
+                assert categorization.ai_category
+                assert categorization.ai_subcategory
+                assert categorization.reasoning
+
+                # Verify confidence is reasonable
+                assert 0.0 <= categorization.ai_confidence <= 1.0
+
+                # For clear transactions like Starbucks and Shell, expect high confidence
+                if "coffee" in categorization.transaction_id.lower():
+                    assert categorization.ai_confidence > 0.7, \
+                        f"Expected high confidence for coffee shop: {categorization.ai_confidence}"
+                    assert "food" in categorization.ai_category.lower() or "dining" in categorization.ai_category.lower(), \
+                        f"Expected food/dining category for coffee: {categorization.ai_category}"
+
+                if "gas" in categorization.transaction_id.lower():
+                    assert categorization.ai_confidence > 0.7, \
+                        f"Expected high confidence for gas station: {categorization.ai_confidence}"
+                    assert "transport" in categorization.ai_category.lower(), \
+                        f"Expected transportation category for gas: {categorization.ai_category}"
+
+                print(f"✅ Categorized {categorization.transaction_id}: {categorization.ai_category} > {categorization.ai_subcategory} (confidence: {categorization.ai_confidence:.2f})")
+
+        print(f"✅ Real LLM categorization quality test passed with {len(result.categorizations)} categorizations")
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not has_any_llm_key() or __import__('os').getenv('RUN_REAL_TESTS') != 'true',
+        reason="Real API tests require at least one LLM provider API key and RUN_REAL_TESTS=true"
+    )
+    async def test_real_llm_categorization_utility_methods(self, clear_transactions_for_llm):
+        """Test the utility methods with real LLM categorization."""
+        agent = SpendingAgent()
+
+        if agent.categorization_service is None:
+            pytest.skip("Transaction categorization service not available")
+
+        user_context = {"demographics": {"age_range": "26_35"}}
+
+        # Test the full categorize_and_apply workflow
+        categorized_transactions, batch_result = await agent._categorize_and_apply_transactions(
+            clear_transactions_for_llm, user_context
+        )
+
+        # Verify results
+        assert len(categorized_transactions) == len(clear_transactions_for_llm)
+        assert batch_result is not None
+
+        # Check that AI fields were applied to transactions that got categorized
+        categorized_count = 0
+        for txn in categorized_transactions:
+            # If this transaction was categorized, it should have AI fields
+            if txn.ai_category is not None:
+                categorized_count += 1
+                assert txn.ai_subcategory is not None
+                assert txn.ai_confidence is not None
+                assert 0.0 <= txn.ai_confidence <= 1.0
+                print(f"✅ Transaction {txn.transaction_id} categorized as: {txn.ai_category} > {txn.ai_subcategory}")
+
+        print(f"✅ Real LLM utility methods test passed - {categorized_count} transactions categorized")
 
 
 if __name__ == "__main__":

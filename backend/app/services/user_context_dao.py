@@ -115,9 +115,16 @@ class UserContextDAOSync:
     def _run_async(self, coro):
         """Run async function in sync context with proper thread handling."""
         try:
-            # Try to get current event loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            # Try to get current running loop first (avoids deprecation warning)
+            try:
+                loop = asyncio.get_running_loop()
+                is_running = True
+            except RuntimeError:
+                # No running loop, try to get the event loop for the current thread
+                loop = asyncio.get_event_loop()
+                is_running = loop.is_running()
+
+            if is_running:
                 # We're in an async context - use thread pool
                 def run_in_new_loop():
                     new_loop = asyncio.new_event_loop()

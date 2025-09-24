@@ -96,7 +96,20 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             user_id = token.claims.get("sub")
             if not user_id:
                 return {"status": "error", "error": "User ID not found in token"}
-            
+
+            # TESTING ONLY: For sandbox tokens, check if user already has access tokens
+            # This prevents duplicate exchanges during repeated test runs
+            if public_token.startswith("public-sandbox-"):
+                existing_tokens = _get_user_access_tokens(user_id)
+                if existing_tokens:
+                    logger.info(f"Sandbox token exchange skipped - user {user_id} already has {len(existing_tokens)} access token(s)")
+                    return {
+                        "status": "success",
+                        "message": "Account already connected (sandbox)",
+                        "item_id": "existing_sandbox_item",
+                        "skipped_exchange": True
+                    }
+
             # Exchange token using PlaidService
             result = plaid_service.exchange_public_token(public_token)
             

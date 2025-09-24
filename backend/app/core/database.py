@@ -459,8 +459,10 @@ class AsyncUserStorageWrapper:
     def _get_or_create_loop(self):
         """Get current event loop or create a new one."""
         try:
-            return asyncio.get_event_loop()
+            # Use asyncio.get_running_loop() to avoid deprecation warning
+            return asyncio.get_running_loop()
         except RuntimeError:
+            # No running loop, create a new one instead of using deprecated get_event_loop()
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop
