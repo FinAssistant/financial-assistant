@@ -548,3 +548,80 @@ class TestRealOnboardingAgent:
 
         print("✓ Life change detection works")
         print("✅ Life change test passed")
+
+    @patch('app.ai.onboarding.user_storage')
+    @patch('app.ai.onboarding.get_graphiti_client')
+    async def test_real_agent_guide_account_connection(self, mock_graphiti, mock_storage):
+        """Test that the _guide_account_connection method returns proper guidance message."""
+
+        # Setup mocks
+        mock_storage.get_user_by_id.return_value = {"id": "test_user"}
+        mock_storage.get_personal_context.return_value = {}
+        mock_graphiti_client = AsyncMock()
+        mock_graphiti.return_value = mock_graphiti_client
+
+        print("\n🧪 Testing _guide_account_connection method")
+
+        agent = OnboardingAgent()
+
+        # Create state for account connection guidance
+        state = OnboardingState(
+            messages=[]
+        )
+
+        config = {"configurable": {"user_id": "test_user_guide", "thread_id": "test_thread"}}
+
+        try:
+            # Test the _guide_account_connection method directly
+            result = await agent._guide_account_connection(state, config)
+
+            print(f"\n=== GUIDANCE RESULT ===")
+            print(f"Keys returned: {list(result.keys())}")
+            print(f"Messages count: {len(result.get('messages', []))}")
+
+            # Verify result structure
+            assert "messages" in result, "Result should contain messages"
+            messages = result["messages"]
+            assert len(messages) >= 1, "Should have at least one message"
+
+            # Track what we find
+            guidance_message_found = False
+            tool_response_found = False
+
+            for i, msg in enumerate(messages):
+                print(f"\n--- Message {i} ---")
+                print(f"Type: {type(msg).__name__}")
+                print(f"Content length: {len(msg.content) if hasattr(msg, 'content') else 'N/A'}")
+                print(f"Content preview: {msg.content[:200] if hasattr(msg, 'content') else 'N/A'}...")
+                if hasattr(msg, 'additional_kwargs'):
+                    print(f"Additional kwargs: {msg.additional_kwargs}")
+
+                # Verify message properties
+                if hasattr(msg, 'content'):
+                    assert len(msg.content) > 0, f"Message {i} should have non-empty content"
+
+                # Check if this is the guidance message (AIMessage from onboarding agent)
+                if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs.get("agent") == "onboarding":
+                    print(f"✓ Found guidance message from onboarding agent")
+                    guidance_message_found = True
+                    # Verify it mentions account connection
+                    content_lower = msg.content.lower()
+                    assert any(phrase in content_lower for phrase in ["account", "link", "bank", "connect"]), \
+                        f"Guidance message should mention account connection, got: {msg.content}"
+
+                # Check if this is a tool response (contains link_token)
+                elif hasattr(msg, 'content') and "link_token" in msg.content:
+                    print(f"✓ Found tool response message")
+                    tool_response_found = True
+
+            # Verify we found both expected message types
+            assert guidance_message_found, "Should have found a guidance message with agent='onboarding'"
+            assert tool_response_found, "Should have found a tool response with link_token"
+
+            print("✅ _guide_account_connection test passed")
+
+        except Exception as e:
+            print(f"❌ Test failed with error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
