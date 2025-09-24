@@ -164,7 +164,7 @@ class PlaidService:
             return {"status": "error", "error": "Plaid not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET."}
         
         if products is None:
-            products = ["transactions", "accounts", "balances"]
+            products = ["identity", "transactions", "liabilities", "investments"]
         
         try:
             # Convert product strings to Plaid Products enum
@@ -172,10 +172,14 @@ class PlaidService:
             for product in products:
                 if product == "transactions":
                     plaid_products.append(Products("transactions"))
-                elif product == "accounts":
-                    plaid_products.append(Products("accounts"))
-                elif product == "balances":
-                    plaid_products.append(Products("balances"))
+                elif product == "auth":
+                    plaid_products.append(Products("auth"))
+                elif product == "identity":
+                    plaid_products.append(Products("identity"))
+                elif product == "assets":
+                    plaid_products.append(Products("assets"))
+                elif product == "liabilities":
+                    plaid_products.append(Products("liabilities"))
             
             # Create link token request
             request = LinkTokenCreateRequest(

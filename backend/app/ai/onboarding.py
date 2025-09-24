@@ -132,24 +132,32 @@ class OnboardingAgent:
             try:
                 self.logger.info(f"Creating Plaid link token for user: {user_id}")
 
-                # Call the plaid_create_link_token MCP tool directly
+                # Call the create_link_token MCP tool directly
                 result = await self._plaid_client.call_tool(
-                    user_id=user_id,
-                    tool_name="plaid_create_link_token"
+                    user_id,
+                    "create_link_token",
+                    user_id=user_id  # Tool parameter
                 )
 
-                if result.get("status") == "error":
-                    error = result.get("error", "Unknown error")
+                # Parse the JSON response if needed (same pattern as spending agent)
+                if isinstance(result, str):
+                    import json
+                    parsed_result = json.loads(result)
+                else:
+                    parsed_result = result
+
+                if parsed_result.get("status") == "error":
+                    error = parsed_result.get("error", "Unknown error")
                     self.logger.error(f"Failed to create Plaid link token for user {user_id}: {error}")
                     return f"Unable to create link token: {error}. Please try again or contact support."
 
                 # Extract and return link token
-                link_token = result.get("link_token")
+                link_token = parsed_result.get("link_token")
                 if link_token:
                     self.logger.info(f"Successfully created Plaid link token for user: {user_id}")
                     return f"Created Plaid Link token: {link_token}. Please use this token to connect your bank account through Plaid Link."
                 else:
-                    self.logger.error(f"No link token in response for user {user_id}: {result}")
+                    self.logger.error(f"No link token in response for user {user_id}: {parsed_result}")
                     return "Link token not found in response. Please try again or contact support."
 
             except Exception as e:
@@ -525,7 +533,7 @@ class OnboardingAgent:
             self.logger.info("Routing to read database for normal processing")
             return "read_database"
 
-    def _guide_account_connection(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
+    async def _guide_account_connection(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """
         PROACTIVELY initiate account connection process using Plaid tool.
 
@@ -561,11 +569,47 @@ class OnboardingAgent:
 
             self.logger.info(f"Invoking LLM with Plaid tool for user {user_id}")
             response = tool_llm.invoke(messages)
-            self.logger.info(f"LLM tool response received for user {user_id}")
+            self.logger.info(f"LLM tool response received for user {user_id}: {response}")
 
-            return {
-                "messages": [AIMessage(content=guidance_message), response]
-            }
+            # Check if LLM made tool calls that need to be executed
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                self.logger.info(f"LLM made {len(response.tool_calls)} tool calls, executing them")
+
+                # Execute tool calls and collect results
+                tool_messages = []
+                for tool_call in response.tool_calls:
+                    try:
+                        # Execute the tool call (async)
+                        tool_result = await plaid_tool.ainvoke(tool_call["args"])
+                        self.logger.info(f"Tool {tool_call['name']} executed successfully")
+
+                        # Create tool message with result
+                        from langchain_core.messages import ToolMessage
+                        tool_message = ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_call["id"]
+                        )
+                        tool_messages.append(tool_message)
+
+                    except Exception as e:
+                        self.logger.error(f"Tool execution failed: {str(e)}")
+                        # Create error tool message
+                        from langchain_core.messages import ToolMessage
+                        error_message = ToolMessage(
+                            content=f"Tool execution failed: {str(e)}",
+                            tool_call_id=tool_call["id"]
+                        )
+                        tool_messages.append(error_message)
+
+                # Return all messages including tool results
+                return {
+                    "messages": [AIMessage(content=guidance_message), response] + tool_messages
+                }
+            else:
+                # No tool calls, return normal response
+                return {
+                    "messages": [AIMessage(content=guidance_message), response]
+                }
 
         except Exception as e:
             self.logger.error(f"Error in guide_account_connection for user {user_id}: {str(e)}")

@@ -157,12 +157,12 @@ class PlaidMCPClient:
         logger.warning(f"Plaid MCP tool '{tool_name}' not found for user: {user_id}")
         return None
 
-    async def call_tool(self, user_id: str, tool_name: str, **kwargs) -> Dict[str, Any]:
+    async def call_tool(self, auth_user_id: str, tool_name: str, **kwargs) -> Dict[str, Any]:
         """
         Generic method to call any Plaid MCP tool with the provided arguments.
 
         Args:
-            user_id: Unique identifier for the user
+            auth_user_id: User ID for JWT authentication
             tool_name: Name of the tool to call
             **kwargs: Arguments to pass to the tool
 
@@ -171,19 +171,19 @@ class PlaidMCPClient:
 
         Examples:
             # Create link token (tool needs user_id parameter)
-            result = await client.call_tool(user_id, "create_link_token", user_id=user_id)
+            result = await client.call_tool(auth_user_id, "create_link_token", user_id=auth_user_id)
 
             # Exchange public token (no user_id needed - uses JWT auth)
-            result = await client.call_tool(user_id, "exchange_public_token", public_token=token)
+            result = await client.call_tool(auth_user_id, "exchange_public_token", public_token=token)
 
             # Get accounts (no user_id needed - uses JWT auth)
-            result = await client.call_tool(user_id, "get_accounts")
+            result = await client.call_tool(auth_user_id, "get_accounts")
 
             # Get transactions (no user_id needed - uses JWT auth)
-            result = await client.call_tool(user_id, "get_all_transactions")
+            result = await client.call_tool(auth_user_id, "get_all_transactions")
         """
         try:
-            tool = await self.get_tool_by_name(user_id, tool_name)
+            tool = await self.get_tool_by_name(auth_user_id, tool_name)
             if not tool:
                 return {
                     "status": "error",
@@ -196,11 +196,11 @@ class PlaidMCPClient:
             # TODO: Refactor to return consistent dict responses instead of strings
             # Currently tools may return strings that need JSON parsing by consumers
             # Should parse JSON here and always return dict for consistent API
-            logger.info(f"Called Plaid MCP tool '{tool_name}' for user: {user_id}")
+            logger.info(f"Called Plaid MCP tool '{tool_name}' for user: {auth_user_id}")
             return result
 
         except Exception as e:
-            logger.error(f"Error calling Plaid MCP tool '{tool_name}' for user {user_id}: {str(e)}")
+            logger.error(f"Error calling Plaid MCP tool '{tool_name}' for user {auth_user_id}: {str(e)}")
             return {
                 "status": "error",
                 "error": str(e)
