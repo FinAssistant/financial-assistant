@@ -16,7 +16,7 @@ class TestGlobalState:
         state = GlobalState()
         
         assert state.messages == []
-        assert state.connected_accounts is None
+        assert state.connected_account_ids == []
         assert state.profile_context is None
         assert state.profile_complete is False
     

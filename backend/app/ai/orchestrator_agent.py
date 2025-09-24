@@ -26,10 +26,10 @@ class GlobalState(BaseModel):
         description="Conversation messages with automatic LangGraph management"
     )
     
-    # Shared Data (lazy-loaded when needed)
-    connected_accounts: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        description="Basic connected account info (no real-time balances)"
+    # Shared Data (lightweight references for conversation context)
+    connected_account_ids: List[str] = Field(
+        default_factory=list,
+        description="List of connected account IDs for conversation context"
     )
     
     # Profile context (lazy-loaded and cached)
@@ -64,22 +64,21 @@ class GlobalState(BaseModel):
         Now takes user_id as parameter since it's not in state.
         """
         try:
-            # Fetch user data from SQLite
-            user_data = user_storage.get_user_by_id(user_id)
-            
-            if not user_data:
-                self.profile_context = "User profile not found."
-                self.profile_context_timestamp = datetime.now()
-                return
-            
-            if not user_data.get("profile_complete", False):
+            # Get structured personal context data (single source of truth for completion)
+            personal_context = user_storage.get_personal_context(user_id)
+
+            # Check completion status from PersonalContext.is_complete (not deprecated User.profile_complete)
+            is_complete = personal_context.get("is_complete", False) if personal_context else False
+
+            # Update GlobalState profile_complete to match authoritative source
+            self.profile_complete = is_complete
+
+            if not is_complete:
                 self.profile_context = "User has not completed their profile setup. Provide general financial guidance."
                 self.profile_context_timestamp = datetime.now()
                 return
             
-            # Get structured personal context data (new architecture)
-            personal_context = user_storage.get_personal_context(user_id)
-            
+            # Build context from PersonalContextModel (already fetched above)
             if personal_context:
                 # Build context from PersonalContextModel
                 context_parts = []
@@ -134,27 +133,55 @@ class GlobalState(BaseModel):
         if self.profile_context_timestamp is None:
             # No context built yet, will be built on next get_profile_context()
             return False
-        
+
         try:
-            # Get user's last updated timestamp from database
+            # Check PersonalContext updates (authoritative source for completion status)
+            personal_context = user_storage.get_personal_context(user_id)
+            if personal_context:
+                personal_updated_at = personal_context.get("updated_at")
+                if personal_updated_at and isinstance(personal_updated_at, datetime):
+                    if personal_updated_at > self.profile_context_timestamp:
+                        # PersonalContext has been updated, rebuild context
+                        self._build_profile_context(user_id)
+                        return True
+
+            # Also check user data for any other updates
             user_data = user_storage.get_user_by_id(user_id)
-            
-            if not user_data:
-                return False
-            
-            # Check if user data has been updated since we built the context
-            user_updated_at = user_data.get("updated_at")
-            if user_updated_at and isinstance(user_updated_at, datetime):
-                if user_updated_at > self.profile_context_timestamp:
-                    # Profile has been updated in database, rebuild context
-                    self._build_profile_context(user_id)
-                    return True
-            
+            if user_data:
+                user_updated_at = user_data.get("updated_at")
+                if user_updated_at and isinstance(user_updated_at, datetime):
+                    if user_updated_at > self.profile_context_timestamp:
+                        # User data has been updated, rebuild context
+                        self._build_profile_context(user_id)
+                        return True
+
             return False
-            
+
         except Exception:
             # If we can't check, assume no changes
             return False
+
+    def refresh_connected_accounts(self, user_id: str) -> None:
+        """
+        Refresh connected account IDs from database.
+        Called when accounts are added/removed to keep conversation context current.
+        """
+        try:
+            accounts = user_storage.get_accounts_for_conversation_context(user_id)
+            self.connected_account_ids = [account['id'] for account in accounts]
+        except Exception:
+            # Log error but don't break conversation flow
+            self.connected_account_ids = []
+
+    def has_connected_accounts(self, user_id: str) -> bool:
+        """
+        Check if user has any connected accounts.
+        Refreshes account list if empty to ensure current data.
+        """
+        if not self.connected_account_ids:
+            self.refresh_connected_accounts(user_id)
+        return len(self.connected_account_ids) > 0
+
 
 
 class OrchestratorAgent:
@@ -233,11 +260,11 @@ class OrchestratorAgent:
         Demonstrates proper LangGraph pattern with config usage.
         """
         # Get user context from config (standard LangGraph pattern)
-        # user_id = config["configurable"]["user_id"]
-        
-        # Get profile context (lazy loaded and cached)
-        # profile_context = state.get_profile_context(user_id)
-        
+        user_id = config["configurable"]["user_id"]
+
+        # Get profile context (lazy loaded and cached) - this also updates state.profile_complete
+        profile_context = state.get_profile_context(user_id)
+
         # Build consolidated system prompt with all context
         profile_status = "complete" if state.profile_complete else "incomplete"
         profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"

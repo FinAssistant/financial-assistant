@@ -30,6 +30,7 @@ class LifeStage(str, Enum):
     PEAK_EARNING = "peak_earning"
     PRE_RETIREMENT = "pre_retirement"
     RETIREMENT = "retirement"
+    BETWEEN_JOBS = "between_jobs"  # Career transition period
 
 class MaritalStatus(str, Enum):
     """Legal marital status - affects tax planning and joint account handling"""
@@ -258,12 +259,15 @@ class PersonalContextModel(SQLModel, table=True):
     # Caregiving responsibilities (affects available resources) - stored as JSON array
     caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)  # JSON array of CaregivingResponsibility values
     
+    # Completion tracking - single source of truth for profile completion
+    is_complete: bool = Field(default=False, description="True only after demographic data + Plaid account linking")
+
     # NOTE: Detailed financial info lives in Graphiti:
     # - Housing costs and moving plans
-    # - Joint vs separate finances  
+    # - Joint vs separate finances
     # - Life event planning and timelines
     # - Dependent support amounts and education costs
-    
+
     # Timestamps
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -288,6 +292,7 @@ class PersonalContextModel(SQLModel, table=True):
             'total_dependents_count': self.total_dependents_count,
             'children_count': self.children_count,
             'caregiving_responsibilities': self.caregiving_responsibilities,
+            'is_complete': self.is_complete,
             'created_at': self.created_at,
             'updated_at': self.updated_at
         }
@@ -331,3 +336,101 @@ class PersonalContextUpdate(SQLModel):
     total_dependents_count: Optional[int] = Field(default=None, ge=0)
     children_count: Optional[int] = Field(default=None, ge=0)
     caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)
+
+# Connected Account models for Plaid integration
+class ConnectedAccountModel(SQLModel, table=True):
+    """
+    Connected bank account information with encrypted Plaid tokens.
+    Stores essential account data for conversation context and secure token management.
+    """
+    __tablename__ = "connected_accounts"
+
+    id: int = Field(default=None, primary_key=True)  # Auto-incrementing integer primary key
+    user_id: str = Field(foreign_key="users.id", index=True)
+    plaid_account_id: str = Field(max_length=255, index=True)  # Plaid's account identifier
+    plaid_item_id: str = Field(max_length=255, index=True)  # Plaid's item identifier
+    encrypted_access_token: str = Field(max_length=1000)  # Encrypted Plaid access token
+
+    # Account display information
+    account_name: str = Field(max_length=255)  # Account nickname/name
+    account_type: str = Field(max_length=100)  # checking, savings, credit, etc.
+    account_subtype: Optional[str] = Field(default=None, max_length=100)  # More specific type
+    institution_name: str = Field(max_length=255)  # Bank/institution name
+    institution_id: str = Field(max_length=255)  # Plaid institution identifier
+
+    # Account status and metadata
+    is_active: bool = Field(default=True)  # Whether account is still connected
+    last_sync_at: Optional[datetime] = Field(default=None)  # Last successful data sync
+
+    # Timestamps
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True),
+                        onupdate=lambda: datetime.now(timezone.utc))
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for agent consumption (excludes sensitive data)."""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'plaid_account_id': self.plaid_account_id,
+            'plaid_item_id': self.plaid_item_id,
+            'account_name': self.account_name,
+            'account_type': self.account_type,
+            'account_subtype': self.account_subtype,
+            'institution_name': self.institution_name,
+            'institution_id': self.institution_id,
+            'is_active': self.is_active,
+            'last_sync_at': self.last_sync_at,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
+        }
+
+    def to_conversation_context(self) -> Dict[str, Any]:
+        """Convert to lightweight format for conversation context."""
+        return {
+            'id': self.id,
+            'account_name': self.account_name,
+            'account_type': self.account_type,
+            'institution_name': self.institution_name,
+            'is_active': self.is_active
+        }
+
+# API models for ConnectedAccount
+class ConnectedAccountRead(SQLModel):
+    """ConnectedAccount for API responses."""
+    id: str
+    user_id: str
+    plaid_account_id: str
+    plaid_item_id: str
+    account_name: str
+    account_type: str
+    account_subtype: Optional[str] = None
+    institution_name: str
+    institution_id: str
+    is_active: bool
+    last_sync_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+class ConnectedAccountCreate(SQLModel):
+    """ConnectedAccount for creation requests."""
+    plaid_account_id: str = Field(max_length=255)
+    plaid_item_id: str = Field(max_length=255)
+    encrypted_access_token: str = Field(max_length=1000)
+    account_name: str = Field(max_length=255)
+    account_type: str = Field(max_length=100)
+    account_subtype: Optional[str] = Field(default=None, max_length=100)
+    institution_name: str = Field(max_length=255)
+    institution_id: str = Field(max_length=255)
+
+class ConnectedAccountUpdate(SQLModel):
+    """ConnectedAccount for update requests."""
+    account_name: Optional[str] = Field(default=None, max_length=255)
+    is_active: Optional[bool] = None
+    last_sync_at: Optional[datetime] = None

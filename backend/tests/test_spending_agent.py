@@ -467,25 +467,20 @@ class TestSpendingAgent:
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mocked_mcp_success(self):
         """Test _fetch_transactions with mocked successful MCP client."""
-        # Mock successful MCP tool response
-        mock_tool = MagicMock()
-        mock_tool.name = "get_all_transactions"
-        mock_tool.ainvoke = AsyncMock(return_value={
+        # Mock successful call_tool response from shared PlaidMCPClient
+        mock_call_tool_result = {
             "status": "success",
             "transactions": [
                 {"id": "tx1", "amount": 25.50, "description": "Coffee Shop"},
                 {"id": "tx2", "amount": 120.00, "description": "Grocery Store"}
             ],
             "total_transactions": 2
-        })
-        
-        mock_mcp_client = AsyncMock()
-        mock_mcp_client.get_tools = AsyncMock(return_value=[mock_tool])
-        
-        # Patch the _get_mcp_client method
-        with patch.object(self.agent, '_get_mcp_client', return_value=mock_mcp_client):
+        }
+
+        # Patch the shared PlaidMCPClient's call_tool method
+        with patch.object(self.agent._plaid_client, 'call_tool', return_value=mock_call_tool_result):
             result = await self.agent._fetch_transactions("test_user_mcp")
-            
+
             # Validate successful response structure
             assert result["status"] == "success"
             assert "transactions" in result
@@ -498,41 +493,47 @@ class TestSpendingAgent:
             assert result["transactions"][0]["amount"] == 25.50
             assert result["transactions"][1]["id"] == "tx2"
             assert result["transactions"][1]["amount"] == 120.00
-            
-            # Verify MCP client methods were called
-            mock_mcp_client.get_tools.assert_called_once()
-            mock_tool.ainvoke.assert_called_once_with({})
+
+            # Verify PlaidMCPClient call_tool was called with correct parameters
+            self.agent._plaid_client.call_tool.assert_called_once_with("test_user_mcp", "get_all_transactions")
 
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mocked_mcp_no_tool(self):
         """Test _fetch_transactions when get_all_transactions tool is not available."""
-        # Mock MCP client with no matching tools
-        mock_other_tool = MagicMock()
-        mock_other_tool.name = "some_other_tool"
-        
-        mock_mcp_client = AsyncMock()
-        mock_mcp_client.get_tools = AsyncMock(return_value=[mock_other_tool])
-        
-        with patch.object(self.agent, '_get_mcp_client', return_value=mock_mcp_client):
+        # Mock call_tool response indicating tool missing (should return error, not mock fallback)
+        mock_call_tool_result = {
+            "status": "error",
+            "error": "get_all_transactions tool does not exist",
+            "transactions": []
+        }
+
+        # Patch the shared PlaidMCPClient's call_tool method
+        with patch.object(self.agent._plaid_client, 'call_tool', return_value=mock_call_tool_result):
             result = await self.agent._fetch_transactions("test_user_no_tool")
-            
+
             # Validate error response
             assert result["status"] == "error"
             assert "error" in result
-            assert "transactions" in result
-            assert result["error"] == "Transaction fetching tool not available"
+            assert "transactions" in result["error"]
+            assert "get_all_transactions tool does not exist" in result["error"]
             assert result["transactions"] == []
-            
-            # Verify MCP client was called
-            mock_mcp_client.get_tools.assert_called_once()
+
+            # Verify PlaidMCPClient call_tool was called with correct parameters
+            self.agent._plaid_client.call_tool.assert_called_once_with("test_user_no_tool", "get_all_transactions")
 
     @pytest.mark.asyncio
     async def test_fetch_transactions_with_mcp_unavailable(self):
         """Test _fetch_transactions when MCP is not available."""
-        # Mock _get_mcp_client to return None (MCP unavailable)
-        with patch.object(self.agent, '_get_mcp_client', return_value=None):
+        # Mock call_tool response indicating MCP unavailable
+        mock_call_tool_result = {
+            "status": "error",
+            "error": "MCP server not available"
+        }
+
+        # Patch the shared PlaidMCPClient's call_tool method
+        with patch.object(self.agent._plaid_client, 'call_tool', return_value=mock_call_tool_result):
             result = await self.agent._fetch_transactions("test_user_no_mcp")
-            
+
             # Validate mock fallback response
             assert result["status"] == "success"
             assert "transactions" in result
@@ -604,103 +605,6 @@ class TestSpendingAgent:
             assert "encountered an issue" in ai_message.content.lower()
             assert "connection timeout" in ai_message.content.lower()
 
-    @pytest.mark.asyncio
-    async def test_get_mcp_client_generates_real_jwt(self):
-        """Test that _get_mcp_client generates real JWT tokens."""
-        user_id = "test_jwt_user_123"
-        
-        # Mock MCP client creation to focus on JWT generation
-        with patch('app.ai.spending_agent.MultiServerMCPClient') as mock_client_class:
-            mock_client_instance = AsyncMock()
-            mock_client_class.return_value = mock_client_instance
-            
-            # Call the method
-            client = await self.agent._get_mcp_client(user_id)
-            
-            # Verify client was created
-            assert client is mock_client_instance
-            
-            # Verify MultiServerMCPClient was called with proper config
-            mock_client_class.assert_called_once()
-            call_args = mock_client_class.call_args[0][0]  # Get the config dict
-            
-            # Validate MCP config structure
-            assert "mcp" in call_args
-            assert "transport" in call_args["mcp"]
-            assert "url" in call_args["mcp"]
-            assert "headers" in call_args["mcp"]
-            assert "Authorization" in call_args["mcp"]["headers"]
-            
-            # Validate JWT token format
-            auth_header = call_args["mcp"]["headers"]["Authorization"]
-            assert auth_header.startswith("Bearer ")
-            jwt_token = auth_header.replace("Bearer ", "")
-            
-            # Validate JWT token is real (not mock placeholder)
-            assert jwt_token != "mock-jwt-token-placeholder"
-            assert len(jwt_token) > 20  # Real JWT tokens are much longer
-            assert "." in jwt_token  # JWT tokens have dots as separators
-            
-            # Verify token can be validated by AuthService
-            validated_user_id = self.agent._auth_service.validate_access_token(jwt_token)
-            assert validated_user_id == user_id, "Generated JWT should validate to the original user_id"
-
-    @pytest.mark.asyncio
-    async def test_get_mcp_client_error_handling(self):
-        """Test _get_mcp_client error handling when MCP client creation fails."""
-        user_id = "test_error_user"
-        
-        # Mock MultiServerMCPClient to raise an exception
-        with patch('app.ai.spending_agent.MultiServerMCPClient', side_effect=Exception("Connection failed")):
-            client = await self.agent._get_mcp_client(user_id)
-            
-            # Should return None when creation fails
-            assert client is None
-
-    @pytest.mark.asyncio
-    async def test_mcp_client_per_user_caching(self):
-        """Test that MCP clients are cached per user and use different JWT tokens."""
-        user_id_1 = "user_123"
-        user_id_2 = "user_456"
-        
-        with patch('app.ai.spending_agent.MultiServerMCPClient') as mock_client_class:
-            # Create mock client instances
-            mock_client_1 = AsyncMock()
-            mock_client_2 = AsyncMock()
-            mock_client_class.side_effect = [mock_client_1, mock_client_2]
-            
-            # Get clients for two different users
-            client_1_first = await self.agent._get_mcp_client(user_id_1)
-            client_2_first = await self.agent._get_mcp_client(user_id_2)
-            
-            # Get clients again for same users (should return cached)
-            client_1_second = await self.agent._get_mcp_client(user_id_1)
-            client_2_second = await self.agent._get_mcp_client(user_id_2)
-            
-            # Verify different users get different client instances
-            assert client_1_first is mock_client_1
-            assert client_2_first is mock_client_2
-            
-            # Verify caching - same users get same client instances
-            assert client_1_second is mock_client_1
-            assert client_2_second is mock_client_2
-            
-            # Verify MultiServerMCPClient was only called twice (once per user)
-            assert mock_client_class.call_count == 2
-            
-            # Verify different JWT tokens were generated for different users
-            call_args_1 = mock_client_class.call_args_list[0][0][0]
-            call_args_2 = mock_client_class.call_args_list[1][0][0]
-            
-            jwt_token_1 = call_args_1["mcp"]["headers"]["Authorization"].replace("Bearer ", "")
-            jwt_token_2 = call_args_2["mcp"]["headers"]["Authorization"].replace("Bearer ", "")
-            
-            # Tokens should be different for different users
-            assert jwt_token_1 != jwt_token_2
-            
-            # But both should validate to their respective users
-            assert self.agent._auth_service.validate_access_token(jwt_token_1) == user_id_1
-            assert self.agent._auth_service.validate_access_token(jwt_token_2) == user_id_2
 
 
 class TestSpendingAgentLLMIntegration:

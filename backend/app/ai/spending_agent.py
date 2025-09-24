@@ -12,21 +12,14 @@ import logging
 import json
 
 from app.services.user_context_dao import UserContextDAOSync
-from app.services.auth_service import AuthService
 from app.services.llm_service import llm_factory
 from app.services.transaction_categorization import TransactionCategorizationService
 from app.utils.context_formatting import build_user_context_string, format_transaction_insights_for_llm_context
 from langchain_core.messages import SystemMessage
+from app.ai.mcp_clients.plaid_client import get_plaid_client
 from app.ai.mcp_clients.graphiti_client import get_graphiti_client
 
 logger = logging.getLogger(__name__)
-
-try:
-    from langchain_mcp_adapters.client import MultiServerMCPClient
-    MCP_AVAILABLE = True
-except ImportError:
-    MCP_AVAILABLE = False
-    logger.warning("langchain-mcp-adapters not available - MCP tools will be mocked")
 
 class SpendingAgentState(MessagesState):
     """Extended state for Spending Agent with additional context."""
@@ -52,10 +45,8 @@ class SpendingAgent:
     def __init__(self, test_transaction_limit: Optional[int] = None):
         self.graph = None
         self._user_context_dao = UserContextDAOSync()
-        self._auth_service = AuthService()
-        self._mcp_clients = {}  # Cache MCP clients per user_id
+        self._plaid_client = get_plaid_client()  # Use shared Plaid MCP client
         self.test_transaction_limit = test_transaction_limit  # Hard limit for testing
-        
         # Initialize LLM client for intelligent responses and analysis
         try:
             self.llm = llm_factory.create_llm()
@@ -73,7 +64,6 @@ class SpendingAgent:
             logger.error(f"Failed to initialize LLM client: {e}")
             self.llm = None
             self.categorization_service = None
-            
         self._setup_graph()
     
     def _setup_graph(self) -> None:
@@ -169,41 +159,6 @@ class SpendingAgent:
             logger.info(f"Transaction data not found in Graphiti, routing to fetch from Plaid (attempt {fetch_attempts + 1})")
             return "fetch_from_plaid"
     
-    async def _get_mcp_client(self, user_id: str) -> MultiServerMCPClient:
-        """
-        Get or create MCP client with real JWT authentication for the user.
-        
-        Each user gets their own MCP client with a personalized JWT token.
-        Generates a proper JWT token using AuthService for secure MCP server access.
-        """
-        if not MCP_AVAILABLE:
-            logger.warning("MCP library not available - transaction fetching will be mocked")
-            return None
-        
-        # Check if we already have a client for this user
-        if user_id not in self._mcp_clients:
-            try:
-                # Generate real JWT token for the specific user
-                jwt_token = self._auth_service.generate_access_token(user_id)
-                logger.info(f"Generated JWT token for MCP authentication (user: {user_id})")
-                
-                self._mcp_clients[user_id] = MultiServerMCPClient({
-                    "mcp": {
-                        "transport": "streamable_http", 
-                        "url": "http://localhost:8000/mcp/",
-                        "headers": {
-                            "Authorization": f"Bearer {jwt_token}"
-                        }
-                    }
-                })
-                logger.info(f"MCP client initialized with real JWT authentication for user: {user_id}")
-                
-            except Exception as e:
-                logger.error(f"Failed to create MCP client with JWT authentication for user {user_id}: {str(e)}")
-                return None
-        
-        return self._mcp_clients[user_id]
-
     def _apply_categorization_to_transaction(
         self,
         transaction,
@@ -307,17 +262,26 @@ class SpendingAgent:
         except Exception as e:
             logger.error(f"LLM call failed in {intent_name}: {e}")
             return fallback_message
-    
+
     async def _fetch_transactions(self, user_id: str) -> Dict[str, Any]:
         """
-        Fetch transactions from Plaid via MCP tools.
+        Fetch transactions from Plaid via shared MCP client.
 
-        Fetches fresh transaction data from Plaid for processing and storage.
+        Implements the first phase: fetch fresh transaction data from Plaid
+        FIXME: Add Graphiti integration for Phase 2 (store processed insights)
         """
         try:
-            mcp_client = await self._get_mcp_client(user_id)
-            if not mcp_client:
-                # Mock fallback when MCP is not available
+            # Use the shared Plaid MCP client
+            result = await self._plaid_client.call_tool(user_id, "get_all_transactions")
+
+             # Parse the JSON response if needed
+            if isinstance(result, str):
+                parsed_result = json.loads(result)
+            else:
+                parsed_result = result
+
+            # Handle mock fallback when MCP is not available
+            if parsed_result.get("status") == "error" and "not available" in parsed_result.get("error", ""):
                 logger.info(f"Using mock transactions for user {user_id}")
                 return {
                     "status": "success",
@@ -325,33 +289,6 @@ class SpendingAgent:
                     "total_transactions": 0,
                     "message": "Mock transaction data (MCP not available)"
                 }
-            
-            # Get all available tools
-            tools = await mcp_client.get_tools()
-            
-            # Find the get_all_transactions tool
-            transaction_tool = None
-            for tool in tools:
-                if getattr(tool, 'name', '') == 'get_all_transactions':
-                    transaction_tool = tool
-                    break
-            
-            if not transaction_tool:
-                logger.error("get_all_transactions tool not found")
-                return {
-                    "status": "error", 
-                    "error": "Transaction fetching tool not available",
-                    "transactions": []
-                }
-            
-            # Fetch transactions using the MCP tool
-            result = await transaction_tool.ainvoke({})
-            
-            # Parse the JSON response
-            if isinstance(result, str):
-                parsed_result = json.loads(result)
-            else:
-                parsed_result = result
 
             # Apply test transaction limit if configured (just for testing)
             if hasattr(self, 'test_transaction_limit') and self.test_transaction_limit and parsed_result.get('transactions'):

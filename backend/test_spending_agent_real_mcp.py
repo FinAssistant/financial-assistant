@@ -17,6 +17,7 @@ import asyncio
 import logging
 from decimal import Decimal
 from app.ai.spending_agent import SpendingAgent
+from app.ai.mcp_clients.plaid_client import get_plaid_client
 from app.ai.mcp_clients.graphiti_client import get_graphiti_client
 from app.models.plaid_models import PlaidTransaction
 from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
@@ -132,14 +133,15 @@ async def test_1_plaid_integration_only():
         agent = SpendingAgent(test_transaction_limit=50)  # Limit transactions for testing
         print("✅ SpendingAgent created")
 
-        # Test MCP client creation with JWT
-        print(f"\n🔑 Creating MCP client for user: {TEST_USER_ID_PLAID}")
-        mcp_client = await agent._get_mcp_client(TEST_USER_ID_PLAID)
+        # Test shared PlaidMCPClient creation with JWT
+        print(f"\n🔑 Getting shared PlaidMCPClient for user: {TEST_USER_ID_PLAID}")
+        plaid_client = get_plaid_client()
+        mcp_client = await plaid_client.get_client(TEST_USER_ID_PLAID)
 
         if mcp_client is None:
-            print("❌ MCP client creation failed")
+            print("❌ Shared PlaidMCPClient creation failed")
             return False
-        print("✅ MCP client created with JWT authentication")
+        print("✅ Shared PlaidMCPClient created with JWT authentication")
 
         # Test Plaid sandbox setup
         print("\n💳 Setting up Plaid sandbox...")
@@ -151,7 +153,7 @@ async def test_1_plaid_integration_only():
 
         # Test public token exchange
         print("\n💱 Exchanging public token...")
-        tools = await mcp_client.get_tools()
+        tools = await plaid_client.get_tools(TEST_USER_ID_PLAID)
         tool_dict = {tool.name: tool for tool in tools}
 
         exchange_success = await test_exchange_public_token(tool_dict, public_token)
@@ -161,8 +163,8 @@ async def test_1_plaid_integration_only():
         # Small delay for token storage
         await asyncio.sleep(1)
 
-        # Test transaction fetching
-        print("\n📊 Fetching transactions...")
+        # Test transaction fetching via SpendingAgent
+        print("\n📊 Fetching transactions via SpendingAgent...")
         transaction_result = await agent._fetch_transactions(TEST_USER_ID_PLAID)
 
         print(f"📈 Transaction fetch result:")
@@ -170,12 +172,11 @@ async def test_1_plaid_integration_only():
         print(f"   • Total transactions: {transaction_result.get('total_transactions', 'N/A')}")
 
         if transaction_result['status'] == 'success':
-            print("✅ TEST 1 PASSED: Plaid integration working")
+            print("✅ TEST 1 PASSED: Plaid integration working with shared client")
             return True
         else:
             print(f"❌ TEST 1 FAILED: {transaction_result.get('error', 'Unknown error')}")
             return False
-
     except Exception as e:
         print(f"❌ TEST 1 FAILED: {str(e)}")
         return False
@@ -253,19 +254,20 @@ async def test_3_full_integration():
             return False
         print("✅ Plaid sandbox setup successful")
 
-        # Step 2: Create SpendingAgent and setup MCP client
-        print(f"\n🤖 Creating SpendingAgent and MCP client for user: {TEST_USER_ID_FULL}")
+        # Step 2: Create SpendingAgent and setup shared PlaidMCPClient
+        print(f"\n🤖 Creating SpendingAgent and shared PlaidMCPClient for user: {TEST_USER_ID_FULL}")
         agent = SpendingAgent(test_transaction_limit=5)  # Limit transactions for testing
-        mcp_client = await agent._get_mcp_client(TEST_USER_ID_FULL)
+        plaid_client = get_plaid_client()
+        mcp_client = await plaid_client.get_client(TEST_USER_ID_FULL)
 
         if mcp_client is None:
-            print("❌ MCP client creation failed")
+            print("❌ Shared PlaidMCPClient creation failed")
             return False
-        print("✅ SpendingAgent and MCP client created")
+        print("✅ SpendingAgent and shared PlaidMCPClient created")
 
-        # Step 3: Exchange public token via MCP
-        print("\n💱 Exchanging public token via MCP...")
-        tools = await mcp_client.get_tools()
+        # Step 3: Exchange public token via shared PlaidMCPClient
+        print("\n💱 Exchanging public token via shared PlaidMCPClient...")
+        tools = await plaid_client.get_tools(TEST_USER_ID_FULL)
         tool_dict = {tool.name: tool for tool in tools}
 
         exchange_success = await test_exchange_public_token(tool_dict, public_token)

@@ -10,9 +10,13 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
+import uuid
 
 from .config import settings
-from .sqlmodel_models import UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate
+from .sqlmodel_models import (
+    UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate,
+    ConnectedAccountModel, ConnectedAccountCreate, ConnectedAccountUpdate
+)
 from sqlmodel import SQLModel
 
 class SQLiteUserStorage:
@@ -289,13 +293,161 @@ class SQLiteUserStorage:
             stmt = select(PersonalContextModel).where(PersonalContextModel.user_id == user_id)
             result = await session.execute(stmt)
             context = result.first()
-            
+
             if not context:
                 return False
-            
+
             await session.delete(context[0])
             await session.commit()
             return True
+
+    # ConnectedAccount operations
+    async def get_connected_accounts(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all connected accounts for user. Returns list of account dicts."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(
+                ConnectedAccountModel.user_id == user_id,
+                ConnectedAccountModel.is_active == True
+            ).order_by(ConnectedAccountModel.created_at)
+            result = await session.execute(stmt)
+            accounts = result.fetchall()
+            return [account[0].to_dict() for account in accounts]
+
+    async def get_connected_account_by_id(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get connected account by ID. Returns account dict or None if not found."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(ConnectedAccountModel.id == account_id)
+            result = await session.execute(stmt)
+            account = result.first()
+            return account[0].to_dict() if account else None
+
+    async def get_connected_account_by_plaid_id(self, user_id: str, plaid_account_id: str) -> Optional[Dict[str, Any]]:
+        """Get connected account by Plaid account ID. Returns account dict or None if not found."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(
+                ConnectedAccountModel.user_id == user_id,
+                ConnectedAccountModel.plaid_account_id == plaid_account_id
+            )
+            result = await session.execute(stmt)
+            account = result.first()
+            return account[0].to_dict() if account else None
+
+    async def create_connected_account(self, user_id: str, account_data: ConnectedAccountCreate) -> Dict[str, Any]:
+        """
+        Create connected account for user.
+        Returns the created account data.
+        Raises ValueError if account already exists.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            try:
+                # Generate unique account ID
+                account_id = str(uuid.uuid4())
+
+                account_model = ConnectedAccountModel(
+                    id=account_id,
+                    user_id=user_id,
+                    **account_data.model_dump()
+                )
+                session.add(account_model)
+                await session.commit()
+                await session.refresh(account_model)
+                return account_model.to_dict()
+            except IntegrityError:
+                await session.rollback()
+                raise ValueError(f"Connected account with Plaid ID {account_data.plaid_account_id} already exists for user {user_id}")
+
+    async def update_connected_account(self, account_id: str, updates: ConnectedAccountUpdate) -> Optional[Dict[str, Any]]:
+        """
+        Update connected account data.
+        Returns updated account data or None if account not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(ConnectedAccountModel.id == account_id)
+            result = await session.execute(stmt)
+            account = result.first()
+
+            if not account:
+                return None
+
+            account_model = account[0]
+
+            # Update fields from ConnectedAccountUpdate
+            update_data = updates.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(account_model, field, value)
+
+            account_model.updated_at = datetime.now(timezone.utc)
+
+            await session.commit()
+            await session.refresh(account_model)
+            return account_model.to_dict()
+
+    async def deactivate_connected_account(self, account_id: str) -> bool:
+        """
+        Deactivate connected account (soft delete).
+        Returns True if account was deactivated, False if not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(ConnectedAccountModel.id == account_id)
+            result = await session.execute(stmt)
+            account = result.first()
+
+            if not account:
+                return False
+
+            account_model = account[0]
+            account_model.is_active = False
+            account_model.updated_at = datetime.now(timezone.utc)
+
+            await session.commit()
+            return True
+
+    async def delete_connected_account(self, account_id: str) -> bool:
+        """
+        Permanently delete connected account.
+        Returns True if account was deleted, False if not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(ConnectedAccountModel.id == account_id)
+            result = await session.execute(stmt)
+            account = result.first()
+
+            if not account:
+                return False
+
+            await session.delete(account[0])
+            await session.commit()
+            return True
+
+    async def get_accounts_for_conversation_context(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get lightweight account data for conversation context."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(
+                ConnectedAccountModel.user_id == user_id,
+                ConnectedAccountModel.is_active == True
+            ).order_by(ConnectedAccountModel.created_at)
+            result = await session.execute(stmt)
+            accounts = result.fetchall()
+            return [account[0].to_conversation_context() for account in accounts]
+
+    async def get_connected_accounts_count(self, user_id: str) -> int:
+        """Get count of active connected accounts for user."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(ConnectedAccountModel).where(
+                ConnectedAccountModel.user_id == user_id,
+                ConnectedAccountModel.is_active == True
+            )
+            result = await session.execute(stmt)
+            return len(result.fetchall())
 # Async-to-sync wrapper for compatibility with existing sync code
 class AsyncUserStorageWrapper:
     """Wrapper to make async SQLite storage work with sync code."""
@@ -400,6 +552,43 @@ class AsyncUserStorageWrapper:
     def delete_personal_context(self, user_id: str) -> bool:
         """Delete personal context by user ID."""
         return self._run_async(self._async_storage.delete_personal_context(user_id))
+
+    # ConnectedAccount operations (sync wrappers)
+    def get_connected_accounts(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all connected accounts for user."""
+        return self._run_async(self._async_storage.get_connected_accounts(user_id))
+
+    def get_connected_account_by_id(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get connected account by ID."""
+        return self._run_async(self._async_storage.get_connected_account_by_id(account_id))
+
+    def get_connected_account_by_plaid_id(self, user_id: str, plaid_account_id: str) -> Optional[Dict[str, Any]]:
+        """Get connected account by Plaid account ID."""
+        return self._run_async(self._async_storage.get_connected_account_by_plaid_id(user_id, plaid_account_id))
+
+    def create_connected_account(self, user_id: str, account_data) -> Dict[str, Any]:
+        """Create connected account for user."""
+        return self._run_async(self._async_storage.create_connected_account(user_id, account_data))
+
+    def update_connected_account(self, account_id: str, updates) -> Optional[Dict[str, Any]]:
+        """Update connected account data."""
+        return self._run_async(self._async_storage.update_connected_account(account_id, updates))
+
+    def deactivate_connected_account(self, account_id: str) -> bool:
+        """Deactivate connected account (soft delete)."""
+        return self._run_async(self._async_storage.deactivate_connected_account(account_id))
+
+    def delete_connected_account(self, account_id: str) -> bool:
+        """Permanently delete connected account."""
+        return self._run_async(self._async_storage.delete_connected_account(account_id))
+
+    def get_accounts_for_conversation_context(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get lightweight account data for conversation context."""
+        return self._run_async(self._async_storage.get_accounts_for_conversation_context(user_id))
+
+    def get_connected_accounts_count(self, user_id: str) -> int:
+        """Get count of active connected accounts for user."""
+        return self._run_async(self._async_storage.get_connected_accounts_count(user_id))
 
 # Global user storage instance - now SQLite with sync compatibility
 user_storage = AsyncUserStorageWrapper()
