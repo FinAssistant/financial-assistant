@@ -416,12 +416,12 @@ class OnboardingAgent:
 
         # Check if user now has connected accounts
         has_accounts = self._has_connected_accounts(user_id)
-        account_summary = self._get_account_summary(user_id)
 
         self.logger.info(f"Handling account connection for user {user_id}: has_accounts={has_accounts}")
 
         # Create congratulatory response
         if has_accounts:
+            account_summary = self._get_account_summary(user_id)
             congratulations = f"🎉 Congratulations! I can see you've successfully connected your accounts ({account_summary}). This is a huge step toward getting personalized financial insights!"
         else:
             congratulations = "I see there was an attempt to connect accounts, but I don't see any connected accounts yet. Please try the account connection process again."
