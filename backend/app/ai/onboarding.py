@@ -513,9 +513,9 @@ class OnboardingAgent:
             llm = llm_factory.create_llm()
             tool_llm = llm.bind_tools([plaid_tool])
 
-            # Simple, focused prompt just for tool usage
+            # Simple, focused prompt just for tool usage with explicit user_id instruction
             messages = [
-                SystemMessage(content="User wants to connect bank accounts. Use create_link_token to generate the connection link."),
+                SystemMessage(content=f"User wants to connect bank accounts. Use create_link_token with user_id='{user_id}' to generate the connection link. The user ID is already known - do not ask the user for it."),
                 HumanMessage(content="Please help me connect my bank accounts")
             ]
 
@@ -553,9 +553,19 @@ class OnboardingAgent:
                         )
                         tool_messages.append(error_message)
 
-                # Return all messages including tool results
+                # Return guidance message and tool results (skip empty LLM response)
+                guidance_ai_message = AIMessage(
+                    content=guidance_message,
+                    additional_kwargs={"agent": "onboarding"}
+                )
+
+                # DEBUG: Log what we're returning
+                self.logger.info(f"Returning guidance message: '{guidance_message}'")
+                self.logger.info(f"Returning {len(tool_messages)} tool messages")
+                self.logger.info(f"Tool message contents: {[msg.content for msg in tool_messages]}")
+
                 return {
-                    "messages": [AIMessage(content=guidance_message), response] + tool_messages
+                    "messages": [guidance_ai_message] + tool_messages
                 }
             else:
                 # No tool calls, return normal response

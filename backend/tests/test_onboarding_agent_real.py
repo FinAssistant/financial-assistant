@@ -243,15 +243,15 @@ class TestRealOnboardingAgent:
             mock_storage.get_personal_context.return_value = collected_data
 
             # Call the real agent's LLM method
-            result = agent._call_llm(state, config)
+            result = await agent._call_llm(state, config)
 
             print(f"✅ LLM Response received")
-            print(f"Onboarding complete: {result.get('onboarding_complete')}")
+            print(f"Data extraction completed: {len(result.get('collected_data', {}))} fields")
 
             # Verify response structure
             assert "messages" in result, "Result should contain messages"
             assert "collected_data" in result, "Result should contain collected_data"
-            assert "onboarding_complete" in result, "Result should contain onboarding_complete"
+            assert "needs_database_update" in result, "Result should contain needs_database_update"
 
             # Verify AI message was created
             ai_messages = result["messages"]
@@ -317,24 +317,18 @@ class TestRealOnboardingAgent:
                     assert "arizona" in actual_location.lower(), f"Expected Arizona in location, got '{actual_location}'"
                 print(f"✓ Location: {actual_location}")
 
-            # Test completion status for final steps
+            # Test data collection progress
             expected_status = step['expected']['completion_status']
-            actual_status = result.get('onboarding_complete')
+            field_count = len([v for v in collected_data.values() if v is not None])
+            print(f"Field count: {field_count}/9")
 
             if expected_status == "complete":
-                # Count fields we have
-                field_count = len([v for v in collected_data.values() if v is not None])
-                print(f"Field count: {field_count}/9")
-
-                # The LLM requires all 9 fields for completion, so be more realistic about expectations
-                # Only expect completion if we have all 9 fields OR if the LLM actually returned complete
-                if field_count == 9:
-                    assert actual_status is True, f"Expected completion with all 9 fields, but onboarding_complete={actual_status}"
-                    print("✓ Profile marked as complete")
-                elif actual_status is True:
-                    print(f"✓ Profile marked as complete with {field_count} fields (LLM decision)")
-                else:
-                    print(f"⚠ Profile not complete with {field_count} fields (expected, need all 9 for completion)")
+                # For complete status, we expect significant data collection
+                # Note: _call_llm doesn't determine completion status anymore
+                print(f"✓ Expected complete status - collected {field_count} fields")
+                assert field_count >= 4, f"Expected at least 4 fields for 'complete' test case, got {field_count}"
+            else:
+                print(f"✓ Expected incomplete status - collected {field_count} fields")
 
             print(f"✅ Step {step_num} validation passed")
 
@@ -381,11 +375,13 @@ class TestRealOnboardingAgent:
 
         update_result = agent._update_db(update_state, config)
 
-        # Verify database update calls
-        mock_storage.create_or_update_personal_context.assert_called_with(
-            "test_user",
-            {"age_range": "26_35", "occupation_type": "engineer"}
-        )
+        # Verify database update calls (expecting two calls: profile data + completion status)
+        from unittest.mock import call
+        expected_calls = [
+            call("test_user", {"age_range": "26_35", "occupation_type": "engineer"}),
+            call("test_user", {"is_complete": True})
+        ]
+        mock_storage.create_or_update_personal_context.assert_has_calls(expected_calls)
         mock_storage.update_user.assert_called_with(
             "test_user",
             {"profile_complete": True}
@@ -462,7 +458,7 @@ class TestRealOnboardingAgent:
 
             config = {"configurable": {"user_id": f"test_user_{i}", "thread_id": f"test_thread_{i}"}}
 
-            result = agent._call_llm(state, config)
+            result = await agent._call_llm(state, config)
             results.append(result)
 
             # Basic validation
@@ -529,7 +525,7 @@ class TestRealOnboardingAgent:
             "marital_status": "married"
         }
 
-        result = agent._call_llm(state, config)
+        result = await agent._call_llm(state, config)
 
         # Verify life change was detected
         collected_data = result["collected_data"]
