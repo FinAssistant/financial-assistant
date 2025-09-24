@@ -193,6 +193,9 @@ class PlaidMCPClient:
             # Call the tool with provided arguments
             result = await tool.ainvoke(kwargs)
 
+            # TODO: Refactor to return consistent dict responses instead of strings
+            # Currently tools may return strings that need JSON parsing by consumers
+            # Should parse JSON here and always return dict for consistent API
             logger.info(f"Called Plaid MCP tool '{tool_name}' for user: {user_id}")
             return result
 

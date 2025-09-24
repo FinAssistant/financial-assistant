@@ -218,10 +218,10 @@ class OnboardingAgent:
             Your job is to:
             1. Fill in any profile fields mentioned by the user
             2. Provide a natural, helpful response that guides them toward completing their profile
-            3. After collecting demographic info, guide users to connect their bank accounts for personalized insights
-            4. When users want to connect accounts, use the available tools to generate a Plaid link for them
+            3. Focus on completing all demographic fields before moving to account connection
+            4. Only mention account connection after all 9 demographic fields are collected
 
-            TOOL USAGE: If you have tools available and the user wants to connect accounts or asks for a link, you MUST use the plaid_link_token_tool to generate the actual connection link.
+            DEMOGRAPHICS FIRST: Do not suggest account connection until demographic profile is complete.
 
             PROFILE FIELDS (set to null if not mentioned):
             - age_range: under_18, 18_25, 26_35, 36_45, 46_55, 56_65, over_65
@@ -446,7 +446,16 @@ class OnboardingAgent:
         return True
 
     def _handle_account_connection(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
-        """Handle system messages about account connections."""
+        """
+        Handle REACTIVE responses to account connection attempts (SYSTEM messages).
+
+        Triggered by: SYSTEM messages about account connection attempts
+        Purpose: Check if accounts were successfully connected and congratulate/guide user
+        Flow: START → route_message_type → handle_account_connection (system message path)
+
+        This handles the RESPONSE/NOTIFICATION phase of account connections.
+        Pairs with _guide_account_connection which INITIATES the connection process.
+        """
         user_id = config["configurable"]["user_id"]
 
         # Check if user now has connected accounts
@@ -516,6 +525,70 @@ class OnboardingAgent:
             self.logger.info("Routing to read database for normal processing")
             return "read_database"
 
+    def _guide_account_connection(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
+        """
+        PROACTIVELY initiate account connection process using Plaid tool.
+
+        Triggered by: Demographics complete but no accounts connected (stepwise routing)
+        Purpose: Auto-generate Plaid link token to START account connection process
+        Flow: START → read_database → call_llm → route_after_llm → guide_account_connection
+
+        This handles the INITIATION/PROACTIVE phase of account connections.
+        Pairs with _handle_account_connection which handles RESPONSES after connection attempts.
+
+        Key Features:
+        - Only invoked after demographics are 100% complete (stepwise approach)
+        - Automatically invokes Plaid tool without user request
+        - Provides clear guidance message before generating link
+        """
+        user_id = config["configurable"]["user_id"]
+
+        guidance_message = "Perfect! Now that we have your demographic information, let's connect your bank accounts for personalized financial insights. I'll generate a secure link for you."
+
+        # Create Plaid tool and invoke
+        plaid_tool = self._create_plaid_link_tool(user_id)
+        llm = llm_factory.create_llm()
+        tool_llm = llm.bind_tools([plaid_tool])
+
+        # Simple, focused prompt just for tool usage
+        messages = [
+            SystemMessage(content="User wants to connect bank accounts. Use plaid_link_token_tool to generate the connection link."),
+            HumanMessage(content="Please help me connect my bank accounts")
+        ]
+
+        response = tool_llm.invoke(messages)
+
+        return {
+            "messages": [AIMessage(content=guidance_message), response]
+        }
+
+    def _route_after_llm(self, state: OnboardingState, config: RunnableConfig) -> str:
+        """Route based on stepwise completion."""
+
+        # Check demographic completion first
+        required_fields = [
+            'age_range', 'life_stage', 'occupation_type', 'location_context',
+            'family_structure', 'marital_status', 'total_dependents_count',
+            'children_count', 'caregiving_responsibilities'
+        ]
+
+        demographic_complete = all(
+            field in state.collected_data and state.collected_data[field] is not None
+            for field in required_fields
+        )
+
+        if not demographic_complete:
+            return "check_completion"  # Continue collecting demographics
+
+        # Demographics complete, check accounts
+        user_id = config["configurable"]["user_id"]
+        has_accounts = self._has_connected_accounts(user_id)
+
+        if not has_accounts:
+            return "guide_account_connection"  # Invoke Plaid tool
+        else:
+            return "check_completion"  # Mark as complete
+
     def _route_after_processing(self, state: OnboardingState) -> str:
         """Route after LLM processing or account connection handling."""
         return "check_completion"
@@ -540,11 +613,12 @@ class OnboardingAgent:
     
     def graph_compile(self) -> StateGraph:
         """
-        Compile and return the onboarding subgraph with dedicated routing nodes.
+        Compile and return the onboarding subgraph with stepwise routing.
 
-        Flow: START → route_message_type → [read_database → call_llm | handle_account_connection] → check_completion → store_memory → update_database → [update_global_state → END | END]
+        Flow: START → route_message_type → [read_database → call_llm → route_after_llm → [check_completion | guide_account_connection] | handle_account_connection] → check_completion → store_memory → update_database → [update_global_state → END | END]
 
-        Benefits: System messages skip DB read, both paths converge at completion check, static routing for debugging
+        Stepwise Logic: Demographics first → Account connection → Completion
+        Benefits: Linear progression, tool usage only when appropriate, clearer UX
         """
         if self._graph is None:
             onb_builder = StateGraph(OnboardingState)
@@ -553,6 +627,7 @@ class OnboardingAgent:
             onb_builder.add_node("read_database", self._read_db)
             onb_builder.add_node("call_llm", self._call_llm)
             onb_builder.add_node("handle_account_connection", self._handle_account_connection)
+            onb_builder.add_node("guide_account_connection", self._guide_account_connection)
             onb_builder.add_node("check_completion", self._check_completion)
             onb_builder.add_node("store_memory", self._store_memory)
             onb_builder.add_node("update_database", self._update_db)
@@ -570,11 +645,14 @@ class OnboardingAgent:
             # Normal flow: read_database → call_llm
             onb_builder.add_edge("read_database", "call_llm")
 
-            # Both LLM and account connection handling go to completion check
+            # Route after LLM with stepwise logic
             onb_builder.add_conditional_edges(
                 "call_llm",
-                self._route_after_processing,
-                {"check_completion": "check_completion"}
+                self._route_after_llm,
+                {
+                    "check_completion": "check_completion",
+                    "guide_account_connection": "guide_account_connection"
+                }
             )
 
             onb_builder.add_conditional_edges(
@@ -582,6 +660,9 @@ class OnboardingAgent:
                 self._route_after_processing,
                 {"check_completion": "check_completion"}
             )
+
+            # Guide account connection goes to completion check
+            onb_builder.add_edge("guide_account_connection", "check_completion")
 
             # After completion check, store memory
             onb_builder.add_edge("check_completion", "store_memory")
