@@ -32,7 +32,7 @@ import { DefaultChatTransport } from "ai";
 import { logout } from "../../../store/slices/authSlice";
 import { PlaidConnect } from "../../onboarding/PlaidConnect";
 import { parseMessageForPlaidData, extractGuidanceText } from "../../../utils/messageUtils";
-import { useExchangePublicTokenApiPlaidExchangePostMutation } from "../../../store/api/generated";
+import { useExchangePublicTokenPlaidExchangePostMutation } from "../../../store/api/generated";
 import { PlaidLinkError, PlaidLinkOnEvent, PlaidLinkOnExit, PlaidLinkOnExitMetadata, PlaidLinkOnSuccess } from "react-plaid-link";
 
 interface ChatInterfaceProps {
@@ -112,7 +112,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
   const currentSessionId = useSelector(selectCurrentSessionId);
   const token = useSelector(selectToken);
   const isAuthenticated = useSelector(selectIsAuthenticated);
-  const [exchangeToken, { isLoading: isExchanging }] = useExchangePublicTokenApiPlaidExchangePostMutation();
+  const [exchangeToken, { isLoading: isExchanging }] = useExchangePublicTokenPlaidExchangePostMutation();
   const [plaidError, setPlaidError] = useState<string | null>(null);
 
   // Initialize session ID if not exists

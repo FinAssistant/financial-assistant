@@ -71,51 +71,33 @@ const injectedRtkApi = api
         query: () => ({ url: `/conversation/health` }),
         providesTags: ["conversation"],
       }),
-      exchangePublicTokenApiPlaidExchangePost: build.mutation<
-        ExchangePublicTokenApiPlaidExchangePostApiResponse,
-        ExchangePublicTokenApiPlaidExchangePostApiArg
+      exchangePublicTokenPlaidExchangePost: build.mutation<
+        ExchangePublicTokenPlaidExchangePostApiResponse,
+        ExchangePublicTokenPlaidExchangePostApiArg
       >({
         query: (queryArg) => ({
-          url: `/api/plaid/exchange`,
+          url: `/plaid/exchange`,
           method: "POST",
           body: queryArg.plaidTokenExchangeRequest,
         }),
         invalidatesTags: ["plaid"],
       }),
-      getConnectedAccountsApiPlaidAccountsGet: build.query<
-        GetConnectedAccountsApiPlaidAccountsGetApiResponse,
-        GetConnectedAccountsApiPlaidAccountsGetApiArg
+      getConnectedAccountsPlaidAccountsGet: build.query<
+        GetConnectedAccountsPlaidAccountsGetApiResponse,
+        GetConnectedAccountsPlaidAccountsGetApiArg
       >({
-        query: () => ({ url: `/api/plaid/accounts` }),
+        query: () => ({ url: `/plaid/accounts` }),
         providesTags: ["plaid"],
       }),
-      disconnectAccountApiPlaidAccountsAccountIdDelete: build.mutation<
-        DisconnectAccountApiPlaidAccountsAccountIdDeleteApiResponse,
-        DisconnectAccountApiPlaidAccountsAccountIdDeleteApiArg
+      disconnectAccountPlaidAccountsAccountIdDelete: build.mutation<
+        DisconnectAccountPlaidAccountsAccountIdDeleteApiResponse,
+        DisconnectAccountPlaidAccountsAccountIdDeleteApiArg
       >({
         query: (queryArg) => ({
-          url: `/api/plaid/accounts/${queryArg.accountId}`,
+          url: `/plaid/accounts/${queryArg.accountId}`,
           method: "DELETE",
         }),
         invalidatesTags: ["plaid"],
-      }),
-      healthCheckHealthGet: build.query<
-        HealthCheckHealthGetApiResponse,
-        HealthCheckHealthGetApiArg
-      >({
-        query: () => ({ url: `/health` }),
-      }),
-      apiHealthCheckApiHealthGet: build.query<
-        ApiHealthCheckApiHealthGetApiResponse,
-        ApiHealthCheckApiHealthGetApiArg
-      >({
-        query: () => ({ url: `/api/health` }),
-      }),
-      serveReactAppFullPathGet: build.query<
-        ServeReactAppFullPathGetApiResponse,
-        ServeReactAppFullPathGetApiArg
-      >({
-        query: (queryArg) => ({ url: `/${queryArg.fullPath}` }),
       }),
     }),
     overrideExisting: false,
@@ -152,33 +134,22 @@ export type SendMessageNonStreamingConversationMessagePostApiArg = {
 export type HealthCheckConversationHealthGetApiResponse =
   /** status 200 Successful Response */ ConversationHealthResponse;
 export type HealthCheckConversationHealthGetApiArg = void;
-export type ExchangePublicTokenApiPlaidExchangePostApiResponse =
+export type ExchangePublicTokenPlaidExchangePostApiResponse =
   /** status 200 Successful Response */ PlaidTokenExchangeResponse;
-export type ExchangePublicTokenApiPlaidExchangePostApiArg = {
+export type ExchangePublicTokenPlaidExchangePostApiArg = {
   plaidTokenExchangeRequest: PlaidTokenExchangeRequest;
 };
-export type GetConnectedAccountsApiPlaidAccountsGetApiResponse =
+export type GetConnectedAccountsPlaidAccountsGetApiResponse =
   /** status 200 Successful Response */ {
     [key: string]: any;
   }[];
-export type GetConnectedAccountsApiPlaidAccountsGetApiArg = void;
-export type DisconnectAccountApiPlaidAccountsAccountIdDeleteApiResponse =
+export type GetConnectedAccountsPlaidAccountsGetApiArg = void;
+export type DisconnectAccountPlaidAccountsAccountIdDeleteApiResponse =
   /** status 200 Successful Response */ {
     [key: string]: any;
   };
-export type DisconnectAccountApiPlaidAccountsAccountIdDeleteApiArg = {
+export type DisconnectAccountPlaidAccountsAccountIdDeleteApiArg = {
   accountId: string;
-};
-export type HealthCheckHealthGetApiResponse =
-  /** status 200 Successful Response */ any;
-export type HealthCheckHealthGetApiArg = void;
-export type ApiHealthCheckApiHealthGetApiResponse =
-  /** status 200 Successful Response */ any;
-export type ApiHealthCheckApiHealthGetApiArg = void;
-export type ServeReactAppFullPathGetApiResponse =
-  /** status 200 Successful Response */ any;
-export type ServeReactAppFullPathGetApiArg = {
-  fullPath: string;
 };
 export type AuthResponse = {
   access_token: string;
@@ -267,10 +238,7 @@ export const {
   useSendMessageConversationSendPostMutation,
   useSendMessageNonStreamingConversationMessagePostMutation,
   useHealthCheckConversationHealthGetQuery,
-  useExchangePublicTokenApiPlaidExchangePostMutation,
-  useGetConnectedAccountsApiPlaidAccountsGetQuery,
-  useDisconnectAccountApiPlaidAccountsAccountIdDeleteMutation,
-  useHealthCheckHealthGetQuery,
-  useApiHealthCheckApiHealthGetQuery,
-  useServeReactAppFullPathGetQuery,
+  useExchangePublicTokenPlaidExchangePostMutation,
+  useGetConnectedAccountsPlaidAccountsGetQuery,
+  useDisconnectAccountPlaidAccountsAccountIdDeleteMutation,
 } = injectedRtkApi;
