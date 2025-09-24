@@ -33,7 +33,7 @@ import { logout } from "../../../store/slices/authSlice";
 import { PlaidConnect } from "../../onboarding/PlaidConnect";
 import { parseMessageForPlaidData, extractGuidanceText } from "../../../utils/messageUtils";
 import { useExchangePublicTokenPlaidExchangePostMutation } from "../../../store/api/generated";
-import { PlaidLinkError, PlaidLinkOnEvent, PlaidLinkOnExit, PlaidLinkOnExitMetadata, PlaidLinkOnSuccess } from "react-plaid-link";
+import { PlaidLinkOnEvent, PlaidLinkOnExit, PlaidLinkOnSuccess } from "react-plaid-link";
 
 interface ChatInterfaceProps {
   className?: string;
@@ -151,7 +151,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
   });
 
   // Plaid event handlers
-  const handlePlaidSuccess = async (publicToken: string, _metadata: any) => {
+  const handlePlaidSuccess = async (publicToken: string) => {
     try {
       setPlaidError(null);
       const result = await exchangeToken({
@@ -166,17 +166,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
       // Backend automatically injects system message and continues conversation
       // No manual message sending needed - the backend handles conversation flow
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Plaid connection error:', error);
-      setPlaidError(error.data?.error?.message || error.message || 'Failed to connect account');
+      setPlaidError(JSON.stringify(error));
     }
   };
 
-  const handlePlaidEvent = (eventName: string, metadata: any) => {
+  const handlePlaidEvent: PlaidLinkOnEvent = (eventName, metadata) => {
     console.error('Plaid Link event:', eventName, metadata);
   };
 
-  const handlePlaidExit = (error: PlaidLinkError | null, metadata: PlaidLinkOnExitMetadata) => {
+  const handlePlaidExit: PlaidLinkOnExit = (error, metadata) => {
     if (error) {
       console.error('Plaid Link error on exit:', error, metadata);
       setPlaidError(error.display_message || error.error_message || 'An error occurred during Plaid connection');
