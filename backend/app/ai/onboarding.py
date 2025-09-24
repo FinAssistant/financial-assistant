@@ -387,9 +387,9 @@ class OnboardingAgent:
             
             return {"needs_database_update": False}
             
-        except Exception:
+        except Exception as e:
             # Log error but don't break the flow
-            self.logger.error(f"Failed to update database for user {user_id} with data {state.collected_data}")
+            self.logger.error(f"Failed to update database for user {user_id} with data {state.collected_data}: {str(e)}")
             return {"needs_database_update": False}
 
     def _update_main_graph(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
@@ -542,25 +542,38 @@ class OnboardingAgent:
         - Provides clear guidance message before generating link
         """
         user_id = config["configurable"]["user_id"]
+        self.logger.info(f"Starting guide_account_connection for user {user_id}")
 
         guidance_message = "Perfect! Now that we have your demographic information, let's connect your bank accounts for personalized financial insights. I'll generate a secure link for you."
 
-        # Create Plaid tool and invoke
-        plaid_tool = self._create_plaid_link_tool(user_id)
-        llm = llm_factory.create_llm()
-        tool_llm = llm.bind_tools([plaid_tool])
+        try:
+            # Create Plaid tool and invoke
+            self.logger.info(f"Creating Plaid tool for user {user_id}")
+            plaid_tool = self._create_plaid_link_tool(user_id)
+            llm = llm_factory.create_llm()
+            tool_llm = llm.bind_tools([plaid_tool])
 
-        # Simple, focused prompt just for tool usage
-        messages = [
-            SystemMessage(content="User wants to connect bank accounts. Use plaid_link_token_tool to generate the connection link."),
-            HumanMessage(content="Please help me connect my bank accounts")
-        ]
+            # Simple, focused prompt just for tool usage
+            messages = [
+                SystemMessage(content="User wants to connect bank accounts. Use plaid_link_token_tool to generate the connection link."),
+                HumanMessage(content="Please help me connect my bank accounts")
+            ]
 
-        response = tool_llm.invoke(messages)
+            self.logger.info(f"Invoking LLM with Plaid tool for user {user_id}")
+            response = tool_llm.invoke(messages)
+            self.logger.info(f"LLM tool response received for user {user_id}")
 
-        return {
-            "messages": [AIMessage(content=guidance_message), response]
-        }
+            return {
+                "messages": [AIMessage(content=guidance_message), response]
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in guide_account_connection for user {user_id}: {str(e)}")
+            # Fallback response if tool invocation fails
+            fallback_message = "I'd like to help you connect your accounts, but I'm having trouble generating the connection link right now. Please try again in a moment."
+            return {
+                "messages": [AIMessage(content=fallback_message)]
+            }
 
     def _route_after_llm(self, state: OnboardingState, config: RunnableConfig) -> str:
         """Route based on stepwise completion."""
@@ -615,7 +628,7 @@ class OnboardingAgent:
         """
         Compile and return the onboarding subgraph with stepwise routing.
 
-        Flow: START → route_message_type → [read_database → call_llm → route_after_llm → [check_completion | guide_account_connection] | handle_account_connection] → check_completion → store_memory → update_database → [update_global_state → END | END]
+        Flow: START → route_message_type → [read_database → call_llm → check_completion → store_memory → update_database → route_after_llm → [END | guide_account_connection → route_completion → [END | update_global_state → END]] | handle_account_connection → check_completion → ...]
 
         Stepwise Logic: Demographics first → Account connection → Completion
         Benefits: Linear progression, tool usage only when appropriate, clearer UX
@@ -645,15 +658,8 @@ class OnboardingAgent:
             # Normal flow: read_database → call_llm
             onb_builder.add_edge("read_database", "call_llm")
 
-            # Route after LLM with stepwise logic
-            onb_builder.add_conditional_edges(
-                "call_llm",
-                self._route_after_llm,
-                {
-                    "check_completion": "check_completion",
-                    "guide_account_connection": "guide_account_connection"
-                }
-            )
+            # Route after LLM - always go to completion check first
+            onb_builder.add_edge("call_llm", "check_completion")
 
             onb_builder.add_conditional_edges(
                 "handle_account_connection",
@@ -661,18 +667,25 @@ class OnboardingAgent:
                 {"check_completion": "check_completion"}
             )
 
-            # Guide account connection goes to completion check
-            onb_builder.add_edge("guide_account_connection", "check_completion")
+            # After guide_account_connection, route to final completion check
+            onb_builder.add_conditional_edges(
+                "guide_account_connection",
+                self._route_completion,
+                {"update_global_state": "update_global_state", "end": END}
+            )
 
             # After completion check, store memory
             onb_builder.add_edge("check_completion", "store_memory")
             onb_builder.add_edge("store_memory", "update_database")
 
-            # Route based on completion status
+            # Route based on stepwise logic after database update
             onb_builder.add_conditional_edges(
                 "update_database",
-                self._route_completion,
-                {"update_global_state": "update_global_state", "end": END}
+                self._route_after_llm,
+                {
+                    "check_completion": END,  # If still incomplete, we're done for now
+                    "guide_account_connection": "guide_account_connection"
+                }
             )
 
             onb_builder.add_edge("update_global_state", END)

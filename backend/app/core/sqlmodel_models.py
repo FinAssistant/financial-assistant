@@ -30,6 +30,7 @@ class LifeStage(str, Enum):
     PEAK_EARNING = "peak_earning"
     PRE_RETIREMENT = "pre_retirement"
     RETIREMENT = "retirement"
+    BETWEEN_JOBS = "between_jobs"  # Career transition period
 
 class MaritalStatus(str, Enum):
     """Legal marital status - affects tax planning and joint account handling"""
