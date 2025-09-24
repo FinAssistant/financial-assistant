@@ -172,7 +172,7 @@ class OnboardingAgent:
 
         self.logger.info(f"Onboarding LLM invoked with messages: {[msg.content for msg in state.messages]}")
 
-        # Check if user has connected accounts
+        # Get user context for logging
         user_id = config["configurable"]["user_id"]
         has_accounts = self._has_connected_accounts(user_id)
 
@@ -226,24 +226,10 @@ class OnboardingAgent:
 
         self.logger.info(f"Onboarding LLM messages: {[msg.content for msg in messages]}")
         
-        # Bind Plaid link tool if user doesn't have accounts connected
-        if not has_accounts:
-            # Get the create_link_token tool directly from MCP client
-            plaid_link_tool = await self._plaid_client.get_tool_by_name(user_id, "create_link_token")
-            if plaid_link_tool:
-                tools = [plaid_link_tool]
-                # Bind tools and use structured output
-                structured_llm = llm.bind_tools(tools).with_structured_output(ProfileDataExtraction, method="function_calling")
-                self.logger.info(f"LLM bound with Plaid create_link_token tool for user {user_id} (no accounts connected)")
-            else:
-                # Cannot proceed without Plaid tool - this is a system error
-                error_msg = f"Plaid create_link_token tool not available for user {user_id} - cannot complete onboarding without account connection capability"
-                self.logger.error(error_msg)
-                raise RuntimeError(error_msg)
-        else:
-            # No tools needed - user already has accounts
-            structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
-            self.logger.info(f"LLM without tools for user {user_id} (accounts already connected)")
+        # Use structured output for demographic extraction - no tools needed
+        # Account connection is handled by the dedicated _guide_account_connection node
+        structured_llm = llm.with_structured_output(ProfileDataExtraction, method="function_calling")
+        self.logger.info(f"LLM configured for demographic extraction for user {user_id} (has_accounts: {has_accounts})")
 
         response = structured_llm.invoke(messages)
 
