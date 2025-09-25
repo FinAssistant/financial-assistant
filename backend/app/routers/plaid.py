@@ -37,7 +37,7 @@ class PlaidTokenExchangeResponse(BaseModel):
     status: str = Field(..., description="Operation status")
     message: str = Field(..., description="Human-readable message")
     accounts_connected: int = Field(..., description="Number of accounts connected")
-    account_ids: List[str] = Field(default_factory=list, description="List of connected account IDs")
+    account_ids: List[int] = Field(default_factory=list, description="List of connected account IDs")
 
 
 @router.post("/exchange", response_model=PlaidTokenExchangeResponse)

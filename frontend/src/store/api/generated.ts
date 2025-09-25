@@ -226,7 +226,7 @@ export type PlaidTokenExchangeResponse = {
   /** Number of accounts connected */
   accounts_connected: number;
   /** List of connected account IDs */
-  account_ids?: string[];
+  account_ids?: number[];
 };
 export type PlaidTokenExchangeRequest = {
   /** Public token from Plaid Link */
