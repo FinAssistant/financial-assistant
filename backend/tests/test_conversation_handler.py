@@ -266,18 +266,26 @@ class TestOrchestratorAgent:
         assert result["user_id"] == "test_user"
         assert isinstance(second_message["content"], str)
 
-    @pytest.mark.skip(reason="OnboardingAgent structured output needs to be fixed")
     @pytest.mark.asyncio
     async def test_invoke_conversation_onboarding_route(self, mock_llm_factory):
         """Test that the orchestrator routes to ONBOARDING for users without complete profiles."""
         from langchain_core.messages import AIMessage
+        from unittest.mock import Mock
 
-        # Mock orchestrator to return ONBOARDING route, then onboarding agent response
-        mock_responses = [
-            AIMessage(content="ONBOARDING", additional_kwargs={'refusal': None}),  # Orchestrator routing
-            AIMessage(content="Welcome! I'd be happy to help you with your budget. First, let's complete your financial profile so I can provide personalized advice.", additional_kwargs={'refusal': None, 'agent': 'onboarding'})  # Onboarding agent response
-        ]
-        mock_llm_factory.invoke.side_effect = mock_responses
+        # Create a mock structured output response for onboarding agent
+        mock_structured_response = Mock()
+        mock_structured_response.user_response = "Welcome! I'd be happy to help you with your budget. First, let's complete your financial profile so I can provide personalized advice."
+        mock_structured_response.extracted_data.model_dump.return_value = {}
+        mock_structured_response.completion_status = "incomplete"
+
+        # Create a mock structured LLM
+        mock_structured_llm = Mock()
+        mock_structured_llm.invoke.return_value = mock_structured_response
+
+        # Mock the regular LLM invoke for orchestrator routing
+        mock_llm_factory.invoke.return_value = AIMessage(content="ONBOARDING", additional_kwargs={'refusal': None})
+        # Mock the with_structured_output method for onboarding agent
+        mock_llm_factory.with_structured_output.return_value = mock_structured_llm
 
         config = OrchestratorAgent()
 
@@ -289,5 +297,7 @@ class TestOrchestratorAgent:
         )
 
         # Should route to onboarding agent since profile is not complete
-        assert result["agent"] == "onboarding"
-        assert "profile" in result["content"].lower() or "onboard" in result["content"].lower() or "welcome" in result["content"].lower()
+        assert len(result["messages"]) > 0
+        last_message = result["messages"][-1]
+        assert last_message["agent"] == "onboarding"
+        assert "profile" in last_message["content"].lower() or "onboard" in last_message["content"].lower() or "welcome" in last_message["content"].lower()
