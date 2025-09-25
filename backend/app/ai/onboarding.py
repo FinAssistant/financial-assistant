@@ -565,7 +565,7 @@ class OnboardingAgent:
                 self.logger.info(f"Tool message contents: {[msg.content for msg in tool_messages]}")
 
                 return {
-                    "messages": [guidance_ai_message] + tool_messages
+                    "messages": [guidance_ai_message] + [response] + tool_messages
                 }
             else:
                 # No tool calls, return normal response
