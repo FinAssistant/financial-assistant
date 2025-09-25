@@ -6,11 +6,13 @@ WORKDIR /app/frontend
 
 # Copy frontend package files
 COPY frontend/package*.json ./
-COPY frontend/tsconfig*.json ./
-COPY frontend/vite.config.ts ./
 
 # Install frontend dependencies
 RUN npm ci
+
+# Copy frontend configuration files
+COPY frontend/tsconfig*.json ./
+COPY frontend/vite.config.ts ./
 
 # Copy frontend source code
 COPY frontend/src ./src

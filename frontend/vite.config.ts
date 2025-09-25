@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
 const apiProxyConfig = {
-        target: 'http://0.0.0.0:8000',
-        changeOrigin: true,
+  target: 'http://0.0.0.0:8000',
+  changeOrigin: true,
 }
 
 export default defineConfig({
@@ -21,7 +21,8 @@ export default defineConfig({
     proxy: {
       '/auth': apiProxyConfig,
       '/health': apiProxyConfig,
-      '/conversation': apiProxyConfig
+      '/conversation': apiProxyConfig,
+      '/plaid': apiProxyConfig
     },
   },
   build: {

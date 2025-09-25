@@ -169,14 +169,24 @@ class TestConversationFlow:
         )
         
         assert result is not None
-        assert "content" in result
-        assert "agent" in result
+        assert "messages" in result
         assert "session_id" in result
         assert "user_id" in result
-        
+        assert isinstance(result["messages"], list)
+        assert len(result["messages"]) == 2  # Orchestrator routing + small talk response
+
+        # Check orchestrator routing message
+        orchestrator_msg = result["messages"][0]
+        assert orchestrator_msg["content"] == "SMALLTALK"
+        assert orchestrator_msg["agent"] == "orchestrator"
+
+        # Check small talk response message
+        smalltalk_msg = result["messages"][1]
+        assert smalltalk_msg["agent"] == "small_talk"
+        assert len(smalltalk_msg["content"]) > 0
+
         assert result["session_id"] == test_session_id
         assert result["user_id"] == test_user_id
-        assert len(result["content"]) > 0
     
     @pytest.mark.asyncio
     async def test_invoke_conversation_smalltalk_routing(self, mock_llm_factory, test_user_id, test_session_id):
@@ -197,7 +207,13 @@ class TestConversationFlow:
         )
         
         # Should route to small_talk agent and get mocked response
-        assert "Hi there! Great day!" in result["content"]
+        assert "messages" in result
+        assert len(result["messages"]) == 2
+
+        # Check that the small talk response is in the messages
+        smalltalk_msg = result["messages"][1]  # Second message should be small talk response
+        assert "Hi there! Great day!" in smalltalk_msg["content"]
+        assert smalltalk_msg["agent"] == "small_talk"
     
     def test_stream_conversation(self, mock_llm_factory, test_user_id, test_session_id):
         """Test streaming conversation."""

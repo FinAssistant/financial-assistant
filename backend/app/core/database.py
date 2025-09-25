@@ -344,11 +344,8 @@ class SQLiteUserStorage:
         await self._ensure_initialized()
         async with self.session_factory() as session:
             try:
-                # Generate unique account ID
-                account_id = str(uuid.uuid4())
-
+                # Let SQLModel auto-generate the integer primary key
                 account_model = ConnectedAccountModel(
-                    id=account_id,
                     user_id=user_id,
                     **account_data.model_dump()
                 )
@@ -356,9 +353,9 @@ class SQLiteUserStorage:
                 await session.commit()
                 await session.refresh(account_model)
                 return account_model.to_dict()
-            except IntegrityError:
+            except IntegrityError as e:
                 await session.rollback()
-                raise ValueError(f"Connected account with Plaid ID {account_data.plaid_account_id} already exists for user {user_id}")
+                raise ValueError(f"Failed to create connected account with Plaid ID {account_data.plaid_account_id} for user {user_id}: {str(e)}")
 
     async def update_connected_account(self, account_id: str, updates: ConnectedAccountUpdate) -> Optional[Dict[str, Any]]:
         """

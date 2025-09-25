@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import json
 import uuid
+import asyncio
 from datetime import datetime
 
 from app.routers.auth import get_current_user
@@ -36,12 +37,18 @@ class ConversationRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Optional conversation session ID")
 
 
-class ConversationResponse(BaseModel):
-    """Response model for conversation messages."""
+class ConversationMessage(BaseModel):
+    """Individual conversation message model."""
     id: str
     content: str
-    role: str
+    role: str = "assistant"
     agent: str
+    message_type: str = "ai_response"
+
+
+class ConversationResponse(BaseModel):
+    """Response model for conversation messages - supports multiple messages."""
+    messages: List[ConversationMessage]
     session_id: str
     user_id: str
     created_at: str
@@ -108,14 +115,10 @@ async def send_message(
         async def generate_real_stream():
             """Generate AI-SDK compatible streaming response with real LangGraph streaming."""
             message_id = str(uuid.uuid4())
-            text_id = str(uuid.uuid4())
-            
+
             # Send message start
             yield f'data: {json.dumps({"type": "start", "messageId": message_id})}\n\n'
-            
-            # Send text start
-            yield f'data: {json.dumps({"type": "text-start", "id": text_id})}\n\n'
-            
+
             try:
                 # Get response from conversation handler
                 ai_response = await get_conversation_handler().process_message(
@@ -123,21 +126,50 @@ async def send_message(
                     user_id=current_user,
                     session_id=session_id
                 )
-                
-                # Stream the content
-                content = ai_response.get("content", "")
-                if content:
-                    # Send text content as delta
-                    yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": content})}\n\n'
-                
-                # Send text end
-                yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
+
+                # Stream multiple messages
+                for msg in ai_response["messages"]:
+                    # Generate unique text_id for each message
+                    current_text_id = str(uuid.uuid4())
+
+                    # Send text start for this message
+                    yield f'data: {json.dumps({"type": "text-start", "id": current_text_id})}\n\n'
+
+                    # Stream message content in chunks
+                    content = msg["content"]
+                    if content:
+                        # Chunk content by words, targeting 50-80 characters per chunk
+                        words = content.split()
+                        current_chunk = ""
+
+                        for word in words:
+                            # Add word if chunk won't be too long, otherwise send current chunk
+                            if len(current_chunk) + len(word) + 1 <= 80:  # +1 for space
+                                current_chunk += (" " if current_chunk else "") + word
+                            else:
+                                # Send current chunk
+                                if current_chunk:
+                                    yield f'data: {json.dumps({"type": "text-delta", "id": current_text_id, "delta": current_chunk})}\n\n'
+                                    # Add small delay for natural typing effect
+                                    await asyncio.sleep(0.05)  # 50ms delay
+                                # Start new chunk with current word
+                                current_chunk = word
+
+                        # Send remaining chunk
+                        if current_chunk:
+                            yield f'data: {json.dumps({"type": "text-delta", "id": current_text_id, "delta": current_chunk})}\n\n'
+
+                    # Send text end for this message
+                    yield f'data: {json.dumps({"type": "text-end", "id": current_text_id})}\n\n'
                 
             except Exception:
-                # Send error as content
+                # Send error as content with its own text block
+                error_text_id = str(uuid.uuid4())
                 error_msg = "I apologize, but I'm having trouble processing your message right now. Please try again."
-                yield f'data: {json.dumps({"type": "text-delta", "id": text_id, "delta": error_msg})}\n\n'
-                yield f'data: {json.dumps({"type": "text-end", "id": text_id})}\n\n'
+
+                yield f'data: {json.dumps({"type": "text-start", "id": error_text_id})}\n\n'
+                yield f'data: {json.dumps({"type": "text-delta", "id": error_text_id, "delta": error_msg})}\n\n'
+                yield f'data: {json.dumps({"type": "text-end", "id": error_text_id})}\n\n'
             
             # Send stream termination
             yield "data: [DONE]\n\n"
@@ -209,12 +241,20 @@ async def send_message_non_streaming(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"AI processing error: {ai_response['error']}"
             )
-        
+
+        # Convert messages array to ConversationMessage objects
+        conversation_messages = []
+        for msg in ai_response["messages"]:
+            conversation_messages.append(ConversationMessage(
+                id=str(uuid.uuid4()),
+                content=msg["content"],
+                role="assistant",
+                agent=msg["agent"],
+                message_type=msg["message_type"]
+            ))
+
         return ConversationResponse(
-            id=str(uuid.uuid4()),
-            content=ai_response["content"],
-            role="assistant",
-            agent=ai_response["agent"],
+            messages=conversation_messages,
             session_id=session_id,
             user_id=current_user,
             created_at=datetime.now().isoformat()

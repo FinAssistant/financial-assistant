@@ -1,5 +1,5 @@
 import { baseApi as api } from "./baseApi";
-export const addTagTypes = ["authentication", "conversation"] as const;
+export const addTagTypes = ["authentication", "conversation", "plaid"] as const;
 const injectedRtkApi = api
   .enhanceEndpoints({
     addTagTypes,
@@ -71,6 +71,34 @@ const injectedRtkApi = api
         query: () => ({ url: `/conversation/health` }),
         providesTags: ["conversation"],
       }),
+      exchangePublicTokenPlaidExchangePost: build.mutation<
+        ExchangePublicTokenPlaidExchangePostApiResponse,
+        ExchangePublicTokenPlaidExchangePostApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/plaid/exchange`,
+          method: "POST",
+          body: queryArg.plaidTokenExchangeRequest,
+        }),
+        invalidatesTags: ["plaid"],
+      }),
+      getConnectedAccountsPlaidAccountsGet: build.query<
+        GetConnectedAccountsPlaidAccountsGetApiResponse,
+        GetConnectedAccountsPlaidAccountsGetApiArg
+      >({
+        query: () => ({ url: `/plaid/accounts` }),
+        providesTags: ["plaid"],
+      }),
+      disconnectAccountPlaidAccountsAccountIdDelete: build.mutation<
+        DisconnectAccountPlaidAccountsAccountIdDeleteApiResponse,
+        DisconnectAccountPlaidAccountsAccountIdDeleteApiArg
+      >({
+        query: (queryArg) => ({
+          url: `/plaid/accounts/${queryArg.accountId}`,
+          method: "DELETE",
+        }),
+        invalidatesTags: ["plaid"],
+      }),
     }),
     overrideExisting: false,
   });
@@ -106,6 +134,23 @@ export type SendMessageNonStreamingConversationMessagePostApiArg = {
 export type HealthCheckConversationHealthGetApiResponse =
   /** status 200 Successful Response */ ConversationHealthResponse;
 export type HealthCheckConversationHealthGetApiArg = void;
+export type ExchangePublicTokenPlaidExchangePostApiResponse =
+  /** status 200 Successful Response */ PlaidTokenExchangeResponse;
+export type ExchangePublicTokenPlaidExchangePostApiArg = {
+  plaidTokenExchangeRequest: PlaidTokenExchangeRequest;
+};
+export type GetConnectedAccountsPlaidAccountsGetApiResponse =
+  /** status 200 Successful Response */ {
+    [key: string]: any;
+  }[];
+export type GetConnectedAccountsPlaidAccountsGetApiArg = void;
+export type DisconnectAccountPlaidAccountsAccountIdDeleteApiResponse =
+  /** status 200 Successful Response */ {
+    [key: string]: any;
+  };
+export type DisconnectAccountPlaidAccountsAccountIdDeleteApiArg = {
+  accountId: string;
+};
 export type AuthResponse = {
   access_token: string;
   token_type?: string;
@@ -153,11 +198,15 @@ export type ConversationRequest = {
   /** Optional conversation session ID */
   session_id?: string | null;
 };
-export type ConversationResponse = {
+export type ConversationMessage = {
   id: string;
   content: string;
-  role: string;
+  role?: string;
   agent: string;
+  message_type?: string;
+};
+export type ConversationResponse = {
+  messages: ConversationMessage[];
   session_id: string;
   user_id: string;
   created_at: string;
@@ -169,6 +218,22 @@ export type ConversationHealthResponse = {
   test_response_received: boolean;
   error?: string | null;
 };
+export type PlaidTokenExchangeResponse = {
+  /** Operation status */
+  status: string;
+  /** Human-readable message */
+  message: string;
+  /** Number of accounts connected */
+  accounts_connected: number;
+  /** List of connected account IDs */
+  account_ids?: number[];
+};
+export type PlaidTokenExchangeRequest = {
+  /** Public token from Plaid Link */
+  public_token: string;
+  /** Optional session ID for conversation resumption */
+  session_id?: string | null;
+};
 export const {
   useRegisterAuthRegisterPostMutation,
   useLoginAuthLoginPostMutation,
@@ -177,4 +242,7 @@ export const {
   useSendMessageConversationSendPostMutation,
   useSendMessageNonStreamingConversationMessagePostMutation,
   useHealthCheckConversationHealthGetQuery,
+  useExchangePublicTokenPlaidExchangePostMutation,
+  useGetConnectedAccountsPlaidAccountsGetQuery,
+  useDisconnectAccountPlaidAccountsAccountIdDeleteMutation,
 } = injectedRtkApi;
