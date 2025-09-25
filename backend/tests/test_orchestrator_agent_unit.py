@@ -167,7 +167,7 @@ class TestConversationFlow:
             user_id=test_user_id,
             session_id=test_session_id
         )
-        
+
         assert result is not None
         assert "messages" in result
         assert "session_id" in result
@@ -205,7 +205,7 @@ class TestConversationFlow:
             user_id=test_user_id,
             session_id=test_session_id
         )
-        
+
         # Should route to small_talk agent and get mocked response
         assert "messages" in result
         assert len(result["messages"]) == 2

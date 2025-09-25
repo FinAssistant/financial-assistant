@@ -45,8 +45,10 @@ class TestConversationHandlerLLM:
         # Validate that the message was routed to the Onboarding agent
         print(f"ConversationHandler result: {result}")
         assert result is not None
-        assert "agent" in result
-        assert result["agent"] == "onboarding", f"Expected 'onboarding' agent, got '{result['agent']}'"
+        assert "messages" in result
+        assert len(result["messages"]) > 0
+        last_message = result["messages"][-1]
+        assert last_message["agent"] == "onboarding", f"Expected 'onboarding' agent, got '{last_message['agent']}'"
         
         if settings.default_llm_provider == "google":
             # Sleep to avoid rate limiting (specifically with Gemini free tier)

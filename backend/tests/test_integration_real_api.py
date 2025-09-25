@@ -228,9 +228,11 @@ class TestRealConversationFlow:
             )
             
             assert result is not None
-            assert result["agent"] == "small_talk"  # Should route to small talk
-            assert len(result["content"]) > 10  # Real response should be substantial
-            assert any(greet in result["content"].lower() for greet in ["hello", "hi", "hey", "greetings"])
+            assert len(result["messages"]) > 0
+            last_message = result["messages"][-1]
+            assert last_message["agent"] == "small_talk"  # Should route to small talk
+            assert len(last_message["content"]) > 10  # Real response should be substantial
+            assert any(greet in last_message["content"].lower() for greet in ["hello", "hi", "hey", "greetings"])
     
     @pytest.mark.asyncio
     async def test_real_conversation_financial_question(self):
@@ -248,9 +250,11 @@ class TestRealConversationFlow:
             
             assert result is not None
             # Should route to onboarding (profile incomplete by default)
-            assert result["agent"] == "onboarding"
+            assert len(result["messages"]) > 0
+            last_message = result["messages"][-1]
+            assert last_message["agent"] == "onboarding"
             # Should ask for personal information (flexible wording)
-            content_lower = result["content"].lower()
+            content_lower = last_message["content"].lower()
             assert any(word in content_lower for word in ["profile", "age", "occupation", "about", "share", "tell", "help", "information"])
     
     @pytest.mark.asyncio
@@ -329,9 +333,11 @@ class TestRealOnboardingDatabase:
                 user_id=user_id,
                 session_id=session_id
             )
-            
-            assert result1["agent"] == "onboarding"
-            
+
+            assert len(result1["messages"]) > 0
+            result1_message = result1["messages"][-1]
+            assert result1_message["agent"] == "onboarding"
+
             # Step 2: Provide comprehensive profile data
             profile_data = """I'm 30 years old (26-35 age range), early career professional working as a nurse.
             I live in Florida with moderate cost of living. I'm single with no dependents, never married.
@@ -385,7 +391,9 @@ class TestRealOnboardingDatabase:
                     session_id=session_id
                 )
                 print(f"Test routing result: {test_result['agent']}")
-                assert test_result["agent"] in ["investment", "spending"], "Should route to financial agents if profile complete"
+                assert len(test_result["messages"]) > 0
+                last_test_message = test_result["messages"][-1]
+                assert last_test_message["agent"] in ["investment", "spending"], "Should route to financial agents if profile complete"
             
             print("✅ Database verification passed!")
 
@@ -409,7 +417,9 @@ class TestRealOnboardingDatabase:
                 user_id=user_id,
                 session_id=session_id
             )
-            assert result1["agent"] == "onboarding"
+            assert len(result1["messages"]) > 0
+            result1_message = result1["messages"][-1]
+            assert result1_message["agent"] == "onboarding"
 
             # Step 2: Provide comprehensive profile data to complete onboarding
             profile_data = """I'm 35 years old, established career professional working as a software engineer.
@@ -421,7 +431,8 @@ class TestRealOnboardingDatabase:
                 user_id=user_id,
                 session_id=session_id
             )
-            print(f"Onboarding result: {result2['agent']} - {result2['content'][:100]}...")
+            result2_message = result2["messages"][-1]
+            print(f"Onboarding result: {result2_message['agent']} - {result2_message['content'][:100]}...")
 
             # Step 3: Ask a financial question that should route to another agent
             result3 = await config.invoke_conversation(
@@ -435,8 +446,10 @@ class TestRealOnboardingDatabase:
             print(f"Response content: {result3['content']}...")
 
             # Verify it routed to a financial agent (not onboarding)
-            assert result3["agent"] != "onboarding", f"Should not route to onboarding anymore, got {result3['agent']}"
-            assert result3["agent"] in ["investment", "spending"], f"Should route to investment or spending agent, got {result3['agent']}"
+            assert len(result3["messages"]) > 0
+            result3_message = result3["messages"][-1]
+            assert result3_message["agent"] != "onboarding", f"Should not route to onboarding anymore, got {result3_message['agent']}"
+            assert result3_message["agent"] in ["investment", "spending"], f"Should route to investment or spending agent, got {result3_message['agent']}"
 
             # Test the _update_main_graph method by checking profile context in the conversation thread
             print("\n--- Testing Profile Context from Conversation Thread ---")
@@ -526,9 +539,11 @@ class TestRealOnboardingComplete:
             )
             
             # Should route to onboarding since profile is empty
-            assert result1["agent"] == "onboarding"
+            assert len(result1["messages"]) > 0
+            result1_message = result1["messages"][-1]
+            assert result1_message["agent"] == "onboarding"
             # Should ask for personal information (flexible wording)
-            content_lower = result1["content"].lower()
+            content_lower = result1_message["content"].lower()
             assert any(word in content_lower for word in ["age", "occupation", "about", "share", "tell", "help"])
             
             # Step 2: Provide comprehensive profile information in one response
@@ -544,7 +559,9 @@ class TestRealOnboardingComplete:
             )
             
             # Should still be onboarding but extracting lots of data
-            assert result2["agent"] == "onboarding"
+            assert len(result2["messages"]) > 0
+            result2_message = result2["messages"][-1]
+            assert result2_message["agent"] == "onboarding"
             
             # Step 3: Fill any remaining gaps if needed
             follow_up_response = """I have no children, so 0 dependents total. I live alone with no family 
@@ -557,7 +574,9 @@ class TestRealOnboardingComplete:
             )
             
             # Should still be onboarding but getting closer to completion
-            assert result3["agent"] == "onboarding"
+            assert len(result3["messages"]) > 0
+            result3_message = result3["messages"][-1]
+            assert result3_message["agent"] == "onboarding"
             
             # Step 4: Confirm completion or provide final details
             confirmation_response = """Yes, that all sounds right. I'm ready to get investment advice now."""
@@ -570,7 +589,9 @@ class TestRealOnboardingComplete:
             
             # Could be onboarding completion or already routing to investment
             # Let's be flexible here since OpenAI might complete in different steps
-            assert result4["agent"] in ["onboarding", "investment"]
+            assert len(result4["messages"]) > 0
+            result4_message = result4["messages"][-1]
+            assert result4_message["agent"] in ["onboarding", "investment"]
             
             # Step 5: Now ask investment question again - should route to investment agent
             final_result = await config.invoke_conversation(
@@ -580,8 +601,10 @@ class TestRealOnboardingComplete:
             )
             
             # This should definitely route to investment agent now
-            assert final_result["agent"] == "investment"
-            assert "investment" in final_result["content"].lower()
+            assert len(final_result["messages"]) > 0
+            final_message = final_result["messages"][-1]
+            assert final_message["agent"] == "investment"
+            assert "investment" in final_message["content"].lower()
             
             # Verify profile was actually saved to database
             from app.core.database import user_storage
@@ -631,7 +654,9 @@ class TestRealOnboardingComplete:
             )
             
             # Should route to onboarding
-            assert result1["agent"] == "onboarding"
+            assert len(result1["messages"]) > 0
+            result1_message = result1["messages"][-1]
+            assert result1_message["agent"] == "onboarding"
             
             # Step 2: Provide very complete profile info in one go
             complete_profile = """I'm 35 years old in the 36-45 age range, established career working as a teacher. 
@@ -645,11 +670,14 @@ class TestRealOnboardingComplete:
                 session_id=session_id
             )
             
-            print(f"\nStep 2 result agent: {result2['agent']}")
-            print(f"Step 2 content: {result2['content']}")
-            
             # Might complete onboarding in this step or still be onboarding
-            assert result2["agent"] in ["onboarding", "spending"]
+            assert len(result2["messages"]) > 0
+            result2_message = result2["messages"][-1]
+
+            print(f"\nStep 2 result agent: {result2_message['agent']}")
+            print(f"Step 2 content: {result2_message['content']}")
+
+            assert result2_message["agent"] in ["onboarding", "spending"]
             
             # Step 3: Ask spending question - should route to spending agent
             spending_result = await config.invoke_conversation(
@@ -659,8 +687,10 @@ class TestRealOnboardingComplete:
             )
             
             # Should route to spending agent
-            assert spending_result["agent"] == "spending"
-            assert any(word in spending_result["content"].lower() 
+            assert len(spending_result["messages"]) > 0
+            spending_message = spending_result["messages"][-1]
+            assert spending_message["agent"] == "spending"
+            assert any(word in spending_message["content"].lower()
                       for word in ["budget", "spending", "expense", "family"])
             
             # Verify database state
@@ -904,9 +934,11 @@ class TestRealMultiProviderConversationFlow:
                 )
                 
                 assert result is not None
-                assert result["agent"] == "small_talk"  # Should route to small talk
-                assert len(result["content"]) > 10  # Real response should be substantial
-                assert "hello" in result["content"].lower() or "hi" in result["content"].lower()
+                assert len(result["messages"]) > 0
+                last_message = result["messages"][-1]
+                assert last_message["agent"] == "small_talk"  # Should route to small talk
+                assert len(last_message["content"]) > 10  # Real response should be substantial
+                assert "hello" in last_message["content"].lower() or "hi" in last_message["content"].lower()
                 
                 print(f"✅ {provider.value} conversation greeting test passed")
                 
@@ -948,9 +980,11 @@ class TestRealMultiProviderConversationFlow:
                 
                 assert result is not None
                 # Should route to onboarding (profile incomplete by default)
-                assert result["agent"] == "onboarding"
+                assert len(result["messages"]) > 0
+                last_message = result["messages"][-1]
+                assert last_message["agent"] == "onboarding"
                 # Should ask for personal information (flexible wording)
-                content_lower = result["content"].lower()
+                content_lower = last_message["content"].lower()
                 assert any(word in content_lower for word in ["profile", "age", "occupation", "about", "share", "tell", "help", "information"])
                 
                 print(f"✅ {provider.value} financial question test passed")
