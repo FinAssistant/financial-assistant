@@ -198,11 +198,15 @@ export type ConversationRequest = {
   /** Optional conversation session ID */
   session_id?: string | null;
 };
-export type ConversationResponse = {
+export type ConversationMessage = {
   id: string;
   content: string;
-  role: string;
+  role?: string;
   agent: string;
+  message_type?: string;
+};
+export type ConversationResponse = {
+  messages: ConversationMessage[];
   session_id: string;
   user_id: string;
   created_at: string;

@@ -486,6 +486,40 @@
         "title": "ConversationHealthResponse",
         "description": "Response model for conversation health check."
       },
+      "ConversationMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": "assistant"
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent"
+          },
+          "message_type": {
+            "type": "string",
+            "title": "Message Type",
+            "default": "ai_response"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "content",
+          "agent"
+        ],
+        "title": "ConversationMessage",
+        "description": "Individual conversation message model."
+      },
       "ConversationRequest": {
         "properties": {
           "messages": {
@@ -519,21 +553,12 @@
       },
       "ConversationResponse": {
         "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "role": {
-            "type": "string",
-            "title": "Role"
-          },
-          "agent": {
-            "type": "string",
-            "title": "Agent"
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "type": "array",
+            "title": "Messages"
           },
           "session_id": {
             "type": "string",
@@ -550,16 +575,13 @@
         },
         "type": "object",
         "required": [
-          "id",
-          "content",
-          "role",
-          "agent",
+          "messages",
           "session_id",
           "user_id",
           "created_at"
         ],
         "title": "ConversationResponse",
-        "description": "Response model for conversation messages."
+        "description": "Response model for conversation messages - supports multiple messages."
       },
       "HTTPValidationError": {
         "properties": {
