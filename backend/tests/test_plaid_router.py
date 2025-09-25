@@ -64,9 +64,9 @@ class TestPlaidRouterMultipleAccounts:
             # Mock sync database storage methods
             mock_user_storage.get_connected_account_by_plaid_id.return_value = None
             mock_user_storage.create_connected_account.side_effect = [
-                {"id": "db_account_1"},
-                {"id": "db_account_2"},
-                {"id": "db_account_3"}
+                {"id": 1},
+                {"id": 2},
+                {"id": 3}
             ]
 
             # Test request
@@ -82,7 +82,7 @@ class TestPlaidRouterMultipleAccounts:
             assert result.status == "success"
             assert result.accounts_connected == 3
             assert len(result.account_ids) == 3
-            assert result.account_ids == ["db_account_1", "db_account_2", "db_account_3"]
+            assert result.account_ids == [1, 2, 3]
 
             # Verify database calls were made sequentially for each account
             assert mock_user_storage.get_connected_account_by_plaid_id.call_count == 3
@@ -128,11 +128,11 @@ class TestPlaidRouterMultipleAccounts:
 
             # Mock sync database storage methods - account_1 and account_3 already exist
             mock_user_storage.get_connected_account_by_plaid_id.side_effect = [
-                {"id": "existing_account_1"},  # account_1 exists
-                None,                          # account_2 doesn't exist
-                {"id": "existing_account_3"}   # account_3 exists
+                {"id": 1},  # account_1 exists
+                None,      # account_2 doesn't exist
+                {"id": 3}   # account_3 exists
             ]
-            mock_user_storage.create_connected_account.return_value = {"id": "new_account_2"}
+            mock_user_storage.create_connected_account.return_value = {"id": 2}
 
             request = PlaidTokenExchangeRequest(public_token="public-sandbox-token")
 
@@ -142,7 +142,7 @@ class TestPlaidRouterMultipleAccounts:
             # Verify results
             assert result.status == "success"
             assert result.accounts_connected == 3
-            assert result.account_ids == ["existing_account_1", "new_account_2", "existing_account_3"]
+            assert result.account_ids == [1,2,3]  # IDs from mock returns
 
             # Verify database calls
             assert mock_user_storage.get_connected_account_by_plaid_id.call_count == 3
