@@ -108,13 +108,6 @@ async def exchange_public_token(
             )
 
             # Check if account already exists for this user
-            # FIXME observed failure during tests:
-            # financial-assistant-1  | INFO:app.routers.plaid:Starting token exchange for user d78e6599-6c38-4b47-9b0b-6c6d40db820e
-            # financial-assistant-1  | INFO:app.services.plaid_service:Exchanged public token for item eZ5B5nqm36HnMXzpl5rRiKq7xNG8gjHL7APmN
-            # financial-assistant-1  | INFO:app.routers.plaid:Successfully exchanged token for user d78e6599-6c38-4b47-9b0b-6c6d40db820e, item_id: eZ5B5nqm36HnMXzpl5rRiKq7xNG8gjHL7APmN
-            # financial-assistant-1  | INFO:app.services.plaid_service:Retrieved 3 accounts
-            # financial-assistant-1  | INFO:app.routers.plaid:Retrieved 3 accounts for user d78e6599-6c38-4b47-9b0b-6c6d40db820e
-            # financial-assistant-1  | ERROR:app.routers.plaid:Unexpected error during token exchange for user d78e6599-6c38-4b47-9b0b-6c6d40db820e: Connected account with Plaid ID Z35n5Rxm6bHEagmGp4zDFKlQVNXmbMceKGExr already exists for user d78e6599-6c38-4b47-9b0b-6c6d40db820e
             existing_account = user_storage.get_connected_account_by_plaid_id(
                 user_id, account["account_id"]
             )
