@@ -434,23 +434,12 @@ Examples:
         if not ai_messages and all_messages and last_user_message_idx >= 0:
             ai_messages = all_messages[last_user_message_idx + 1:]
 
-        # Process different message types appropriately
-        processed_messages = []
-        for msg in ai_messages:
-            if isinstance(msg, ToolMessage):
-                # Handle tool messages (like Plaid responses)
-                processed_messages.append({
-                    "content": msg.content,
-                    "agent": msg.additional_kwargs.get("agent", "tool"),
-                    "message_type": "tool_response"
-                })
-            else:
-                # Handle AI messages
-                processed_messages.append({
-                    "content": msg.content,
-                    "agent": msg.additional_kwargs.get("agent", "orchestrator"),
-                    "message_type": "ai_response"
-                })
+        # Simple message formatting for non-streaming responses
+        processed_messages = [{
+            "content": msg.content,
+            "agent": msg.additional_kwargs.get("agent", "orchestrator"),
+            "message_type": "tool_response" if isinstance(msg, ToolMessage) else "ai_response"
+        } for msg in ai_messages]
 
         return {
             "messages": processed_messages,
