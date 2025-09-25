@@ -31,7 +31,7 @@ import {
 import { DefaultChatTransport } from "ai";
 import { logout } from "../../../store/slices/authSlice";
 import { PlaidConnect } from "../../onboarding/PlaidConnect";
-import { parseMessageForPlaidData, extractGuidanceText } from "../../../utils/messageUtils";
+import { parseMessageForPlaidData, isPlaidMessage } from "../../../utils/messageUtils";
 import { useExchangePublicTokenPlaidExchangePostMutation } from "../../../store/api/generated";
 import { PlaidLinkOnEvent, PlaidLinkOnExit, PlaidLinkOnSuccess } from "react-plaid-link";
 
@@ -72,23 +72,24 @@ const AssistantMessage = ({
           <MessagePrimitive.Content
             components={{
               Text: ({ text }) => {
-                const plaidData = parseMessageForPlaidData(text);
-
-                if (plaidData && onPlaidSuccess && onPlaidEvent && onPlaidExit) {
-                  const guidanceText = extractGuidanceText(text);
-                  return (
-                    <>
-                      {guidanceText && <p>{guidanceText}</p>}
+                // If it's a pure tool response JSON, hide it and show Plaid component
+                if (isPlaidMessage(text) && text.trim().startsWith('{')) {
+                  const plaidData = parseMessageForPlaidData(text);
+                  if (plaidData && onPlaidSuccess && onPlaidEvent && onPlaidExit) {
+                    return (
                       <PlaidConnect
                         linkToken={plaidData.link_token}
                         onSuccess={onPlaidSuccess}
                         onEvent={onPlaidEvent}
                         onExit={onPlaidExit}
                       />
-                    </>
-                  );
+                    );
+                  }
+                  // If we can't parse it properly, hide it (return null)
+                  return null;
                 }
 
+                // Otherwise, render as normal text (guidance messages are now separate)
                 return <p>{text}</p>;
               }
             }}

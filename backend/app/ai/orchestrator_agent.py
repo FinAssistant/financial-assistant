@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 import logging
 from datetime import datetime
 
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START, add_messages
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -424,26 +424,36 @@ Examples:
                 last_user_message_idx = i
                 break
 
-        # Get all AI messages after the last user message
+        # Get all AI messages and tool messages after the last user message
         ai_messages = []
         for msg in all_messages[last_user_message_idx + 1:]:
-            if isinstance(msg, AIMessage):
+            if isinstance(msg, (AIMessage, ToolMessage)):
                 ai_messages.append(msg)
 
-        # Fallback to last message if no AI messages found after user message
-        if not ai_messages and all_messages:
-            last_msg = all_messages[-1]
-            if isinstance(last_msg, AIMessage):
-                ai_messages = [last_msg]
+        # Fallback: if no AI/Tool messages found after user message, return all remaining messages
+        if not ai_messages and all_messages and last_user_message_idx >= 0:
+            ai_messages = all_messages[last_user_message_idx + 1:]
 
-        return {
-            "messages": [
-                {
+        # Process different message types appropriately
+        processed_messages = []
+        for msg in ai_messages:
+            if isinstance(msg, ToolMessage):
+                # Handle tool messages (like Plaid responses)
+                processed_messages.append({
+                    "content": msg.content,
+                    "agent": msg.additional_kwargs.get("agent", "tool"),
+                    "message_type": "tool_response"
+                })
+            else:
+                # Handle AI messages
+                processed_messages.append({
                     "content": msg.content,
                     "agent": msg.additional_kwargs.get("agent", "orchestrator"),
                     "message_type": "ai_response"
-                } for msg in ai_messages
-            ],
+                })
+
+        return {
+            "messages": processed_messages,
             "session_id": session_id,
             "user_id": user_id
         }
