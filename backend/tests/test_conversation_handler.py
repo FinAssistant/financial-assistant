@@ -137,6 +137,60 @@ class TestConversationHandler:
         assert result["test_response_received"] is False
         assert result["error"] is not None
 
+    @patch('app.ai.conversation_handler.get_orchestrator_agent')
+    @pytest.mark.asyncio
+    async def test_process_message_multiple_messages(self, mock_get_agent):
+        """Test handling of multiple AI messages from orchestrator (e.g., onboarding account connection)."""
+        # Mock orchestrator to return multiple messages like the onboarding agent does
+        mock_agent = AsyncMock()
+        mock_agent.invoke_conversation.return_value = {
+            "messages": [
+                {
+                    "content": "Perfect! Now that we have your demographic information, let's connect your bank accounts for personalized financial insights. I'll generate a secure link for you.",
+                    "agent": "onboarding",
+                    "message_type": "ai_response"
+                },
+                {
+                    "content": "Here's your secure Plaid link: https://cdn.plaid.com/link/v2/stable/link.html?isWebview=false&token=link-sandbox-12345",
+                    "agent": "onboarding",
+                    "message_type": "ai_response"
+                }
+            ],
+            "session_id": "test_session",
+            "user_id": "test_user"
+        }
+        mock_get_agent.return_value = mock_agent
+
+        conversation_handler = ConversationHandler()
+
+        result = await conversation_handler.process_message(
+            user_message="I am 35 years old and want to connect my accounts",
+            user_id="test_user",
+            session_id="test_session"
+        )
+
+        # Verify the multi-message structure is preserved
+        assert "messages" in result
+        assert isinstance(result["messages"], list)
+        assert len(result["messages"]) == 2
+
+        # Verify first message (guidance)
+        first_msg = result["messages"][0]
+        assert "demographic information" in first_msg["content"]
+        assert first_msg["agent"] == "onboarding"
+        assert first_msg["message_type"] == "ai_response"
+
+        # Verify second message (Plaid link)
+        second_msg = result["messages"][1]
+        assert "Plaid link" in second_msg["content"]
+        assert "link-sandbox" in second_msg["content"]
+        assert second_msg["agent"] == "onboarding"
+        assert second_msg["message_type"] == "ai_response"
+
+        # Verify session metadata
+        assert result["session_id"] == "test_session"
+        assert result["user_id"] == "test_user"
+
 
 
 class TestOrchestratorAgent:

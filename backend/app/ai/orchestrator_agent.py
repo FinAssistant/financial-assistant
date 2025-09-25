@@ -414,15 +414,38 @@ Examples:
         # Process through graph - checkpointer automatically manages state persistence
         result = await self.graph.ainvoke(input_data, config)
         
-        # Extract the AI response
-        ai_message = result["messages"][-1]
-        
+        # Extract AI messages that were generated after the last user message
+        all_messages = result["messages"]
+
+        # Find the last user message index
+        last_user_message_idx = -1
+        for i in reversed(range(len(all_messages))):
+            if isinstance(all_messages[i], HumanMessage):
+                last_user_message_idx = i
+                break
+
+        # Get all AI messages after the last user message
+        ai_messages = []
+        for msg in all_messages[last_user_message_idx + 1:]:
+            if isinstance(msg, AIMessage):
+                ai_messages.append(msg)
+
+        # Fallback to last message if no AI messages found after user message
+        if not ai_messages and all_messages:
+            last_msg = all_messages[-1]
+            if isinstance(last_msg, AIMessage):
+                ai_messages = [last_msg]
+
         return {
-            "content": ai_message.content,
-            "agent": ai_message.additional_kwargs.get("agent", "orchestrator"),
+            "messages": [
+                {
+                    "content": msg.content,
+                    "agent": msg.additional_kwargs.get("agent", "orchestrator"),
+                    "message_type": "ai_response"
+                } for msg in ai_messages
+            ],
             "session_id": session_id,
-            "user_id": user_id,
-            "message_type": "ai_response"
+            "user_id": user_id
         }
     
     def stream_conversation(self, user_message: str, user_id: str, session_id: str):
