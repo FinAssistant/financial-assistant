@@ -36,11 +36,13 @@ class ConversationHandler:
         
         if not user_message or not user_message.strip():
             return {
-                "content": "I'm here to help! Please let me know what you'd like to discuss about your finances.",
-                "agent": "orchestrator",
+                "messages": [{
+                    "content": "I'm here to help! Please let me know what you'd like to discuss about your finances.",
+                    "agent": "orchestrator",
+                    "message_type": "ai_response"
+                }],
                 "session_id": effective_session_id,
                 "user_id": user_id,
-                "message_type": "ai_response",
                 "error": None
             }
         
@@ -59,11 +61,13 @@ class ConversationHandler:
             self.logger.error(f"ConversationHandler processing error: {e}")
             # Error handling - return graceful fallback
             return {
-                "content": "I apologize, but I'm having trouble processing your message right now. Please try again.",
-                "agent": "orchestrator",
+                "messages": [{
+                    "content": "I apologize, but I'm having trouble processing your message right now. Please try again.",
+                    "agent": "orchestrator",
+                    "message_type": "ai_response"
+                }],
                 "session_id": effective_session_id,  # Use effective_session_id instead of session_id
                 "user_id": user_id,
-                "message_type": "ai_response",
                 "error": str(e)
             }
     

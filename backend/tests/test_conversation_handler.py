@@ -31,18 +31,20 @@ class TestConversationHandler:
             session_id="test_session_456"
         )
 
-        assert "content" in result
-        assert "agent" in result
+        assert "messages" in result
         assert "session_id" in result
         assert "user_id" in result
-        assert "message_type" in result
+        assert isinstance(result["messages"], list)
+        assert len(result["messages"]) > 0
 
-        assert result["agent"] == "small_talk"
+        # Check first message
+        first_message = result["messages"][0]
+        assert first_message["agent"] == "small_talk"
         assert result["session_id"] == "test_session_456"
         assert result["user_id"] == "test_user_123"
-        assert result["message_type"] == "ai_response"
-        assert isinstance(result["content"], str)
-        assert len(result["content"]) > 0
+        assert first_message["message_type"] == "ai_response"
+        assert isinstance(first_message["content"], str)
+        assert len(first_message["content"]) > 0
 
     @pytest.mark.asyncio
     async def test_process_message_empty_input(self, conversation_handler):
@@ -52,8 +54,12 @@ class TestConversationHandler:
             user_id="test_user_123"
         )
 
-        assert result["content"] == "I'm here to help! Please let me know what you'd like to discuss about your finances."
-        assert result["agent"] == "orchestrator"
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+
+        first_message = result["messages"][0]
+        assert first_message["content"] == "I'm here to help! Please let me know what you'd like to discuss about your finances."
+        assert first_message["agent"] == "orchestrator"
         assert result["user_id"] == "test_user_123"
         assert result["error"] is None
 
@@ -65,8 +71,12 @@ class TestConversationHandler:
             user_id="test_user_123"
         )
 
-        assert result["content"] == "I'm here to help! Please let me know what you'd like to discuss about your finances."
-        assert result["agent"] == "orchestrator"
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+
+        first_message = result["messages"][0]
+        assert first_message["content"] == "I'm here to help! Please let me know what you'd like to discuss about your finances."
+        assert first_message["agent"] == "orchestrator"
 
     @pytest.mark.asyncio
     async def test_process_message_no_session_id(self, conversation_handler):
@@ -97,8 +107,12 @@ class TestConversationHandler:
             user_id="test_user_123"
         )
 
-        assert "I apologize, but I'm having trouble processing your message right now" in result["content"]
-        assert result["agent"] == "orchestrator"
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+
+        first_message = result["messages"][0]
+        assert "I apologize, but I'm having trouble processing your message right now" in first_message["content"]
+        assert first_message["agent"] == "orchestrator"
         assert result["error"] is not None
         assert "OrchestratorAgent error" in result["error"]
 
@@ -224,16 +238,33 @@ class TestOrchestratorAgent:
             session_id="test_session"
         )
 
-        assert "content" in result
-        assert "agent" in result
+        assert "messages" in result
         assert "session_id" in result
         assert "user_id" in result
-        assert "message_type" in result
+        assert isinstance(result["messages"], list)
+        assert len(result["messages"]) == 2
 
-        assert result["agent"] == "small_talk"  # Should be the final agent that responded
+        # Check first message has expected structure
+        first_message = result["messages"][0]
+        assert "content" in first_message
+        assert "agent" in first_message
+        assert "message_type" in first_message
+
+        assert first_message["agent"] == "orchestrator"  # Should be the orchestrator routing message
         assert result["session_id"] == "test_session"
         assert result["user_id"] == "test_user"
-        assert isinstance(result["content"], str)
+        assert first_message["content"] == "SMALLTALK"  # Orchestrator routing message
+
+        # Check first message has expected structure
+        second_message = result["messages"][1]
+        assert "content" in second_message
+        assert "agent" in second_message
+        assert "message_type" in second_message
+
+        assert second_message["agent"] == "small_talk"  # Should be the final agent that responded
+        assert result["session_id"] == "test_session"
+        assert result["user_id"] == "test_user"
+        assert isinstance(second_message["content"], str)
 
     @pytest.mark.skip(reason="OnboardingAgent structured output needs to be fixed")
     @pytest.mark.asyncio

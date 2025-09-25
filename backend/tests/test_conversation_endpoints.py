@@ -46,14 +46,16 @@ class TestConversationEndpoints:
     @patch('app.routers.conversation.get_conversation_handler')
     def test_send_message_success(self, mock_get_orchestrator, client):
         """Test successful message sending with AI SDK format."""
-        # Mock orchestrator to return a successful response
+        # Mock orchestrator to return a successful response with new messages format
         mock_orchestrator = AsyncMock()
         mock_orchestrator.process_message.return_value = {
-            "content": "Hello! How can I help you with budgeting today?",
-            "agent": "small_talk",
+            "messages": [{
+                "content": "Hello! How can I help you with budgeting today?",
+                "agent": "small_talk",
+                "message_type": "ai_response"
+            }],
             "session_id": "session_test_user_123",
             "user_id": "test_user_123",
-            "message_type": "ai_response",
             "error": None
         }
         mock_get_orchestrator.return_value = mock_orchestrator
@@ -78,22 +80,30 @@ class TestConversationEndpoints:
         
         assert response.status_code == 200
         data = response.json()
-        
-        assert "id" in data
-        assert "content" in data
-        assert "role" in data
-        assert "agent" in data
+
+        # Check new ConversationResponse format with messages array
+        assert "messages" in data
         assert "session_id" in data
         assert "user_id" in data
         assert "created_at" in data
-        
-        assert data["role"] == "assistant"
-        assert data["agent"] == "small_talk"  # Should route to small_talk agent
+        assert isinstance(data["messages"], list)
+        assert len(data["messages"]) == 1
+
+        # Check individual message structure
+        message = data["messages"][0]
+        assert "id" in message
+        assert "content" in message
+        assert "role" in message
+        assert "agent" in message
+        assert "message_type" in message
+
+        assert message["role"] == "assistant"
+        assert message["agent"] == "small_talk"  # Should route to small_talk agent
         assert data["user_id"] == "test_user_123"
         assert data["session_id"] == "session_test_user_123"
-        assert isinstance(data["content"], str)
-        assert len(data["content"]) > 0
-        assert "Hello! How can I help you with budgeting today?" in data["content"]
+        assert isinstance(message["content"], str)
+        assert len(message["content"]) > 0
+        assert "Hello! How can I help you with budgeting today?" in message["content"]
     
     @patch('app.routers.conversation.get_conversation_handler')
     def test_send_message_with_custom_session_id(self, mock_get_orchestrator, client):
@@ -103,11 +113,13 @@ class TestConversationEndpoints:
         # Mock orchestrator to return a successful response with custom session ID
         mock_orchestrator = AsyncMock()
         mock_orchestrator.process_message.return_value = {
-            "content": "Test response",
-            "agent": "small_talk",
+            "messages": [{
+                "content": "Test response",
+                "agent": "small_talk",
+                "message_type": "ai_response"
+            }],
             "session_id": custom_session_id,
             "user_id": "test_user_123",
-            "message_type": "ai_response",
             "error": None
         }
         mock_get_orchestrator.return_value = mock_orchestrator
@@ -271,9 +283,14 @@ class TestConversationEndpoints:
         # Mock orchestrator to return error
         mock_orchestrator = AsyncMock()
         mock_orchestrator.process_message.return_value = {
-            "content": "Error occurred",
-            "error": "Test error",
-            "agent": "orchestrator"
+            "messages": [{
+                "content": "Error occurred",
+                "agent": "orchestrator",
+                "message_type": "ai_response"
+            }],
+            "session_id": "session_test_user_123",
+            "user_id": "test_user_123",
+            "error": "Test error"
         }
         mock_get_orchestrator.return_value = mock_orchestrator
         
@@ -370,10 +387,18 @@ class TestConversationEndpointsAsync:
         
         assert response.status_code == 200
         data = response.json()
-        assert data["role"] == "assistant"
+
+        # Check new ConversationResponse format with messages array
+        assert "messages" in data
+        assert isinstance(data["messages"], list)
+        assert len(data["messages"]) > 0
+
+        # Check message structure
+        message = data["messages"][-1]  # Get last message (actual response, not routing)
+        assert message["role"] == "assistant"
         # When LLM is not available, orchestrator handles messages directly
         # When LLM is available, it routes to small_talk agent
-        assert data["agent"] in ["small_talk", "orchestrator"]
+        assert message["agent"] in ["small_talk", "orchestrator"]
     
     async def test_async_streaming_send(self):
         """Test async streaming endpoint with AI SDK format."""
