@@ -10,6 +10,25 @@ from langchain_core.messages import HumanMessage, AIMessage
 from app.ai.onboarding import OnboardingAgent, OnboardingState, ProfileDataExtraction, ExtractedProfileData
 
 
+@pytest.fixture
+def complete_demographic_mock():
+    """Create reusable mock for complete demographic data from database."""
+    return {
+        "user_id": "test_user_123",
+        "age_range": "26_35",
+        "life_stage": "early_career",
+        "occupation_type": "engineer",
+        "location_context": "California",
+        "family_structure": "single_no_dependents",
+        "marital_status": "single",
+        "total_dependents_count": 0,
+        "children_count": 0,
+        "caregiving_responsibilities": "none",
+        "created_at": datetime.now(),
+        "updated_at": datetime.now()
+    }
+
+
 class TestOnboardingState:
     """Test OnboardingState model functionality."""
     
@@ -79,12 +98,12 @@ class TestProfileDataExtraction:
 
 class TestOnboardingAgentMethods:
     """Test OnboardingAgent individual methods with mocking."""
-    
+
     @pytest.fixture
     def agent(self):
         """Create OnboardingAgent instance for testing."""
         return OnboardingAgent()
-    
+
     @pytest.fixture
     def sample_state(self):
         """Create sample OnboardingState for testing."""
@@ -95,7 +114,7 @@ class TestOnboardingAgentMethods:
             needs_database_update=False,
             onboarding_complete=False
         )
-    
+
     @pytest.fixture
     def sample_config(self):
         """Create sample config for testing."""
@@ -105,7 +124,7 @@ class TestOnboardingAgentMethods:
                 "thread_id": "test_thread_456"
             }
         }
-    
+
     @patch('app.ai.onboarding.user_storage')
     def test_read_db_new_user(self, mock_user_storage, agent, sample_state, sample_config):
         """Test _read_db with new user (no existing data)."""
@@ -362,8 +381,18 @@ class TestOnboardingAgentMethods:
 
         assert result == "update_global_state"
 
-    def test_check_completion_not_complete_missing_demographics(self, agent, sample_config):
+    @patch('app.ai.onboarding.user_storage')
+    def test_check_completion_not_complete_missing_demographics(self, mock_user_storage, agent, sample_config):
         """Test _check_completion when demographics are incomplete."""
+        # Mock database to return incomplete demographic data
+        mock_user_storage.get_personal_context.return_value = {
+            "user_id": "test_user_123",
+            "age_range": "26_35",
+            # Missing other required fields: life_stage, occupation_type, etc.
+            "created_at": datetime.now(),
+            "updated_at": datetime.now()
+        }
+
         state = OnboardingState(
             collected_data={"age_range": "26_35"}  # Missing other required fields
         )
@@ -372,9 +401,15 @@ class TestOnboardingAgentMethods:
             result = agent._check_completion(state, sample_config)
 
             assert result["onboarding_complete"] is False
+            # Verify database was queried
+            mock_user_storage.get_personal_context.assert_called_once_with("test_user_123")
 
-    def test_check_completion_complete(self, agent, sample_config):
+    @patch('app.ai.onboarding.user_storage')
+    def test_check_completion_complete(self, mock_user_storage, agent, sample_config, complete_demographic_mock):
         """Test _check_completion when both demographics and accounts are complete."""
+        # Mock database to return complete demographic data
+        mock_user_storage.get_personal_context.return_value = complete_demographic_mock
+
         complete_demographics = {
             "age_range": "26_35",
             "life_stage": "early_career",
@@ -392,6 +427,8 @@ class TestOnboardingAgentMethods:
             result = agent._check_completion(state, sample_config)
 
             assert result["onboarding_complete"] is True
+            # Verify database was queried
+            mock_user_storage.get_personal_context.assert_called_once_with("test_user_123")
 
     def test_route_message_type_normal_message(self, agent):
         """Test _route_message_type with normal user message."""
@@ -565,13 +602,15 @@ class TestOnboardingAgentIntegration:
     
     @patch('app.ai.onboarding.user_storage')
     @patch('app.ai.onboarding.llm_factory')
-    async def test_onboarding_completion_flow(self, mock_llm_factory, mock_user_storage, mock_has_accounts):
+    async def test_onboarding_completion_flow(self, mock_llm_factory, mock_user_storage, mock_has_accounts, complete_demographic_mock):
         # Override the class-level mock to return True for this completion test
         mock_has_accounts.return_value = True
         """Test onboarding flow when user completes their profile."""
         # Setup mocks for existing user with some data
         mock_user_storage.get_user_by_id.return_value = {"id": "test_user_123"}
-        mock_user_storage.get_personal_context.return_value = {
+
+        # Start with incomplete data that will be completed during the flow
+        initial_incomplete_data = {
             "age_range": "26_35",
             "occupation_type": "engineer",
             "life_stage": "early_career",
@@ -579,7 +618,23 @@ class TestOnboardingAgentIntegration:
             "total_dependents_count": 0,
             "children_count": 0,
             "caregiving_responsibilities": "none"
+            # Missing marital_status and family_structure initially
         }
+
+        # Mock the database to return complete data after the LLM adds missing fields
+        complete_data = complete_demographic_mock.copy()
+        complete_data.update({
+            "marital_status": "single",
+            "family_structure": "single_no_dependents"
+        })
+
+        # Set up side_effect to return incomplete first, then complete data
+        mock_user_storage.get_personal_context.side_effect = [
+            initial_incomplete_data,  # First call during _read_db
+            complete_data,  # Subsequent calls during _check_completion
+            complete_data,
+            complete_data
+        ]
         
         mock_llm = Mock()
         mock_structured_llm = Mock()
