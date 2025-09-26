@@ -324,7 +324,7 @@ class PersonalContextCreate(SQLModel):
     total_dependents_count: int = Field(default=0, ge=0)
     children_count: int = Field(default=0, ge=0)
     caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)
-    is_complete: bool = Field(default=False, description="Whether the profile is complete (mainly for testing)")
+    is_complete: bool = Field(default=False, description="Whether the profile is complet)")
 
 class PersonalContextUpdate(SQLModel):
     """PersonalContext for update requests."""

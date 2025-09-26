@@ -261,12 +261,12 @@ class OrchestratorAgent:
         profile_context = state.get_profile_context(user_id)
 
         # Build consolidated system prompt with all context
-        profile_status = "complete" if state.profile_complete else "incomplete"
+        profile_status = "COMPLETE" if state.profile_complete else "INCOMPLETE"
         profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"
 
-        self.logger.info(f"Orchestrator: User profile status: {profile_status}")
-        self.logger.info(f"Orchestrator: User profile context: {profile_info}")
-        self.logger.info(f"Orchestrator: Full profile context: {profile_context}")
+        self.logger.debug(f"Orchestrator: User profile status: {profile_status}")
+        self.logger.debug(f"Orchestrator: User profile context: {profile_info}")
+        self.logger.debug(f"Orchestrator: Full profile context: {profile_context}")
 
         system_prompt = f"""You are an Orchestrator for a financial assistant agent.
 Your job is to analyze the input query and choose exactly one of 4 routing options.
