@@ -278,8 +278,8 @@ USER PROFILE: {profile_info}
 ROUTING RULES:
 
 1. ONBOARDING:  
-   - If the user input contains any information about their personal situation, demographics, geography, occupation, age, family, or financial goals, ALWAYS route to ONBOARDING.  
-   - This applies regardless of whether the profile is COMPLETE or INCOMPLETE.  
+   - If the user profile is INCOMPLETE, ALWAYS route to ONBOARDING.
+   - If the user input contains any information about their personal situation, demographics, geography, occupation, age, family, or financial goals, ALWAYS route to ONBOARDING,  regardless of whether the profile is COMPLETE or INCOMPLETE.  
 
 2. SPENDING:  
    - If the user profile is COMPLETE and the query is about:  

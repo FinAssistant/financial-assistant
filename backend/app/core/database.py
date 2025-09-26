@@ -169,16 +169,53 @@ class SQLiteUserStorage:
             return len(result.fetchall())
     
     async def clear_all_users(self) -> None:
-        """Clear all users from storage. Use with caution."""
+        """Clear all users from storage and all related data. Use with caution."""
         await self._ensure_initialized()
         async with self.session_factory() as session:
+            # Import all related models
+            from .sqlmodel_models import (
+                PersonalContextModel,
+                SpouseBasicInfoModel,
+                DependentModel,
+                ConnectedAccountModel
+            )
+
+            # Clear all user-related tables in dependency order (children first)
+            # 1. Connected accounts
+            connected_accounts_stmt = select(ConnectedAccountModel)
+            connected_accounts_result = await session.execute(connected_accounts_stmt)
+            connected_accounts = connected_accounts_result.fetchall()
+            for account in connected_accounts:
+                await session.delete(account[0])
+
+            # 2. Dependents
+            dependents_stmt = select(DependentModel)
+            dependents_result = await session.execute(dependents_stmt)
+            dependents = dependents_result.fetchall()
+            for dependent in dependents:
+                await session.delete(dependent[0])
+
+            # 3. Spouse basic info
+            spouse_stmt = select(SpouseBasicInfoModel)
+            spouse_result = await session.execute(spouse_stmt)
+            spouses = spouse_result.fetchall()
+            for spouse in spouses:
+                await session.delete(spouse[0])
+
+            # 4. Personal context
+            personal_context_stmt = select(PersonalContextModel)
+            personal_context_result = await session.execute(personal_context_stmt)
+            personal_contexts = personal_context_result.fetchall()
+            for context in personal_contexts:
+                await session.delete(context[0])
+
+            # 5. Finally, clear users
             stmt = select(UserModel)
             result = await session.execute(stmt)
             users = result.fetchall()
-            
             for user in users:
                 await session.delete(user[0])
-            
+
             await session.commit()
     
     async def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
