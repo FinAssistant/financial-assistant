@@ -8,6 +8,7 @@ personalized recommendations through natural language interaction.
 from typing import Dict, Any, Optional
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END, START, MessagesState
+from langgraph.graph.state import RunnableConfig
 import logging
 import json
 
@@ -28,11 +29,7 @@ class SpendingAgentState(MessagesState):
     detected_intent: str = ""  # Intent detected by route_intent node
     found_in_graphiti: bool = False  # Whether transaction data found in Graphiti
     fetch_attempts: int = 0  # Track number of fetch attempts to prevent infinite loops
-    # FIXME: Replace Dict[str, Any] with proper TypedDict if needed
     user_context: Dict[str, Any] = {}  # SQLite demographics data
-    # FIXME: Replace Dict[str, Any] with proper TypedDict if needed
-    spending_insights: Dict[str, Any] = {}  # Graphiti insights cache
-
 
 class SpendingAgent:
     """
@@ -125,6 +122,15 @@ class SpendingAgent:
         self.graph = workflow.compile()
         
         logger.info("SpendingAgent subgraph initialized with conditional routing")
+
+    def graph_compile(self):
+        """
+        Return the compiled graph for integration with orchestrator.
+        Follows the same pattern as onboarding agent.
+        """
+        if not self.graph:
+            raise RuntimeError("SpendingAgent graph not initialized")
+        return self.graph
     
 
     def _route_to_intent_node(self, state: SpendingAgentState) -> str:
@@ -268,7 +274,6 @@ class SpendingAgent:
         Fetch transactions from Plaid via shared MCP client.
 
         Implements the first phase: fetch fresh transaction data from Plaid
-        FIXME: Add Graphiti integration for Phase 2 (store processed insights)
         """
         try:
             # Use the shared Plaid MCP client
@@ -309,13 +314,13 @@ class SpendingAgent:
                 "transactions": []
             }
     
-    def _initialize_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+    def _initialize_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Initialize agent with SQLite context retrieval.
-        
+
         Subtask: Implement agent initialization node with SQLite context retrieval
         """
-        user_id = state.get("user_id", "")
+        user_id = config["configurable"]["user_id"]
         logger.info(f"Initializing SpendingAgent for user: {user_id}")
         
         try:
@@ -345,7 +350,6 @@ class SpendingAgent:
         # Update state with retrieved context
         return {
             "user_context": user_context,
-            "spending_insights": {}  # Will be populated by Graphiti later
         }
     
     def _route_intent_node(self, state: SpendingAgentState) -> Dict[str, Any]:
@@ -356,14 +360,14 @@ class SpendingAgent:
         """
         logger.debug(f"🧠 INTENT_NODE: Starting intent detection with state keys: {list(state.keys())}")
 
-        last_message = state["messages"][-1] if state["messages"] else None
-        logger.debug(f"🧠 INTENT_NODE: Last message type: {type(last_message)}")
+        last_human_message = self._get_last_human_message(state)
+        logger.debug(f"🧠 INTENT_NODE: Last message type: {type(last_human_message)}")
 
-        if not isinstance(last_message, HumanMessage):
+        if last_human_message == "":
             logger.debug("🧠 INTENT_NODE: Not a HumanMessage, defaulting to general_spending")
             return {"detected_intent": "general_spending"}
 
-        user_input = last_message.content
+        user_input = last_human_message
         user_context = state.get("user_context", {})
         logger.debug(f"🧠 INTENT_NODE: User input: {repr(user_input)}")
         logger.debug(f"🧠 INTENT_NODE: User context keys: {list(user_context.keys()) if user_context else 'None'}")
@@ -449,8 +453,8 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
         
-        # FIXME: Integrate processed insights from state.spending_insights (Graphiti cache)
-        # 1. Processed insights from state.spending_insights (Graphiti cache)
+        # FIXME:
+        # 1. Processed insights and reasoning from Graphiti
         # 2. Historical patterns and categorization data
         # 3. Budget vs actual spending comparisons
         
@@ -523,8 +527,8 @@ Generate a comprehensive spending analysis response now."""
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
         
-        # FIXME: Integrate real financial data from these sources:
-        # 1. Current spending patterns from state.spending_insights
+        # FIXME:
+        # 1. Current spending patterns and reasoning from Graphiti
         # 2. Income information from user financial context
         # 3. Existing budget data if available
         # 4. Financial goals and priorities
@@ -591,9 +595,9 @@ Generate personalized budget planning guidance now."""
         
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
-        
-        # FIXME: Integrate real optimization data from these sources:
-        # 1. Spending patterns and categories from state.spending_insights
+
+        # FIXME:
+        # 1. Spending patterns and reasoning from Graphiti
         # 2. Subscription and recurring payment analysis
         # 3. Historical spending trends and outliers
         # 4. Category-wise optimization opportunities
@@ -658,7 +662,7 @@ Generate personalized spending optimization recommendations now."""
         )
         return {"messages": [response]}
     
-    async def _transaction_query_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+    async def _transaction_query_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Specialized node for transaction query intent with Graphiti checking.
 
@@ -667,7 +671,7 @@ Generate personalized spending optimization recommendations now."""
 
         Uses message history to determine if this is a second call (after fetch_and_process).
         """
-        user_id = state.get("user_id", "")
+        user_id = config["configurable"]["user_id"]
         logger.debug(f"📊 TRANSACTION_QUERY_NODE: Starting with user_id: {user_id}")
         logger.debug(f"📊 TRANSACTION_QUERY_NODE: State keys: {list(state.keys())}")
 
@@ -847,13 +851,13 @@ Generate a personalized introduction and guidance now."""
         )
         return {"messages": [response]}
     
-    async def _fetch_and_process_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+    async def _fetch_and_process_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Fetch fresh transactions from Plaid and process them for Graphiti storage.
 
         Fetches transactions, applies AI categorization, and stores results in Graphiti.
         """
-        user_id = state.get("user_id", "")
+        user_id = config["configurable"]["user_id"]
         current_attempts = state.get("fetch_attempts", 0) + 1
         logger.info(f"Fetching fresh transaction data from Plaid for user {user_id} (attempt {current_attempts})")
 
@@ -937,7 +941,7 @@ Generate a personalized introduction and guidance now."""
             "messages": [response],
             "fetch_attempts": current_attempts
         }
-    
+
     async def invoke_spending_conversation(self, user_message: str, user_id: str, session_id: str) -> Dict[str, Any]:
         """
         Process a user message through the spending agent subgraph.
@@ -946,12 +950,12 @@ Generate a personalized introduction and guidance now."""
 
         TODO: Integrate with main orchestrator in /conversation/send API endpoint
         Currently used for testing - needs integration with OrchestratorAgent orchestrator_node
-        
+
         Args:
             user_message: The user's input message
-            user_id: Unique identifier for the user  
+            user_id: Unique identifier for the user
             session_id: Unique identifier for the conversation session
-            
+
         Returns:
             Dict containing the AI response and metadata
         """
@@ -964,23 +968,29 @@ Generate a personalized introduction and guidance now."""
                 "message_type": "ai_response",
                 "error": "SpendingAgent graph not initialized"
             }
-        
+
         # Create initial state
         initial_state = {
             "messages": [HumanMessage(content=user_message)],
             "user_id": user_id,
             "session_id": session_id,
             "user_context": {},
-            "spending_insights": {}
         }
-        
+
         try:
+            # Create config with user_id for proper node access
+            config = {
+                "configurable": {
+                    "user_id": user_id
+                }
+            }
+
             # Process through subgraph
-            result = await self.graph.ainvoke(initial_state)
-            
+            result = await self.graph.ainvoke(initial_state, config)
+
             # Extract the AI response
             ai_message = result["messages"][-1]
-            
+
             return {
                 "content": ai_message.content,
                 "agent": ai_message.additional_kwargs.get("agent", "spending_agent"),
@@ -989,7 +999,7 @@ Generate a personalized introduction and guidance now."""
                 "user_id": user_id,
                 "message_type": "ai_response"
             }
-            
+
         except Exception as e:
             logger.error(f"Error in SpendingAgent processing: {str(e)}")
             return {
