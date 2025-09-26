@@ -337,6 +337,7 @@ class PersonalContextUpdate(SQLModel):
     total_dependents_count: Optional[int] = Field(default=None, ge=0)
     children_count: Optional[int] = Field(default=None, ge=0)
     caregiving_responsibilities: Optional[str] = Field(default=None, max_length=500)
+    is_complete: Optional[bool] = Field(default=None, description="Whether the profile is complete")
 
 # Connected Account models for Plaid integration
 class ConnectedAccountModel(SQLModel, table=True):
