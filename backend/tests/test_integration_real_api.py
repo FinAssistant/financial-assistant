@@ -988,10 +988,103 @@ class TestRealMultiProviderConversationFlow:
                 assert any(word in content_lower for word in ["profile", "age", "occupation", "about", "share", "tell", "help", "information"])
                 
                 print(f"✅ {provider.value} financial question test passed")
-                
+
         finally:
             # Restore original provider
             if original_provider:
                 os.environ['DEFAULT_LLM_PROVIDER'] = original_provider
             elif 'DEFAULT_LLM_PROVIDER' in os.environ:
                 del os.environ['DEFAULT_LLM_PROVIDER']
+
+
+class TestSystemMessageRouting:
+    """Tests for SYSTEM message routing after Plaid account linking."""
+
+    @pytest.mark.asyncio
+    async def test_system_message_routes_to_onboarding_when_profile_incomplete(self):
+        """Test that SYSTEM messages route to ONBOARDING when profile is incomplete."""
+        with pytest.MonkeyPatch().context() as m:
+            m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
+
+            config = get_orchestrator_agent()
+
+            # Test SYSTEM message with incomplete profile (default state)
+            result = await config.invoke_conversation(
+                user_message="SYSTEM: User successfully connected 2 bank accounts from Chase Bank. Please congratulate them and check if their profile is now complete.",
+                user_id="system_test_user_incomplete",
+                session_id="system_test_session_incomplete"
+            )
+
+            assert result is not None
+            assert len(result["messages"]) >= 2, f"Expected at least 2 messages (routing + response), got {len(result['messages'])}"
+
+            # Check routing decision (second-to-last message)
+            routing_message = result["messages"][-2]
+            assert routing_message["agent"] == "orchestrator", f"Expected orchestrator routing, got '{routing_message['agent']}'"
+            assert "ONBOARDING" in routing_message["content"], f"Routing decision should contain 'ONBOARDING', got: {routing_message['content']}"
+
+            # Check agent response (last message)
+            agent_response = result["messages"][-1]
+            assert agent_response["agent"] == "onboarding", f"Expected 'onboarding' agent response, got '{agent_response['agent']}'"
+
+            # Should mention congratulations or account connection
+            content_lower = agent_response["content"].lower()
+            assert any(word in content_lower for word in ["congratulat", "account", "bank", "connect", "link"]), f"Content doesn't mention account connection: {agent_response['content']}"
+
+    @pytest.mark.asyncio
+    async def test_spending_query_routes_to_spending_when_profile_complete(self):
+        """Test that spending queries route to SPENDING when profile is complete."""
+        with pytest.MonkeyPatch().context() as m:
+            m.delattr("app.services.llm_service.llm_factory.create_llm", raising=False)
+
+            # Mock a complete profile by creating personal context
+            from app.core.database import user_storage
+            from app.core.sqlmodel_models import PersonalContextCreate
+            user_id = "system_test_user_complete"
+
+            # Create user and complete personal context
+            user_storage.create_user({
+                "id": user_id,
+                "email": "test@example.com",
+                "password_hash": "fake_hash",
+                "name": "Test User"
+            })
+
+            # Create completed personal context using the proper model
+            context_data = PersonalContextCreate(
+                age_range="26_35",
+                life_stage="early_career",
+                occupation_type="technology",
+                location_context="san_francisco_bay_area",
+                family_structure="single_no_dependents",
+                marital_status="single",
+                total_dependents_count=0,
+                caregiving_responsibilities="none",
+                is_complete=True  # This is the key - profile is complete
+            )
+            user_storage.create_personal_context(user_id, context_data)
+
+            config = get_orchestrator_agent()
+
+            # Test spending query with complete profile
+            result = await config.invoke_conversation(
+                user_message="How should I budget my monthly expenses?",
+                user_id=user_id,
+                session_id="system_test_session_complete"
+            )
+
+            assert result is not None
+            assert len(result["messages"]) >= 2, f"Expected at least 2 messages (routing + response), got {len(result['messages'])}"
+
+            # Check routing decision (second-to-last message)
+            routing_message = result["messages"][-2]
+            assert routing_message["agent"] == "orchestrator", f"Expected orchestrator routing, got '{routing_message['agent']}'"
+            assert "SPENDING" in routing_message["content"], f"Routing decision should contain 'SPENDING', got: {routing_message['content']}"
+
+            # Check agent response (last message)
+            agent_response = result["messages"][-1]
+            assert agent_response["agent"] == "spending", f"Expected 'spending' agent response, got '{agent_response['agent']}'"
+
+            # Should mention budgeting or expenses
+            content_lower = agent_response["content"].lower()
+            assert any(word in content_lower for word in ["budget", "expense", "spending", "money", "financial"]), f"Content doesn't mention budgeting: {agent_response['content']}"

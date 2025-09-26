@@ -73,12 +73,7 @@ class GlobalState(BaseModel):
             # Update GlobalState profile_complete to match authoritative source
             self.profile_complete = is_complete
 
-            if not is_complete:
-                self.profile_context = "User has not completed their profile setup. Provide general financial guidance."
-                self.profile_context_timestamp = datetime.now()
-                return
-            
-            # Build context from PersonalContextModel (already fetched above)
+            # Build context from PersonalContextModel even if not complete (partial demographic data is still useful)
             if personal_context:
                 # Build context from PersonalContextModel
                 context_parts = []
@@ -266,9 +261,13 @@ class OrchestratorAgent:
         profile_context = state.get_profile_context(user_id)
 
         # Build consolidated system prompt with all context
-        profile_status = "complete" if state.profile_complete else "incomplete"
+        profile_status = "COMPLETE" if state.profile_complete else "INCOMPLETE"
         profile_info = state.profile_context if state.profile_complete and state.profile_context else "No profile information available"
-        
+
+        self.logger.debug(f"Orchestrator: User profile status: {profile_status}")
+        self.logger.debug(f"Orchestrator: User profile context: {profile_info}")
+        self.logger.debug(f"Orchestrator: Full profile context: {profile_context}")
+
         system_prompt = f"""You are an Orchestrator for a financial assistant agent.
 Your job is to analyze the input query and choose exactly one of 4 routing options.
 
@@ -278,8 +277,8 @@ USER PROFILE: {profile_info}
 ROUTING RULES:
 
 1. ONBOARDING:  
-   - If the user input contains any information about their personal situation, demographics, geography, occupation, age, family, or financial goals, ALWAYS route to ONBOARDING.  
-   - This applies regardless of whether the profile is COMPLETE or INCOMPLETE.  
+   - If the user profile is INCOMPLETE, ALWAYS route to ONBOARDING.
+   - If the user input contains any information about their personal situation, demographics, geography, occupation, age, family, or financial goals, ALWAYS route to ONBOARDING,  regardless of whether the profile is COMPLETE or INCOMPLETE.  
 
 2. SPENDING:  
    - If the user profile is COMPLETE and the query is about:  

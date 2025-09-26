@@ -392,14 +392,38 @@ class OnboardingAgent:
         """Check if all 9 required fields are present and not None."""
         required_fields = {
             'age_range', 'life_stage', 'occupation_type', 'location_context',
-            'family_structure', 'marital_status', 'total_dependents_count', 
+            'family_structure', 'marital_status', 'total_dependents_count',
             'children_count', 'caregiving_responsibilities'
         }
-        
+
         for field in required_fields:
             if field not in collected_data or collected_data[field] is None or collected_data[field] == '':
                 return False
         return True
+
+    def _get_demographic_complete(self, user_id: str) -> bool:
+        """
+        Check if user's demographic profile is complete by reading directly from database.
+
+        Returns True if all 9 required demographic fields are present and not None.
+        This is the single source of truth for demographic completion status.
+        """
+        personal_context = user_storage.get_personal_context(user_id)
+
+        if not personal_context:
+            return False
+
+        # Check demographic completion (all 9 fields present in database)
+        required_fields = [
+            'age_range', 'life_stage', 'occupation_type', 'location_context',
+            'family_structure', 'marital_status', 'total_dependents_count',
+            'children_count', 'caregiving_responsibilities'
+        ]
+
+        return all(
+            field in personal_context and personal_context[field] is not None
+            for field in required_fields
+        )
 
     def _handle_account_connection(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
         """
@@ -437,20 +461,11 @@ class OnboardingAgent:
         }
 
     def _check_completion(self, state: OnboardingState, config: RunnableConfig) -> Dict[str, Any]:
-        """Dedicated node to check profile completion status."""
+        """Dedicated node to check profile completion status by reading directly from database."""
         user_id = config["configurable"]["user_id"]
 
-        # Check demographic completion (all 9 fields present)
-        required_fields = [
-            'age_range', 'life_stage', 'occupation_type', 'location_context',
-            'family_structure', 'marital_status', 'total_dependents_count',
-            'children_count', 'caregiving_responsibilities'
-        ]
-
-        demographic_complete = all(
-            field in state.collected_data and state.collected_data[field] is not None
-            for field in required_fields
-        )
+        # Check demographic completion using shared method
+        demographic_complete = self._get_demographic_complete(user_id)
 
         # Check account connection
         has_accounts = self._has_connected_accounts(user_id)
@@ -582,25 +597,16 @@ class OnboardingAgent:
             }
 
     def _route_after_llm(self, state: OnboardingState, config: RunnableConfig) -> str:
-        """Route based on stepwise completion."""
+        """Route based on stepwise completion by reading directly from database."""
+        user_id = config["configurable"]["user_id"]
 
-        # Check demographic completion first
-        required_fields = [
-            'age_range', 'life_stage', 'occupation_type', 'location_context',
-            'family_structure', 'marital_status', 'total_dependents_count',
-            'children_count', 'caregiving_responsibilities'
-        ]
-
-        demographic_complete = all(
-            field in state.collected_data and state.collected_data[field] is not None
-            for field in required_fields
-        )
+        # Check demographic completion using shared method
+        demographic_complete = self._get_demographic_complete(user_id)
 
         if not demographic_complete:
             return "check_completion"  # Continue collecting demographics
 
         # Demographics complete, check accounts
-        user_id = config["configurable"]["user_id"]
         has_accounts = self._has_connected_accounts(user_id)
 
         if not has_accounts:
