@@ -4,20 +4,23 @@ Clean replacement for in-memory storage with persistent data.
 """
 
 import asyncio
+import logging
 from typing import Dict, Optional, List, Any
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-import uuid
+from sqlmodel import SQLModel
 
 from .config import settings
 from .sqlmodel_models import (
     UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate,
-    ConnectedAccountModel, ConnectedAccountCreate, ConnectedAccountUpdate
+    ConnectedAccountModel, ConnectedAccountCreate, ConnectedAccountUpdate,
+    TransactionModel, TransactionCreate, TransactionUpdate
 )
-from sqlmodel import SQLModel
+
+logger = logging.getLogger(__name__)
 
 class SQLiteUserStorage:
     """
@@ -345,7 +348,7 @@ class SQLiteUserStorage:
         async with self.session_factory() as session:
             stmt = select(ConnectedAccountModel).where(
                 ConnectedAccountModel.user_id == user_id,
-                ConnectedAccountModel.is_active == True
+                ConnectedAccountModel.is_active
             ).order_by(ConnectedAccountModel.created_at)
             result = await session.execute(stmt)
             accounts = result.fetchall()
@@ -466,7 +469,7 @@ class SQLiteUserStorage:
         async with self.session_factory() as session:
             stmt = select(ConnectedAccountModel).where(
                 ConnectedAccountModel.user_id == user_id,
-                ConnectedAccountModel.is_active == True
+                ConnectedAccountModel.is_active
             ).order_by(ConnectedAccountModel.created_at)
             result = await session.execute(stmt)
             accounts = result.fetchall()
@@ -478,10 +481,256 @@ class SQLiteUserStorage:
         async with self.session_factory() as session:
             stmt = select(ConnectedAccountModel).where(
                 ConnectedAccountModel.user_id == user_id,
-                ConnectedAccountModel.is_active == True
+                ConnectedAccountModel.is_active
             )
             result = await session.execute(stmt)
             return len(result.fetchall())
+
+    # =============================================================================
+    # Transaction Storage Operations
+    # =============================================================================
+
+    async def get_transaction_by_hash(self, canonical_hash: str) -> Optional[Dict[str, Any]]:
+        """Get transaction by canonical hash. Returns transaction dict or None if not found."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(TransactionModel).where(TransactionModel.canonical_hash == canonical_hash)
+            result = await session.execute(stmt)
+            transaction = result.first()
+            return transaction[0].to_dict() if transaction else None
+
+    async def get_transaction_by_id(self, transaction_id: str) -> Optional[Dict[str, Any]]:
+        """Get transaction by Plaid transaction ID. Returns transaction dict or None if not found."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(TransactionModel).where(TransactionModel.transaction_id == transaction_id)
+            result = await session.execute(stmt)
+            transaction = result.first()
+            return transaction[0].to_dict() if transaction else None
+
+    async def get_transactions_for_user(
+        self,
+        user_id: str,
+        limit: Optional[int] = None,
+        account_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get transactions for user with optional filters.
+        Returns list of transaction dictionaries.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(TransactionModel).where(TransactionModel.user_id == user_id)
+
+            # Add optional filters
+            if account_id:
+                stmt = stmt.where(TransactionModel.account_id == account_id)
+            if start_date:
+                stmt = stmt.where(TransactionModel.date >= start_date)
+            if end_date:
+                stmt = stmt.where(TransactionModel.date <= end_date)
+
+            # Order by date descending (most recent first)
+            stmt = stmt.order_by(TransactionModel.date.desc(), TransactionModel.created_at.desc())
+
+            # Apply limit if specified
+            if limit:
+                stmt = stmt.limit(limit)
+
+            result = await session.execute(stmt)
+            transactions = result.fetchall()
+            return [transaction[0].to_dict() for transaction in transactions]
+
+    async def create_transaction(self, transaction_data: TransactionCreate) -> Dict[str, Any]:
+        """
+        Create transaction in storage.
+        Returns the created transaction data.
+        Raises ValueError if transaction with canonical_hash already exists.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            try:
+                transaction_model = TransactionModel(**transaction_data.model_dump())
+                session.add(transaction_model)
+                await session.commit()
+                await session.refresh(transaction_model)
+                return transaction_model.to_dict()
+            except IntegrityError:
+                await session.rollback()
+                raise ValueError(f"Transaction with canonical hash {transaction_data.canonical_hash} already exists")
+
+    async def update_transaction(self, canonical_hash: str, updates: TransactionUpdate) -> Optional[Dict[str, Any]]:
+        """
+        Update transaction data.
+        Returns updated transaction data or None if transaction not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(TransactionModel).where(TransactionModel.canonical_hash == canonical_hash)
+            result = await session.execute(stmt)
+            transaction = result.first()
+
+            if not transaction:
+                return None
+
+            transaction_model = transaction[0]
+
+            # Update fields from TransactionUpdate
+            update_data = updates.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(transaction_model, field, value)
+
+            transaction_model.updated_at = datetime.now(timezone.utc)
+
+            await session.commit()
+            await session.refresh(transaction_model)
+            return transaction_model.to_dict()
+
+    async def create_or_update_transaction(self, transaction_data: TransactionCreate) -> Dict[str, Any]:
+        """
+        Create or update transaction data using database upsert (INSERT OR REPLACE).
+        Returns the transaction data (created or updated).
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            try:
+                # Use SQLite's INSERT OR REPLACE for efficient upsert
+
+                # Build INSERT OR REPLACE statement
+                tx_data = transaction_data.model_dump()
+
+                # Execute upsert
+                transaction_model = TransactionModel(**tx_data)
+                await session.merge(transaction_model)  # SQLAlchemy's upsert method
+                await session.commit()
+                await session.refresh(transaction_model)
+                return transaction_model.to_dict()
+
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error in transaction upsert: {e}")
+                raise
+
+    async def delete_transaction(self, canonical_hash: str) -> bool:
+        """
+        Delete transaction by canonical hash.
+        Returns True if transaction was deleted, False if not found.
+        """
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(TransactionModel).where(TransactionModel.canonical_hash == canonical_hash)
+            result = await session.execute(stmt)
+            transaction = result.first()
+
+            if not transaction:
+                return False
+
+            await session.delete(transaction[0])
+            await session.commit()
+            return True
+
+    async def get_transactions_count(self, user_id: str) -> int:
+        """Get count of transactions for user."""
+        await self._ensure_initialized()
+        async with self.session_factory() as session:
+            stmt = select(TransactionModel).where(TransactionModel.user_id == user_id)
+            result = await session.execute(stmt)
+            return len(result.fetchall())
+
+    async def get_spending_summary(self, user_id: str, days: int = 30) -> Dict[str, Any]:
+        """
+        Get spending summary for user for the last N days.
+        Returns summary with total amounts, category breakdowns, etc.
+        """
+        from datetime import datetime, timedelta
+
+        # Calculate date range
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        transactions = await self.get_transactions_for_user(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        # Calculate summary statistics
+        total_amount = sum(t['amount'] for t in transactions)
+        transaction_count = len(transactions)
+
+        # Group by AI category
+        category_summary = {}
+        for transaction in transactions:
+            category = transaction.get('ai_category', 'Uncategorized')
+            if category not in category_summary:
+                category_summary[category] = {
+                    'count': 0,
+                    'total_amount': 0.0,
+                    'transactions': []
+                }
+            category_summary[category]['count'] += 1
+            category_summary[category]['total_amount'] += transaction['amount']
+            category_summary[category]['transactions'].append(transaction['canonical_hash'])
+
+        return {
+            'user_id': user_id,
+            'period_days': days,
+            'start_date': start_date,
+            'end_date': end_date,
+            'total_amount': total_amount,
+            'transaction_count': transaction_count,
+            'category_summary': category_summary,
+            'most_recent_transaction': transactions[0] if transactions else None
+        }
+
+    async def batch_create_transactions(self, transactions: List[TransactionCreate]) -> Dict[str, Any]:
+        """
+        Efficiently store multiple transactions using database indexes for duplicate prevention.
+
+        Args:
+            transactions: List of TransactionCreate objects to store
+
+        Returns:
+            Dict with storage statistics: stored, duplicates, errors
+        """
+        if not transactions:
+            return {"stored": 0, "duplicates": 0, "errors": 0}
+
+        await self._ensure_initialized()
+
+        stored_count = 0
+        duplicate_count = 0
+        error_count = 0
+
+        # Process each transaction individually to handle duplicates properly
+        for tx_data in transactions:
+            try:
+                async with self.session_factory() as session:
+                    # Create transaction model and let database indexes handle duplicates
+                    transaction_model = TransactionModel(**tx_data.model_dump())
+                    session.add(transaction_model)
+                    await session.commit()
+                    stored_count += 1
+                    logger.debug(f"Stored transaction: {tx_data.canonical_hash}")
+
+            except Exception as e:
+                # Check if it's a duplicate (integrity error)
+                if "UNIQUE constraint failed" in str(e) or "PRIMARY KEY constraint failed" in str(e):
+                    duplicate_count += 1
+                    logger.debug(f"Duplicate transaction detected by database: {tx_data.canonical_hash}")
+                else:
+                    error_count += 1
+                    logger.error(f"Error storing transaction {tx_data.canonical_hash}: {e}")
+
+        logger.info(f"Batch storage: {stored_count} stored, {duplicate_count} duplicates, {error_count} errors")
+
+        return {
+            "stored": stored_count,
+            "duplicates": duplicate_count,
+            "errors": error_count
+        }
 # Async-to-sync wrapper for compatibility with existing sync code
 class AsyncUserStorageWrapper:
     """Wrapper to make async SQLite storage work with sync code."""
@@ -623,6 +872,56 @@ class AsyncUserStorageWrapper:
     def get_connected_accounts_count(self, user_id: str) -> int:
         """Get count of active connected accounts for user."""
         return self._run_async(self._async_storage.get_connected_accounts_count(user_id))
+
+    # Transaction operations (sync wrappers)
+    def get_transaction_by_hash(self, canonical_hash: str) -> Optional[Dict[str, Any]]:
+        """Get transaction by canonical hash."""
+        return self._run_async(self._async_storage.get_transaction_by_hash(canonical_hash))
+
+    def get_transaction_by_id(self, transaction_id: str) -> Optional[Dict[str, Any]]:
+        """Get transaction by Plaid transaction ID."""
+        return self._run_async(self._async_storage.get_transaction_by_id(transaction_id))
+
+    def get_transactions_for_user(
+        self,
+        user_id: str,
+        limit: Optional[int] = None,
+        account_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get transactions for user with optional filters."""
+        return self._run_async(self._async_storage.get_transactions_for_user(
+            user_id, limit, account_id, start_date, end_date
+        ))
+
+    def create_transaction(self, transaction_data) -> Dict[str, Any]:
+        """Create transaction in storage."""
+        return self._run_async(self._async_storage.create_transaction(transaction_data))
+
+    def update_transaction(self, canonical_hash: str, updates) -> Optional[Dict[str, Any]]:
+        """Update transaction data."""
+        return self._run_async(self._async_storage.update_transaction(canonical_hash, updates))
+
+    def create_or_update_transaction(self, transaction_data) -> Dict[str, Any]:
+        """Create or update transaction data based on canonical hash."""
+        return self._run_async(self._async_storage.create_or_update_transaction(transaction_data))
+
+    def delete_transaction(self, canonical_hash: str) -> bool:
+        """Delete transaction by canonical hash."""
+        return self._run_async(self._async_storage.delete_transaction(canonical_hash))
+
+    def get_transactions_count(self, user_id: str) -> int:
+        """Get count of transactions for user."""
+        return self._run_async(self._async_storage.get_transactions_count(user_id))
+
+    def get_spending_summary(self, user_id: str, days: int = 30) -> Dict[str, Any]:
+        """Get spending summary for user for the last N days."""
+        return self._run_async(self._async_storage.get_spending_summary(user_id, days))
+
+    def batch_create_transactions(self, transactions: List[TransactionCreate]) -> Dict[str, Any]:
+        """Efficiently store multiple transactions using database indexes for duplicate prevention."""
+        return self._run_async(self._async_storage.batch_create_transactions(transactions))
 
 # Global user storage instance - now SQLite with sync compatibility
 user_storage = AsyncUserStorageWrapper()

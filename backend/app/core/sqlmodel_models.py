@@ -436,3 +436,115 @@ class ConnectedAccountUpdate(SQLModel):
     account_name: Optional[str] = Field(default=None, max_length=255)
     is_active: Optional[bool] = None
     last_sync_at: Optional[datetime] = None
+
+# =============================================================================
+# Transaction Storage Models
+# =============================================================================
+
+class TransactionModel(SQLModel, table=True):
+    """
+    SQLModel for canonical transaction storage.
+    Stores transaction data as source of truth with AI categorization.
+    """
+    __tablename__ = "transactions"
+
+    # Primary key using canonical hash for deduplication
+    canonical_hash: str = Field(primary_key=True, max_length=64, description="SHA256 hash of transaction for deduplication")
+
+    # User association
+    user_id: str = Field(index=True, max_length=255, description="User ID who owns this transaction")
+
+    # Core transaction data from Plaid
+    transaction_id: str = Field(unique=True, max_length=255, description="Plaid transaction ID")
+    account_id: str = Field(max_length=255, description="Plaid account ID")
+    amount: float = Field(description="Transaction amount (positive for debits, negative for credits)")
+    date: str = Field(max_length=50, description="Transaction date as string")
+    name: str = Field(max_length=500, description="Transaction name/description")
+    merchant_name: Optional[str] = Field(default=None, max_length=255, description="Merchant name if available")
+    category: Optional[str] = Field(default=None, max_length=1000, description="JSON string of Plaid categories")
+    pending: bool = Field(default=False, description="Whether transaction is pending")
+
+    # AI categorization data
+    ai_category: Optional[str] = Field(default=None, max_length=100, description="AI-generated category")
+    ai_subcategory: Optional[str] = Field(default=None, max_length=100, description="AI-generated subcategory")
+    ai_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="AI categorization confidence score")
+    ai_tags: Optional[str] = Field(default=None, max_length=1000, description="JSON string of AI-generated tags")
+
+    # Metadata
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True))
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True))
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary for API responses."""
+        import json
+
+        # Parse JSON fields
+        plaid_categories = []
+        if self.category:
+            try:
+                plaid_categories = json.loads(self.category)
+            except (json.JSONDecodeError, TypeError):
+                plaid_categories = []
+
+        ai_tags = []
+        if self.ai_tags:
+            try:
+                ai_tags = json.loads(self.ai_tags)
+            except (json.JSONDecodeError, TypeError):
+                ai_tags = []
+
+        return {
+            "canonical_hash": self.canonical_hash,
+            "user_id": self.user_id,
+            "transaction_id": self.transaction_id,
+            "account_id": self.account_id,
+            "amount": self.amount,
+            "date": self.date,
+            "name": self.name,
+            "merchant_name": self.merchant_name,
+            "category": plaid_categories,
+            "pending": self.pending,
+            "ai_category": self.ai_category,
+            "ai_subcategory": self.ai_subcategory,
+            "ai_confidence": self.ai_confidence,
+            "ai_tags": ai_tags,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+class TransactionCreate(SQLModel):
+    """Transaction data for creation requests."""
+    canonical_hash: str = Field(max_length=64)
+    user_id: str = Field(max_length=255)
+    transaction_id: str = Field(max_length=255)
+    account_id: str = Field(max_length=255)
+    amount: float
+    date: str = Field(max_length=50)
+    name: str = Field(max_length=500)
+    merchant_name: Optional[str] = Field(default=None, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=1000)  # JSON string
+    pending: bool = Field(default=False)
+    ai_category: Optional[str] = Field(default=None, max_length=100)
+    ai_subcategory: Optional[str] = Field(default=None, max_length=100)
+    ai_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    ai_tags: Optional[str] = Field(default=None, max_length=1000)  # JSON string
+
+class TransactionUpdate(SQLModel):
+    """Transaction data for update requests."""
+    amount: Optional[float] = None
+    date: Optional[str] = Field(default=None, max_length=50)
+    name: Optional[str] = Field(default=None, max_length=500)
+    merchant_name: Optional[str] = Field(default=None, max_length=255)
+    category: Optional[str] = Field(default=None, max_length=1000)
+    pending: Optional[bool] = None
+    ai_category: Optional[str] = Field(default=None, max_length=100)
+    ai_subcategory: Optional[str] = Field(default=None, max_length=100)
+    ai_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    ai_tags: Optional[str] = Field(default=None, max_length=1000)
+    updated_at: Optional[datetime] = None
