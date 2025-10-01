@@ -12,7 +12,6 @@ from langgraph.graph.state import RunnableConfig
 import logging
 import json
 
-from app.services.user_context_dao import UserContextDAOSync
 from app.services.llm_service import llm_factory
 from app.services.transaction_categorization import TransactionCategorizationService
 from app.utils.context_formatting import build_user_context_string, format_transaction_insights_for_llm_context
@@ -44,13 +43,12 @@ class SpendingAgent:
     
     def __init__(self, test_transaction_limit: Optional[int] = None):
         self.graph = None
-        self._user_context_dao = UserContextDAOSync()
         self._plaid_client = get_plaid_client()  # Use shared Plaid MCP client
         self.test_transaction_limit = test_transaction_limit  # Hard limit for testing
 
-        # Initialize SQLite transaction storage for query execution
-        self._transaction_storage = SQLiteUserStorage()
-        logger.info("Transaction storage initialized for SpendingAgent")
+        # Initialize SQLite storage for both transactions and user context
+        self._storage = SQLiteUserStorage()
+        logger.info("SQLite storage initialized for SpendingAgent (transactions + user context)")
 
         # Initialize LLM client for intelligent responses and analysis
         try:
@@ -373,7 +371,7 @@ class SpendingAgent:
                 "transactions": []
             }
     
-    def _initialize_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    async def _initialize_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Initialize agent with SQLite context retrieval.
 
@@ -381,10 +379,10 @@ class SpendingAgent:
         """
         user_id = config["configurable"]["user_id"]
         logger.info(f"Initializing SpendingAgent for user: {user_id}")
-        
+
         try:
-            # Retrieve user context from SQLite via DAO
-            user_context = self._user_context_dao.get_user_context(user_id)
+            # Retrieve user context from SQLite
+            user_context = await self._storage.get_user_context(user_id)
             
             if not user_context:
                 # User not found - return default context
@@ -739,7 +737,7 @@ Generate personalized spending optimization recommendations now."""
         has_stored_data = False
         try:
             # Quick check if user has any transactions
-            user_transactions = await self._transaction_storage.get_transactions_for_user(user_id, limit=1)
+            user_transactions = await self._storage.get_transactions_for_user(user_id, limit=1)
             has_stored_data = len(user_transactions) > 0
             logger.info(f"📊 TRANSACTION_QUERY_NODE: SQLite has data: {has_stored_data}")
         except Exception as e:
@@ -804,7 +802,7 @@ Generate personalized spending optimization recommendations now."""
             query_result = await execute_transaction_query(
                 intent=query_intent,
                 user_id=user_id,
-                storage=self._transaction_storage
+                storage=self._storage
             )
 
             logger.info(f"📊 TRANSACTION_QUERY_NODE: Query executed - success: {query_result.success}, count: {query_result.total_count}")
@@ -1009,7 +1007,7 @@ Generate a personalized introduction and guidance now."""
                         ]
 
                         # Batch store in SQLite
-                        sqlite_result = await self._transaction_storage.batch_create_transactions(transaction_creates)
+                        sqlite_result = await self._storage.batch_create_transactions(transaction_creates)
                         sqlite_stored = sqlite_result.get("stored", 0)
                         sqlite_duplicates = sqlite_result.get("duplicates", 0)
                         sqlite_errors = sqlite_result.get("errors", 0)

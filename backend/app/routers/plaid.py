@@ -14,7 +14,6 @@ from app.routers.auth import get_current_user
 from app.core.database import user_storage
 from app.core.sqlmodel_models import ConnectedAccountCreate
 from app.services.plaid_service import PlaidService
-from app.core.config import settings
 from app.ai.conversation_handler import ConversationHandler
 
 logger = logging.getLogger(__name__)

@@ -4,11 +4,10 @@ Tests the race condition fix for duplicate account creation.
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 from fastapi import HTTPException
 
 from app.routers.plaid import PlaidTokenExchangeRequest, exchange_public_token
-from app.core.sqlmodel_models import ConnectedAccountCreate
 
 
 class TestPlaidRouterMultipleAccounts:

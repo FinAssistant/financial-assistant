@@ -34,7 +34,8 @@ class TestSpendingAgent:
         agent2 = get_spending_agent()
         assert agent1 is agent2
     
-    def test_initialize_node_with_mock_data(self):
+    @pytest.mark.asyncio
+    async def test_initialize_node_with_mock_data(self):
         """Test _initialize_node returns mock user context."""
         initial_state = {
             "messages": [],
@@ -48,7 +49,7 @@ class TestSpendingAgent:
             }
         }
 
-        result = self.agent._initialize_node(initial_state, config)
+        result = await self.agent._initialize_node(initial_state, config)
 
         assert "user_context" in result
         assert result["user_context"]["user_id"] == "test_user_123"

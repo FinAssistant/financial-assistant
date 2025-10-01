@@ -1,9 +1,8 @@
 from typing import Dict, Any, Optional, Annotated
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END, START, add_messages
 import logging
 from app.services.llm_service import llm_factory

@@ -3,7 +3,7 @@ Pydantic models for Plaid API data structures.
 These models represent the sanitized transaction and account data from Plaid.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from decimal import Decimal
 

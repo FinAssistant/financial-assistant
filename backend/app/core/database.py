@@ -251,6 +251,75 @@ class SQLiteUserStorage:
             users = result.fetchall()
             return [user[0].to_dict() for user in users]
 
+    async def get_user_context(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get complete user context including basic info and personal demographics.
+        Uses a single JOIN query for efficiency.
+        Returns agent-ready context dict.
+        """
+        await self._ensure_initialized()
+
+        async with self.session_factory() as session:
+            # Single query with LEFT JOIN to get user + personal context
+            stmt = (
+                select(UserModel, PersonalContextModel)
+                .outerjoin(PersonalContextModel, UserModel.id == PersonalContextModel.user_id)
+                .where(UserModel.id == user_id)
+            )
+
+            result = await session.execute(stmt)
+            row = result.first()
+
+            if not row:
+                return {}  # User not found
+
+            user_model, personal_context_model = row
+
+            # Build agent-ready context structure
+            context = {
+                "user_id": user_id,
+                "name": user_model.name or "User",
+                "email": user_model.email,
+                "profile_complete": user_model.profile_complete,
+                "demographics": {},
+                "financial_context": {}
+            }
+
+            # Add personal context demographics if available
+            if personal_context_model:
+                pc_dict = personal_context_model.to_dict()
+
+                # Map demographics (updated for new PersonalContextModel schema)
+                demographics = {}
+                if pc_dict.get("age_range"):
+                    demographics["age_range"] = pc_dict["age_range"]
+                if pc_dict.get("life_stage"):
+                    demographics["life_stage"] = pc_dict["life_stage"]
+                if pc_dict.get("marital_status"):
+                    demographics["marital_status"] = pc_dict["marital_status"]
+                if pc_dict.get("occupation_type"):
+                    demographics["occupation_type"] = pc_dict["occupation_type"]
+                if pc_dict.get("location_context"):
+                    demographics["location"] = pc_dict["location_context"]
+
+                context["demographics"] = demographics
+
+                # Map financial context (updated for new PersonalContextModel schema)
+                financial_context = {}
+                if pc_dict.get("family_structure"):
+                    financial_context["family_structure"] = pc_dict["family_structure"]
+                if pc_dict.get("total_dependents_count") is not None:
+                    financial_context["has_dependents"] = pc_dict["total_dependents_count"] > 0
+                    financial_context["dependent_count"] = pc_dict["total_dependents_count"]
+                if pc_dict.get("children_count") is not None:
+                    financial_context["children_count"] = pc_dict["children_count"]
+                if pc_dict.get("caregiving_responsibilities"):
+                    financial_context["caregiving_responsibilities"] = pc_dict["caregiving_responsibilities"]
+
+                context["financial_context"] = financial_context
+
+            return context
+
     # PersonalContext operations
     async def get_personal_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get personal context data for user. Returns context dict or None if not found."""
@@ -798,7 +867,11 @@ class AsyncUserStorageWrapper:
     def list_all_users(self) -> List[Dict[str, Any]]:
         """Get all users."""
         return self._run_async(self._async_storage.list_all_users())
-    
+
+    def get_user_context(self, user_id: str) -> Dict[str, Any]:
+        """Get complete user context including basic info and personal demographics."""
+        return self._run_async(self._async_storage.get_user_context(user_id))
+
     def get_user_count(self) -> int:
         """Get total number of users."""
         return self._run_async(self._async_storage.get_user_count())

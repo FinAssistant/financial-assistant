@@ -4,7 +4,6 @@ Unit tests for transaction query executor (SQL generation).
 Tests parameterized SQL generation from TransactionQueryIntent.
 """
 
-import pytest
 from datetime import date
 
 from app.models.transaction_query_models import (
