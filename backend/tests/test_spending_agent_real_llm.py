@@ -608,7 +608,7 @@ class TestSpendingAgentRealLLMTransactionCategorization:
                     "demographics": {"age_range": "26_35", "occupation": "software_engineer"},
                     "financial_context": {"has_dependents": False}
                 },
-                "found_in_graphiti": False
+                "has_transaction_data": False
             }
 
             # Create mock config with user_id
@@ -638,7 +638,7 @@ class TestSpendingAgentRealLLMTransactionCategorization:
             assert any(num in response_content for num in ["2", "two"]), \
                 f"Response should mention transaction count: {response_content}"
 
-            print(f"✅ Real LLM transaction categorization integration test passed")
+            print("✅ Real LLM transaction categorization integration test passed")
             print(f"   Response: {response_content[:200]}...")
 
     @pytest.mark.asyncio

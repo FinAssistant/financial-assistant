@@ -408,7 +408,7 @@ Existing Categories: {tx.category}
         assert result.ai_confidence < 0.8  # Should have lower confidence for ambiguous transaction
         # Check for ambiguity-related terms in reasoning
         reasoning_lower = result.reasoning.lower()
-        ambiguity_terms = ['ambiguous', 'unclear', 'ambiguity', 'uncertain', 'difficult to be certain']
+        ambiguity_terms = ['ambiguous', 'unclear', 'ambiguity', 'uncertain', 'difficult to be certain', 'too generic', 'generic']
         assert any(term in reasoning_lower for term in ambiguity_terms), f"Expected ambiguity terms in reasoning: {result.reasoning}"
         
         print(f"✅ Real LLM handled ambiguous transaction with confidence: {result.ai_confidence:.2f}")

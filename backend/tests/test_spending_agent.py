@@ -5,10 +5,11 @@ Tests the basic functionality of the SpendingAgent class and its nodes.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from langchain_core.messages import HumanMessage, AIMessage
 
 from app.ai.spending_agent import SpendingAgent, get_spending_agent, SpendingAgentState
+from app.core.database import SQLiteUserStorage
 
 
 class TestSpendingAgent:
@@ -245,46 +246,50 @@ class TestSpendingAgent:
         state["user_id"] = "test_user"
         state["session_id"] = "test_session"
         state["user_context"] = {"test": "data"}
-        state["found_in_graphiti"] = True
+        state["has_transaction_data"] = True
         state["transaction_insights"] = [{"transaction": "data"}]
 
         assert state["user_id"] == "test_user"
         assert state["session_id"] == "test_session"
         assert state["user_context"]["test"] == "data"
-        assert state["found_in_graphiti"] is True
+        assert state["has_transaction_data"] is True
         assert state["transaction_insights"][0]["transaction"] == "data"
     
-    def test_route_transaction_query_found_in_graphiti(self):
-        """Test _route_transaction_query when data is found in Graphiti."""
-        state = {"found_in_graphiti": True}
+    def test_route_transaction_query_has_transaction_data(self):
+        """Test _route_transaction_query when transaction data exists."""
+        state = {"has_transaction_data": True}
         result = self.agent._route_transaction_query(state)
-        assert result == "found_in_graphiti"
+        assert result == "has_transaction_data"
     
     def test_route_transaction_query_fetch_from_plaid(self):
-        """Test _route_transaction_query when data is not found in Graphiti."""
-        state = {"found_in_graphiti": False}
+        """Test _route_transaction_query when transaction data doesn't exist."""
+        state = {"has_transaction_data": False}
         result = self.agent._route_transaction_query(state)
         assert result == "fetch_from_plaid"
 
-        # Test default case (no found_in_graphiti key)
+        # Test default case (no has_transaction_data key)
         empty_state = {}
         result = self.agent._route_transaction_query(empty_state)
         assert result == "fetch_from_plaid"
 
     def test_route_transaction_query_max_attempts_reached(self):
         """Test _route_transaction_query when max fetch attempts are reached."""
-        state = {"found_in_graphiti": False, "fetch_attempts": 3}
+        state = {"has_transaction_data": False, "fetch_attempts": 3}
         result = self.agent._route_transaction_query(state)
         assert result == "max_attempts_reached"
 
         # Test with more than 3 attempts
-        state = {"found_in_graphiti": False, "fetch_attempts": 5}
+        state = {"has_transaction_data": False, "fetch_attempts": 5}
         result = self.agent._route_transaction_query(state)
         assert result == "max_attempts_reached"
     
     @pytest.mark.asyncio
-    async def test_transaction_query_node_graphiti_not_found(self):
-        """Test _transaction_query_node when no data found in Graphiti (mock behavior)."""
+    @patch.object(SQLiteUserStorage, 'get_transactions_for_user')
+    async def test_transaction_query_node_no_stored_data(self, mock_get_transactions):
+        """Test _transaction_query_node when no transactions stored in SQLite."""
+        # Mock SQLite to return empty list (no transactions)
+        mock_get_transactions.return_value = []
+
         from app.ai.spending_agent import SpendingAgentState
         state = SpendingAgentState(
             messages=[HumanMessage(content="Show me my transactions")],
@@ -299,19 +304,20 @@ class TestSpendingAgent:
         }
 
         result = await self.agent._transaction_query_node(state, config)
-        
+
         # Check basic response structure
         assert "messages" in result
-        assert "found_in_graphiti" in result
+        assert "has_transaction_data" in result
 
-        # Check that mock returns not found
-        assert result["found_in_graphiti"] is False
+        # Check that it routes to fetch when no data
+        assert result["has_transaction_data"] is False
 
         # Check that we got a proper response message
         messages = result["messages"]
         assert len(messages) == 1
         response_message = messages[0]
         assert hasattr(response_message, 'content')
+        assert "fetch" in response_message.content.lower()
         assert "fetch your latest transaction data" in response_message.content
 
         # Check additional metadata
@@ -332,7 +338,7 @@ class TestSpendingAgent:
         """Test _fetch_and_process_node with successful mock transaction fetch."""
         state = {
             "messages": [HumanMessage(content="Show me my transactions")],
-            "found_in_graphiti": False
+            "has_transaction_data": False
         }
 
         # Create mock config with user_id
@@ -368,59 +374,9 @@ class TestSpendingAgent:
                "Message should indicate success or error status"
     
     @pytest.mark.asyncio
-    async def test_transaction_query_node_second_call_after_fetch(self):
-        """Test _transaction_query_node second call behavior after fetch_and_process."""
-        # Create state that simulates having been through fetch_and_process
-        from app.ai.spending_agent import SpendingAgentState
-        state = SpendingAgentState(
-            messages=[
-                HumanMessage(content="Show me my transactions"),
-                AIMessage(
-                    content="Processing data...",
-                    additional_kwargs={"intent": "transaction_fetch_and_process"}
-                )
-            ],
-            session_id="test_session"
-        )
-
-        # Create mock config with user_id
-        config = {
-            "configurable": {
-                "user_id": "test_user_123"
-            }
-        }
-
-        result = await self.agent._transaction_query_node(state, config)
-
-        # Check basic response structure
-        assert "messages" in result
-        assert "found_in_graphiti" in result
-
-        # Should return static response without LLM call
-        assert result["found_in_graphiti"] is False
-
-        # Check AI message content for static response (second call scenario)
-        ai_message = result["messages"][0]
-        assert isinstance(ai_message, AIMessage)
-        expected_content = "I've processed your latest transaction data and updated your financial profile. No specific insights were found matching your current query, but your transaction history has been categorized and stored for future analysis."
-        assert ai_message.content == expected_content
-
-        # Verify this is recognized as a second call scenario
-        assert "processed your latest transaction data" in ai_message.content
-        assert ai_message.additional_kwargs["agent"] == "spending_agent"
-        assert ai_message.additional_kwargs["intent"] == "transaction_query"
-
-    @pytest.mark.asyncio
-    @patch('app.ai.spending_agent.get_graphiti_client')
     @patch.object(SpendingAgent, '_fetch_transactions')
-    async def test_transaction_query_workflow_integration(self, mock_fetch_transactions, mock_get_graphiti_client):
+    async def test_transaction_query_workflow_integration(self, mock_fetch_transactions):
         """Test the full transaction query workflow with mocked data."""
-        # Mock Graphiti client to return no results (first call)
-        mock_graphiti_client = AsyncMock()
-        mock_graphiti_client.is_connected.return_value = True
-        mock_graphiti_client.search.return_value = {"nodes": []}  # No existing data
-        mock_get_graphiti_client.return_value = mock_graphiti_client
-
         # Mock transaction fetch to succeed (avoids infinite loop)
         mock_fetch_transactions.return_value = {
             "status": "success",
@@ -450,15 +406,9 @@ class TestSpendingAgent:
         # The exact content depends on whether it went through fetch path or not
 
     @pytest.mark.asyncio
-    @patch('app.ai.spending_agent.get_graphiti_client')
     @patch.object(SpendingAgent, '_fetch_transactions')
-    async def test_transaction_query_workflow_with_failures(self, mock_fetch_transactions, mock_get_graphiti_client):
+    async def test_transaction_query_workflow_with_failures(self, mock_fetch_transactions):
         """Test the workflow handles external service failures gracefully and stops after 3 iterations."""
-        # Mock Graphiti client to return no results (force fetch path)
-        mock_graphiti_client = AsyncMock()
-        mock_graphiti_client.is_connected.return_value = True
-        mock_graphiti_client.search.return_value = {"nodes": []}
-        mock_get_graphiti_client.return_value = mock_graphiti_client
 
         # Mock transaction fetch to always fail (simulating external service failure)
         mock_fetch_transactions.return_value = {
@@ -592,7 +542,7 @@ class TestSpendingAgent:
         
         state = {
             "messages": [],
-            "found_in_graphiti": False
+            "has_transaction_data": False
         }
 
         # Create mock config with user_id
@@ -624,7 +574,7 @@ class TestSpendingAgent:
         
         state = {
             "messages": [],
-            "found_in_graphiti": False
+            "has_transaction_data": False
         }
 
         # Create mock config with user_id
@@ -883,7 +833,7 @@ class TestSpendingAgentTransactionCategorization:
                         "demographics": {"age_range": "26_35", "occupation": "engineer"},
                         "financial_context": {"has_dependents": False}
                     },
-                    "found_in_graphiti": False
+                    "has_transaction_data": False
                 }
 
                 # Create mock config with user_id

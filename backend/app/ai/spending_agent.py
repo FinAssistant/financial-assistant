@@ -16,9 +16,12 @@ from app.services.user_context_dao import UserContextDAOSync
 from app.services.llm_service import llm_factory
 from app.services.transaction_categorization import TransactionCategorizationService
 from app.utils.context_formatting import build_user_context_string, format_transaction_insights_for_llm_context
+from app.utils.transaction_query_parser import parse_user_query_to_intent
+from app.utils.transaction_query_executor import execute_transaction_query
+from app.models.transaction_query_models import QueryIntent
 from langchain_core.messages import SystemMessage
 from app.ai.mcp_clients.plaid_client import get_plaid_client
-from app.ai.mcp_clients.graphiti_client import get_graphiti_client
+from app.core.database import SQLiteUserStorage
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class SpendingAgentState(MessagesState):
     user_id: str = ""
     session_id: str = ""
     detected_intent: str = ""  # Intent detected by route_intent node
-    found_in_graphiti: bool = False  # Whether transaction data found in Graphiti
+    has_transaction_data: bool = False  # Whether transaction data exists or query was handled
     fetch_attempts: int = 0  # Track number of fetch attempts to prevent infinite loops
     user_context: Dict[str, Any] = {}  # SQLite demographics data
 
@@ -44,6 +47,11 @@ class SpendingAgent:
         self._user_context_dao = UserContextDAOSync()
         self._plaid_client = get_plaid_client()  # Use shared Plaid MCP client
         self.test_transaction_limit = test_transaction_limit  # Hard limit for testing
+
+        # Initialize SQLite transaction storage for query execution
+        self._transaction_storage = SQLiteUserStorage()
+        logger.info("Transaction storage initialized for SpendingAgent")
+
         # Initialize LLM client for intelligent responses and analysis
         try:
             self.llm = llm_factory.create_llm()
@@ -109,7 +117,7 @@ class SpendingAgent:
             "transaction_query",
             self._route_transaction_query,
             {
-                "found_in_graphiti": END,
+                "has_transaction_data": END,
                 "fetch_from_plaid": "fetch_and_process",
                 "max_attempts_reached": END
             }
@@ -149,20 +157,20 @@ class SpendingAgent:
         """
         Router function for transaction query conditional routing.
 
-        Returns routing decision based on whether data was found in Graphiti
+        Returns routing decision based on whether transaction data exists or query was handled
         and the number of fetch attempts to prevent infinite loops.
         """
-        found_in_graphiti = state.get("found_in_graphiti", False)
+        has_transaction_data = state.get("has_transaction_data", False)
         fetch_attempts = state.get("fetch_attempts", 0)
 
-        if found_in_graphiti:
-            logger.info("Transaction data found in Graphiti, routing to END")
-            return "found_in_graphiti"
+        if has_transaction_data:
+            logger.info("Transaction data available or query handled, routing to END")
+            return "has_transaction_data"
         elif fetch_attempts >= 3:
             logger.info(f"Maximum fetch attempts ({fetch_attempts}) reached, routing to END to prevent infinite loop")
             return "max_attempts_reached"
         else:
-            logger.info(f"Transaction data not found in Graphiti, routing to fetch from Plaid (attempt {fetch_attempts + 1})")
+            logger.info(f"Transaction data not available, routing to fetch from Plaid (attempt {fetch_attempts + 1})")
             return "fetch_from_plaid"
     
     def _apply_categorization_to_transaction(
@@ -192,6 +200,57 @@ class SpendingAgent:
         # Return updated transaction (assuming PlaidTransaction constructor)
         from app.models.plaid_models import PlaidTransaction
         return PlaidTransaction(**updated_data)
+
+    def _convert_to_transaction_create(
+        self,
+        transaction,
+        user_id: str
+    ):
+        """
+        Convert PlaidTransaction to TransactionCreate for SQLite storage.
+
+        Args:
+            transaction: PlaidTransaction object (categorized)
+            user_id: User ID for the transaction
+
+        Returns:
+            TransactionCreate object for database storage
+        """
+        from app.core.sqlmodel_models import TransactionCreate
+        import json
+        import hashlib
+
+        # Generate canonical hash for deduplication
+        hash_input = f"{user_id}:{transaction.transaction_id}:{transaction.account_id}:{transaction.date}:{transaction.amount}"
+        canonical_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+
+        # Convert category list to JSON string if needed
+        category_str = json.dumps(transaction.category) if isinstance(transaction.category, list) else transaction.category
+
+        # Convert AI tags to JSON string if it's a list
+        ai_tags_str = None
+        if hasattr(transaction, 'ai_tags') and transaction.ai_tags:
+            if isinstance(transaction.ai_tags, list):
+                ai_tags_str = json.dumps(transaction.ai_tags)
+            else:
+                ai_tags_str = transaction.ai_tags
+
+        return TransactionCreate(
+            canonical_hash=canonical_hash,
+            user_id=user_id,
+            transaction_id=transaction.transaction_id,
+            account_id=transaction.account_id,
+            amount=float(transaction.amount),
+            date=str(transaction.date),
+            name=transaction.name,
+            merchant_name=transaction.merchant_name,
+            category=category_str,
+            pending=transaction.pending,
+            ai_category=getattr(transaction, 'ai_category', None),
+            ai_subcategory=getattr(transaction, 'ai_subcategory', None),
+            ai_confidence=getattr(transaction, 'ai_confidence', None),
+            ai_tags=ai_tags_str
+        )
 
     async def _categorize_and_apply_transactions(
         self,
@@ -454,8 +513,8 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         user_context_str = build_user_context_string(state.get("user_context", {}))
         
         # FIXME:
-        # 1. Processed insights and reasoning from Graphiti
-        # 2. Historical patterns and categorization data
+        # 1. Real processed insights from historical transaction analysis
+        # 2. Historical patterns and categorization data from SQLite
         # 3. Budget vs actual spending comparisons
         
         # For now, use mock data structure to demonstrate LLM integration
@@ -528,7 +587,7 @@ Generate a comprehensive spending analysis response now."""
         user_context_str = build_user_context_string(state.get("user_context", {}))
         
         # FIXME:
-        # 1. Current spending patterns and reasoning from Graphiti
+        # 1. Current spending patterns from SQLite transaction analysis
         # 2. Income information from user financial context
         # 3. Existing budget data if available
         # 4. Financial goals and priorities
@@ -597,7 +656,7 @@ Generate personalized budget planning guidance now."""
         user_context_str = build_user_context_string(state.get("user_context", {}))
 
         # FIXME:
-        # 1. Spending patterns and reasoning from Graphiti
+        # 1. Spending patterns from SQLite transaction analysis
         # 2. Subscription and recurring payment analysis
         # 3. Historical spending trends and outliers
         # 4. Category-wise optimization opportunities
@@ -664,140 +723,186 @@ Generate personalized spending optimization recommendations now."""
     
     async def _transaction_query_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
-        Specialized node for transaction query intent with Graphiti checking.
+        Specialized node for transaction query intent with LLM-driven SQL query execution.
 
-        First checks Graphiti for existing transaction insights. If found, returns results.
-        If not found, sets state flag for conditional routing to fetch from Plaid.
-
-        Uses message history to determine if this is a second call (after fetch_and_process).
+        Uses LLM to parse natural language query into structured intent, then executes
+        SQL query against SQLite transaction storage and presents results conversationally.
         """
         user_id = config["configurable"]["user_id"]
         logger.debug(f"📊 TRANSACTION_QUERY_NODE: Starting with user_id: {user_id}")
-        logger.debug(f"📊 TRANSACTION_QUERY_NODE: State keys: {list(state.keys())}")
-
-        # Check if we've already been through fetch_and_process by looking for its AIMessage
-        messages = state.get("messages", [])
-        has_fetched_data = any(
-            isinstance(msg, AIMessage) and msg.additional_kwargs.get("intent") == "transaction_fetch_and_process"
-            for msg in reversed(messages)
-        )
-        if has_fetched_data:
-            logger.info("Found fetch_and_process message in history - this is second call to transaction_query")
 
         # Get user's query from the original human message
         user_query = self._get_last_human_message(state)
-
-        # Search Graphiti for transaction insights
-        found_in_graphiti = False
-        transaction_insights = []
         logger.debug(f"📊 TRANSACTION_QUERY_NODE: User query: {repr(user_query)}")
 
+        # Check if we have transactions stored in SQLite
+        has_stored_data = False
         try:
-            graphiti_client = await get_graphiti_client()
-            # Check connection status (handle both real client and async mock)
-            is_connected = False
-            if graphiti_client:
-                connection_result = graphiti_client.is_connected()
-                # Handle async mock vs real client
-                if hasattr(connection_result, '__await__'):
-                    is_connected = await connection_result
-                else:
-                    is_connected = connection_result
-
-            logger.debug(f"📊 TRANSACTION_QUERY_NODE: Graphiti client connected: {is_connected}")
-            if graphiti_client and is_connected:
-                # Search for transaction insights based on user query
-                logger.debug(f"📊 TRANSACTION_QUERY_NODE: Starting Graphiti search for user {user_id} with query: {repr(user_query)}")
-                search_results = await graphiti_client.search(
-                    user_id=user_id,
-                    query=user_query,
-                    max_nodes=10
-                )
-
-                # Parse search results
-                logger.debug(f"📊 TRANSACTION_QUERY_NODE: Raw search results type: {type(search_results)}")
-                logger.debug(f"📊 TRANSACTION_QUERY_NODE: Raw search results: {search_results}")
-                if search_results and isinstance(search_results, dict):
-                    nodes = search_results.get("nodes", [])
-                    if nodes:
-                        found_in_graphiti = True
-                        transaction_insights = nodes
-                        logger.info(f"Found {len(nodes)} transaction insights in Graphiti for user {user_id}")
-                    else:
-                        logger.info(f"No transaction insights found in Graphiti for user {user_id}")
-                else:
-                    logger.info(f"Empty search results from Graphiti for user {user_id}")
-            else:
-                logger.warning("Graphiti client not available - cannot search for transaction insights")
-
+            # Quick check if user has any transactions
+            user_transactions = await self._transaction_storage.get_transactions_for_user(user_id, limit=1)
+            has_stored_data = len(user_transactions) > 0
+            logger.info(f"📊 TRANSACTION_QUERY_NODE: SQLite has data: {has_stored_data}")
         except Exception as e:
-            logger.error(f"Error searching Graphiti for transaction insights: {e}")
+            logger.error(f"Error checking for stored transactions: {e}")
 
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
-        
-        if found_in_graphiti:
-            # Generate LLM-powered response for existing transaction insights
-            logger.info(f"Returning {len(transaction_insights)} transaction insights from Graphiti for user {user_id}")
 
-            # Format transaction data with dynamic context limit management
-            transaction_data = format_transaction_insights_for_llm_context(
-                data_items=transaction_insights,
-                llm=self.llm,
-                reserved_tokens=1500  # Reserve space for system prompt and response
+        if not has_stored_data:
+            # No transactions stored - route to fetch_and_process
+            response_content = "Let me fetch your latest transaction data and analyze it for you. This will take a moment to process."
+            logger.info(f"No transactions found in SQLite for user {user_id}, routing to Plaid fetch")
+
+            response = AIMessage(
+                content=response_content,
+                additional_kwargs={
+                    "agent": "spending_agent",
+                    "intent": "transaction_query",
+                    "data_source": "needs_plaid_fetch",
+                    "llm_powered": False
+                }
             )
 
-            system_prompt = f"""You are a transaction analysis expert presenting transaction insights to the user.
+            return {
+                "messages": [response],
+                "has_transaction_data": False
+            }
+
+        # Parse user query to structured intent using LLM
+        try:
+            if not self.llm:
+                raise ValueError("LLM not available for query parsing")
+
+            query_intent = parse_user_query_to_intent(
+                user_query=user_query,
+                llm=self.llm,
+                user_id=user_id
+            )
+            logger.info(f"📊 TRANSACTION_QUERY_NODE: Parsed intent: {query_intent.intent}, confidence: {query_intent.confidence}")
+
+            # Handle unknown intent
+            if query_intent.intent == QueryIntent.UNKNOWN:
+                response_content = "I couldn't quite understand your transaction query. Could you try rephrasing? For example:\n\n- 'Show me spending at Starbucks last month'\n- 'How much did I spend on groceries?'\n- 'Find all transactions over $100 this week'\n- 'What's my total spending by category?'"
+                logger.warning(f"Unknown query intent for user {user_id}")
+
+                response = AIMessage(
+                    content=response_content,
+                    additional_kwargs={
+                        "agent": "spending_agent",
+                        "intent": "transaction_query",
+                        "query_intent": "unknown",
+                        "llm_powered": True
+                    }
+                )
+
+                return {
+                    "messages": [response],
+                    "has_transaction_data": True  # Mark as handled to prevent fetch routing
+                }
+
+            # Execute SQL query against SQLite
+            query_result = await execute_transaction_query(
+                intent=query_intent,
+                user_id=user_id,
+                storage=self._transaction_storage
+            )
+
+            logger.info(f"📊 TRANSACTION_QUERY_NODE: Query executed - success: {query_result.success}, count: {query_result.total_count}")
+
+            if not query_result.success:
+                response_content = query_result.message or "I encountered an issue executing your transaction query. Please try rephrasing your question."
+
+                response = AIMessage(
+                    content=response_content,
+                    additional_kwargs={
+                        "agent": "spending_agent",
+                        "intent": "transaction_query",
+                        "query_intent": query_intent.intent.value,
+                        "llm_powered": True
+                    }
+                )
+
+                return {
+                    "messages": [response],
+                    "has_transaction_data": True
+                }
+
+            # Format results for LLM presentation
+            transaction_data = format_transaction_insights_for_llm_context(
+                data_items=query_result.data,
+                llm=self.llm,
+                reserved_tokens=1500
+            )
+
+            system_prompt = f"""You are a transaction analysis expert presenting query results to the user.
 
 USER CONTEXT:
 {user_context_str}
+
+QUERY INTENT: {query_intent.intent.value}
+RESULTS: {query_result.total_count} transactions found
+EXECUTION TIME: {query_result.execution_time_ms:.2f}ms
 
 TRANSACTION DATA:
 {transaction_data}
 
 INSTRUCTIONS:
-1. Analyze the specific transaction data provided above
-2. Focus on details relevant to the user's query: "{user_query}"
-3. Use specific names, amounts, and details from the transaction data
-4. Offer actionable insights and patterns you notice
-5. Maintain a professional yet approachable tone
-6. Keep response informative and personalized (2-3 paragraphs)
+1. Present the transaction data in a clear, conversational format
+2. Focus on answering the user's specific query: "{user_query}"
+3. Use specific amounts, merchants, dates, and categories from the data
+4. Highlight key insights and patterns relevant to their query
+5. If the results are empty, explain what was searched for
+6. Maintain a professional yet approachable tone
+7. Keep response informative and personalized (2-4 paragraphs)
 
-Generate a personalized transaction analysis response now."""
+Generate a personalized transaction query response now."""
 
             # Create messages for LLM
             llm_messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=user_query or "Show me my transaction data")
+                HumanMessage(content=user_query)
             ]
 
             # Generate LLM response with error handling
-            response_content = self._invoke_llm_with_fallback(llm_messages, "transaction analysis")
-        elif has_fetched_data:
-            # Second call after fetch_and_process - provide simple static response
-            logger.info(f"Second call to transaction_query after fetch_and_process for user {user_id}")
+            response_content = self._invoke_llm_with_fallback(llm_messages, "transaction query analysis")
 
-            response_content = "I've processed your latest transaction data and updated your financial profile. No specific insights were found matching your current query, but your transaction history has been categorized and stored for future analysis."
-        else:
-            # First call, no data in Graphiti - need to fetch from Plaid
-            response_content = "Let me fetch your latest transaction data and analyze it for you. This will take a moment to process."
-            logger.info(f"No transaction insights found in Graphiti for user {user_id}, routing to Plaid fetch")
-        
-        response = AIMessage(
-            content=response_content,
-            additional_kwargs={
-                "agent": "spending_agent",
-                "intent": "transaction_query",
-                "data_source": "graphiti" if found_in_graphiti else "needs_plaid_fetch",
-                "llm_powered": True
+            response = AIMessage(
+                content=response_content,
+                additional_kwargs={
+                    "agent": "spending_agent",
+                    "intent": "transaction_query",
+                    "query_intent": query_intent.intent.value,
+                    "result_count": query_result.total_count,
+                    "execution_time_ms": query_result.execution_time_ms,
+                    "data_source": "sqlite",
+                    "llm_powered": True
+                }
+            )
+
+            return {
+                "messages": [response],
+                "has_transaction_data": True  # Mark as handled to prevent fetch routing
             }
-        )
-        
-        return {
-            "messages": [response],
-            "found_in_graphiti": found_in_graphiti
-        }
-    
+
+        except Exception as e:
+            logger.error(f"Error in transaction query execution: {e}", exc_info=True)
+            response_content = "I encountered an issue processing your transaction query. Please try rephrasing your question or check back shortly."
+
+            response = AIMessage(
+                content=response_content,
+                additional_kwargs={
+                    "agent": "spending_agent",
+                    "intent": "transaction_query",
+                    "error": str(e),
+                    "llm_powered": False
+                }
+            )
+
+            return {
+                "messages": [response],
+                "has_transaction_data": True  # Mark as handled to prevent fetch routing
+            }
+
     def _general_spending_node(self, state: SpendingAgentState) -> Dict[str, Any]:
         """
         Specialized node for general spending inquiries and introductory guidance.
@@ -853,9 +958,9 @@ Generate a personalized introduction and guidance now."""
     
     async def _fetch_and_process_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
-        Fetch fresh transactions from Plaid and process them for Graphiti storage.
+        Fetch fresh transactions from Plaid and process them for SQLite storage.
 
-        Fetches transactions, applies AI categorization, and stores results in Graphiti.
+        Fetches transactions, applies AI categorization, and stores in SQLite canonical ledger.
         """
         user_id = config["configurable"]["user_id"]
         current_attempts = state.get("fetch_attempts", 0) + 1
@@ -892,34 +997,31 @@ Generate a personalized introduction and guidance now."""
 
                     categorized_count = len(categorization_batch.categorizations) if categorization_batch else 0
 
-                    # Store categorized transactions in Graphiti
+                    # Store categorized transactions in SQLite (canonical transaction ledger)
+                    sqlite_stored = 0
+                    sqlite_duplicates = 0
+                    sqlite_errors = 0
                     try:
-                        graphiti_client = await get_graphiti_client()
-                        if graphiti_client and graphiti_client.is_connected():
-                            # Batch store transactions with AI categorization
-                            storage_results = await graphiti_client.batch_store_transaction_episodes(
-                                user_id=user_id,
-                                transactions=categorized_transactions,
-                                concurrency=8,
-                                check_duplicates=True
-                            )
+                        # Convert PlaidTransactions to TransactionCreate objects
+                        transaction_creates = [
+                            self._convert_to_transaction_create(txn, user_id)
+                            for txn in categorized_transactions
+                        ]
 
-                            # Count successful storage vs duplicates vs errors
-                            stored_count = sum(1 for r in storage_results if not r.get('error') and not r.get('found'))
-                            duplicate_count = sum(1 for r in storage_results if r.get('found'))
-                            error_count = sum(1 for r in storage_results if r.get('error'))
+                        # Batch store in SQLite
+                        sqlite_result = await self._transaction_storage.batch_create_transactions(transaction_creates)
+                        sqlite_stored = sqlite_result.get("stored", 0)
+                        sqlite_duplicates = sqlite_result.get("duplicates", 0)
+                        sqlite_errors = sqlite_result.get("errors", 0)
 
-                            logger.info(f"Graphiti storage: {stored_count} new, {duplicate_count} duplicates, {error_count} errors")
-                            response_content = f"Successfully fetched {total_count} transactions, categorized {categorized_count} with AI insights, and stored {stored_count} new transactions in your knowledge base. Processing complete!"
-                        else:
-                            logger.warning("Graphiti client not available - transactions categorized but not stored")
-                            response_content = f"Successfully fetched {total_count} transactions and categorized {categorized_count} with AI insights. Note: Knowledge base storage temporarily unavailable."
+                        logger.info(f"SQLite storage: {sqlite_stored} new, {sqlite_duplicates} duplicates, {sqlite_errors} errors")
+                    except Exception as sqlite_error:
+                        logger.error(f"Failed to store transactions in SQLite: {sqlite_error}")
+                        sqlite_errors = len(categorized_transactions)
 
-                    except Exception as graphiti_error:
-                        logger.error(f"Failed to store transactions in Graphiti: {graphiti_error}")
-                        response_content = f"Successfully fetched {total_count} transactions and categorized {categorized_count} with AI insights. Note: There was an issue storing to your knowledge base, but the data is still available."
-
-                    logger.info(f"Fetched {total_count} transactions, categorized {categorized_count} for user {user_id}")
+                    # Generate success response
+                    response_content = f"Successfully fetched {total_count} transactions, categorized {categorized_count} with AI insights, and stored {sqlite_stored} in database. Processing complete!"
+                    logger.info(f"Fetched {total_count} transactions, categorized {categorized_count}, stored {sqlite_stored} for user {user_id}")
                 else:
                     response_content = f"Successfully fetched {total_count} transactions, or AI categorization service is unavailable."
                     logger.info(f"Fetched {total_count} transactions for user {user_id}, or AI categorization service is unavailable.")
