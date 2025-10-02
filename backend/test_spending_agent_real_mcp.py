@@ -19,13 +19,44 @@ from app.ai.mcp_clients.plaid_client import get_plaid_client
 from app.core.database import SQLiteUserStorage
 from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging - INFO for everything, DEBUG only for our code
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s'
+)
+
+# Set DEBUG level only for our app modules
+logging.getLogger('app.ai.spending_agent').setLevel(logging.DEBUG)
+logging.getLogger('app.utils.context_formatting').setLevel(logging.DEBUG)
+logging.getLogger('app.utils.transaction_query_executor').setLevel(logging.DEBUG)
+logging.getLogger('app.utils.transaction_query_parser').setLevel(logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 # Consistent test user for all tests
 TEST_USER_ID_PLAID = "integration_test_user_plaid"
 TEST_USER_ID_FULL = "integration_test_user_full"  # For full integration test
+
+
+async def cleanup_test_database():
+    """Clean up test database before running tests."""
+    print("\n🧹 Cleaning up test database...")
+    storage = SQLiteUserStorage()
+
+    try:
+        # Delete all transactions for test users
+        await storage._ensure_initialized()
+        async with storage.session_factory() as session:
+            from sqlalchemy import text
+            # Delete transactions
+            await session.execute(
+                text("DELETE FROM transactions WHERE user_id IN (:uid1, :uid2)"),
+                {"uid1": TEST_USER_ID_PLAID, "uid2": TEST_USER_ID_FULL}
+            )
+            await session.commit()
+        print("✅ Test database cleaned")
+    except Exception as e:
+        print(f"⚠️  Database cleanup warning: {e}")
 
 
 async def test_1_plaid_integration_only():
@@ -135,6 +166,10 @@ async def test_2_full_integration():
 
         test_scenarios = [
             "Show me my recent transactions",
+            "Show my Uber rides last week",
+            "How much did I spend on dining last month?",
+            "How much did I spend on Uber last week?",
+            "Show me transactions over $100 this week",
             "What did I spend money on?",
             "Analyze my spending patterns"
         ]
@@ -214,6 +249,9 @@ async def run_all_tests():
         "plaid_only": False,
         "full_integration": False
     }
+
+    # Clean up database before running tests
+    await cleanup_test_database()
 
     # Run tests in sequence
     results["plaid_only"] = await test_1_plaid_integration_only()

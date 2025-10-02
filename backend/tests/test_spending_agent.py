@@ -590,10 +590,11 @@ class TestSpendingAgent:
             
             # Validate error handling
             assert len(result["messages"]) == 1
-            
+
             ai_message = result["messages"][0]
             assert ai_message.additional_kwargs["transaction_count"] == 0
-            assert "encountered an issue" in ai_message.content.lower()
+            # Check for either new or old error message format
+            assert ("encountered" in ai_message.content.lower() and "issue" in ai_message.content.lower())
             assert "connection timeout" in ai_message.content.lower()
 
 
@@ -928,6 +929,241 @@ class TestSpendingAgentTransactionCategorization:
             second_txn = categorized_transactions[1]
             assert second_txn.ai_category is None
             assert second_txn.transaction_id == "txn_gas_1"
+
+
+class TestSpendingAgentStateFlows:
+    """Test state diagram flows for transaction query scenarios."""
+
+    def setup_method(self):
+        """Setup method called before each test."""
+        self.agent = SpendingAgent()
+
+    @pytest.mark.asyncio
+    async def test_scenario_existing_data_direct_query(self):
+        """
+        Scenario 1: User has existing transactions in SQLite.
+        Flow: transaction_query → execute SQL → END
+        """
+        from unittest.mock import AsyncMock, patch
+
+        # Mock user has existing transactions
+        mock_transactions = [{"id": 1, "amount": 100}]
+
+        with patch.object(self.agent._storage, 'get_transactions_for_user', new_callable=AsyncMock) as mock_get_txns:
+            mock_get_txns.return_value = mock_transactions
+
+            state = {
+                "messages": [HumanMessage(content="Show me my spending")],
+                "user_id": "test_user",
+                "user_context": {}
+            }
+            config = {"configurable": {"user_id": "test_user"}}
+
+            # Call transaction_query_node
+            result = await self.agent._transaction_query_node(state, config)
+
+            # Verify SQLite was checked
+            mock_get_txns.assert_called_once_with("test_user", limit=1)
+
+            # Should NOT route to fetch (has_transaction_data should be True or query executed)
+            # This depends on LLM parsing, but data exists so it should process
+            assert "messages" in result
+
+    @pytest.mark.asyncio
+    async def test_scenario_no_data_successful_fetch(self):
+        """
+        Scenario 2: User has NO transactions, fetch succeeds.
+        Flow: transaction_query → fetch_and_process → transaction_query → execute SQL → END
+        """
+        from unittest.mock import AsyncMock, patch
+
+        # First call: no transactions
+        # Second call (after fetch): has transactions
+        call_count = 0
+
+        async def mock_get_transactions_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return []  # No data initially
+            else:
+                return [{"id": 1, "amount": 100}]  # Data after fetch
+
+        with patch.object(self.agent._storage, 'get_transactions_for_user', new_callable=AsyncMock) as mock_get_txns:
+            mock_get_txns.side_effect = mock_get_transactions_side_effect
+
+            # Initial state
+            state = {
+                "messages": [HumanMessage(content="Show me my spending")],
+                "user_id": "test_user",
+                "user_context": {},
+                "fetch_attempts": 0
+            }
+            config = {"configurable": {"user_id": "test_user"}}
+
+            # First call: transaction_query_node with no data
+            result1 = await self.agent._transaction_query_node(state, config)
+
+            # Should indicate no data
+            assert result1["has_transaction_data"] is False
+            assert call_count == 1
+
+            # Router would send to fetch_and_process
+            # Simulate _route_transaction_query logic
+            route = self.agent._route_transaction_query(result1)
+            assert route == "fetch_from_plaid"
+
+    @pytest.mark.asyncio
+    async def test_scenario_fetch_fails_three_times(self):
+        """
+        Scenario 3: Fetch fails repeatedly, exits after 3 attempts.
+        Flow: transaction_query → fetch (fail) → transaction_query → fetch (fail) → transaction_query → fetch (fail) → END
+        """
+        from unittest.mock import AsyncMock, patch
+
+        # Mock no transactions in SQLite
+        with patch.object(self.agent._storage, 'get_transactions_for_user', new_callable=AsyncMock) as mock_get_txns:
+            mock_get_txns.return_value = []  # Always no data
+
+            # Test router logic with increasing attempts
+            state_attempt_0 = {"has_transaction_data": False, "fetch_attempts": 0}
+            route_0 = self.agent._route_transaction_query(state_attempt_0)
+            assert route_0 == "fetch_from_plaid"
+
+            state_attempt_1 = {"has_transaction_data": False, "fetch_attempts": 1}
+            route_1 = self.agent._route_transaction_query(state_attempt_1)
+            assert route_1 == "fetch_from_plaid"
+
+            state_attempt_2 = {"has_transaction_data": False, "fetch_attempts": 2}
+            route_2 = self.agent._route_transaction_query(state_attempt_2)
+            assert route_2 == "fetch_from_plaid"
+
+            state_attempt_3 = {"has_transaction_data": False, "fetch_attempts": 3}
+            route_3 = self.agent._route_transaction_query(state_attempt_3)
+            assert route_3 == "max_attempts_reached"  # Should exit here
+
+    @pytest.mark.asyncio
+    async def test_scenario_unknown_intent_no_fetch(self):
+        """
+        Scenario 4: Query parsing fails (UNKNOWN intent), should not trigger fetch.
+        Flow: transaction_query → UNKNOWN intent → END (no fetch)
+        """
+        from unittest.mock import AsyncMock, patch
+        from app.models.transaction_query_models import QueryIntent, TransactionQueryIntent
+
+        # Mock transactions exist
+        mock_transactions = [{"id": 1, "amount": 100}]
+
+        # Mock LLM returns UNKNOWN intent
+        mock_unknown_intent = TransactionQueryIntent(
+            intent=QueryIntent.UNKNOWN,
+            original_query="gibberish query",
+            confidence=0.1
+        )
+
+        with patch.object(self.agent._storage, 'get_transactions_for_user', new_callable=AsyncMock) as mock_get_txns, \
+             patch('app.utils.transaction_query_parser.parse_user_query_to_intent') as mock_parse:
+
+            mock_get_txns.return_value = mock_transactions
+            mock_parse.return_value = mock_unknown_intent
+
+            state = {
+                "messages": [HumanMessage(content="xyzabc nonsense query")],
+                "user_id": "test_user",
+                "user_context": {}
+            }
+            config = {"configurable": {"user_id": "test_user"}}
+
+            result = await self.agent._transaction_query_node(state, config)
+
+            # Should mark as handled to prevent fetch
+            assert result["has_transaction_data"] is True
+            assert "messages" in result
+            # Message should contain helpful guidance
+            response_content = result["messages"][0].content
+            assert "couldn't quite understand" in response_content.lower() or "rephrase" in response_content.lower()
+
+    @pytest.mark.asyncio
+    async def test_fetch_error_messages_by_attempt(self):
+        """Test that error messages improve based on attempt number."""
+        from unittest.mock import AsyncMock, patch
+
+        # Mock fetch failure
+        mock_fetch_result = {
+            "status": "error",
+            "error": "Connection timeout",
+            "transactions": []
+        }
+
+        with patch.object(self.agent, '_fetch_transactions', new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = mock_fetch_result
+
+            config = {"configurable": {"user_id": "test_user"}}
+
+            # Attempt 1
+            state_1 = {"fetch_attempts": 0, "user_context": {}}
+            result_1 = await self.agent._fetch_and_process_node(state_1, config)
+            message_1 = result_1["messages"][0].content
+            assert "Retrying" in message_1 or "temporary" in message_1.lower()
+            assert result_1["fetch_attempts"] == 1
+
+            # Attempt 2
+            state_2 = {"fetch_attempts": 1, "user_context": {}}
+            result_2 = await self.agent._fetch_and_process_node(state_2, config)
+            message_2 = result_2["messages"][0].content
+            assert "attempt 2/3" in message_2.lower() or "trouble" in message_2.lower()
+            assert result_2["fetch_attempts"] == 2
+
+            # Attempt 3 (final)
+            state_3 = {"fetch_attempts": 2, "user_context": {}}
+            result_3 = await self.agent._fetch_and_process_node(state_3, config)
+            message_3 = result_3["messages"][0].content
+            assert "3 times" in message_3 or "persistent" in message_3.lower()
+            assert "account connections" in message_3.lower() or "reconnect" in message_3.lower()
+            assert result_3["fetch_attempts"] == 3
+
+    @pytest.mark.asyncio
+    async def test_fetch_timeout_handling(self):
+        """Test that fetch operations timeout after configured duration."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        # Mock a slow fetch that exceeds timeout
+        async def slow_fetch(*args, **kwargs):
+            await asyncio.sleep(5)  # Simulate slow response
+            return {"status": "success", "transactions": []}
+
+        with patch.object(self.agent._plaid_client, 'call_tool', new_callable=AsyncMock) as mock_call:
+            mock_call.side_effect = slow_fetch
+
+            # Call with 1 second timeout
+            result = await self.agent._fetch_transactions("test_user", timeout_seconds=1)
+
+            # Should return error with timeout message
+            assert result["status"] == "error"
+            assert "timed out" in result["error"].lower()
+            assert "1 seconds" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_successful_within_timeout(self):
+        """Test that fetch completes successfully when under timeout."""
+        from unittest.mock import AsyncMock, patch
+
+        mock_result = {
+            "status": "success",
+            "transactions": [{"id": 1, "amount": 100}],
+            "total_transactions": 1
+        }
+
+        with patch.object(self.agent._plaid_client, 'call_tool', new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = mock_result
+
+            # Call with generous timeout
+            result = await self.agent._fetch_transactions("test_user", timeout_seconds=30)
+
+            # Should succeed
+            assert result["status"] == "success"
+            assert result["total_transactions"] == 1
 
 
 if __name__ == "__main__":

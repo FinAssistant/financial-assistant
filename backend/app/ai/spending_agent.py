@@ -11,6 +11,7 @@ from langgraph.graph import StateGraph, END, START, MessagesState
 from langgraph.graph.state import RunnableConfig
 import logging
 import json
+import asyncio
 
 from app.services.llm_service import llm_factory
 from app.services.transaction_categorization import TransactionCategorizationService
@@ -62,6 +63,7 @@ class SpendingAgent:
                 logger.info("Transaction categorization service initialized")
             else:
                 self.categorization_service = None
+
 
         except Exception as e:
             logger.error(f"Failed to initialize LLM client: {e}")
@@ -326,15 +328,25 @@ class SpendingAgent:
             logger.error(f"LLM call failed in {intent_name}: {e}")
             return fallback_message
 
-    async def _fetch_transactions(self, user_id: str) -> Dict[str, Any]:
+    async def _fetch_transactions(self, user_id: str, timeout_seconds: int = 30) -> Dict[str, Any]:
         """
-        Fetch transactions from Plaid via shared MCP client.
+        Fetch transactions from Plaid via shared MCP client with timeout.
 
         Implements the first phase: fetch fresh transaction data from Plaid
+
+        Args:
+            user_id: User identifier
+            timeout_seconds: Maximum time to wait for Plaid response (default 30s)
+
+        Returns:
+            Dict with transaction data or error information
         """
         try:
-            # Use the shared Plaid MCP client
-            result = await self._plaid_client.call_tool(user_id, "get_all_transactions")
+            # Use the shared Plaid MCP client with timeout
+            result = await asyncio.wait_for(
+                self._plaid_client.call_tool(user_id, "get_all_transactions"),
+                timeout=timeout_seconds
+            )
 
              # Parse the JSON response if needed
             if isinstance(result, str):
@@ -363,6 +375,13 @@ class SpendingAgent:
             logger.info(f"Fetched {parsed_result.get('total_transactions', 0)} transactions for user {user_id}")
             return parsed_result
 
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout ({timeout_seconds}s) fetching transactions for user {user_id}")
+            return {
+                "status": "error",
+                "error": f"Request timed out after {timeout_seconds} seconds. Please try again.",
+                "transactions": []
+            }
         except Exception as e:
             logger.error(f"Error fetching transactions for user {user_id}: {str(e)}")
             return {
@@ -826,19 +845,36 @@ Generate personalized spending optimization recommendations now."""
                 }
 
             # Format results for LLM presentation
+            logger.debug(f"📊 Raw transaction data (first item): {query_result.data[0] if query_result.data else 'No data'}")
+
             transaction_data = format_transaction_insights_for_llm_context(
                 data_items=query_result.data,
                 llm=self.llm,
-                reserved_tokens=1500
+                reserved_tokens=1500,
+                query_intent=query_result.intent.value
             )
+
+            logger.debug(f"📊 Formatted transaction data: {transaction_data[:500]}...")
+
+            # Build time range context if available
+            time_range_info = ""
+            if query_intent.start_date or query_intent.end_date:
+                if query_intent.start_date and query_intent.end_date:
+                    time_range_info = f"\nTIME RANGE: {query_intent.start_date} to {query_intent.end_date}"
+                elif query_intent.start_date:
+                    time_range_info = f"\nTIME RANGE: From {query_intent.start_date} onwards"
+                elif query_intent.end_date:
+                    time_range_info = f"\nTIME RANGE: Up to {query_intent.end_date}"
+            elif query_intent.days_back:
+                time_range_info = f"\nTIME RANGE: Last {query_intent.days_back} days"
 
             system_prompt = f"""You are a transaction analysis expert presenting query results to the user.
 
 USER CONTEXT:
 {user_context_str}
 
-QUERY INTENT: {query_intent.intent.value}
-RESULTS: {query_result.total_count} transactions found
+QUERY INTENT: {query_intent.intent.value}{time_range_info}
+RESULTS: {query_result.total_count} tuples found
 EXECUTION TIME: {query_result.execution_time_ms:.2f}ms
 
 TRANSACTION DATA:
@@ -854,6 +890,9 @@ INSTRUCTIONS:
 7. Keep response informative and personalized (2-4 paragraphs)
 
 Generate a personalized transaction query response now."""
+
+            logger.debug(f"📊 System prompt length: {len(system_prompt)} chars")
+            logger.debug(f"📊 System prompt:\n{system_prompt}")
 
             # Create messages for LLM
             llm_messages = [
@@ -962,14 +1001,28 @@ Generate a personalized introduction and guidance now."""
         """
         user_id = config["configurable"]["user_id"]
         current_attempts = state.get("fetch_attempts", 0) + 1
-        logger.info(f"Fetching fresh transaction data from Plaid for user {user_id} (attempt {current_attempts})")
+        is_final_attempt = current_attempts >= 3
+        logger.info(f"Fetching fresh transaction data from Plaid for user {user_id} (attempt {current_attempts}/3)")
 
         # Fetch transactions from Plaid via MCP tools
         transaction_result = await self._fetch_transactions(user_id)
-        
+
         if transaction_result["status"] == "error":
-            response_content = f"I encountered an issue while fetching your transaction data: {transaction_result.get('error', 'Unknown error')}"
-            logger.error(f"Transaction fetch failed for user {user_id}: {transaction_result.get('error')}")
+            error_message = transaction_result.get('error', 'Unknown error')
+
+            # Provide context-aware error messages based on attempt number
+            if is_final_attempt:
+                response_content = (
+                    f"I've attempted to fetch your transaction data 3 times but encountered persistent issues: {error_message}. "
+                    f"Please check your account connections in settings or try again later. "
+                    f"If this continues, you may need to reconnect your financial accounts."
+                )
+            elif current_attempts == 1:
+                response_content = f"Encountered a temporary issue fetching your transactions: {error_message}. Retrying..."
+            else:
+                response_content = f"Still having trouble fetching transactions (attempt {current_attempts}/3): {error_message}. Retrying..."
+
+            logger.error(f"Transaction fetch failed for user {user_id} (attempt {current_attempts}/3): {error_message}")
         else:
             transactions = transaction_result.get("transactions", [])
             total_count = transaction_result.get("total_transactions", len(transactions))
