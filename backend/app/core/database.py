@@ -411,8 +411,17 @@ class SQLiteUserStorage:
             return True
 
     # ConnectedAccount operations
-    async def get_connected_accounts(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all connected accounts for user. Returns list of account dicts."""
+    async def get_connected_accounts(self, user_id: str, include_tokens: bool = False) -> List[Dict[str, Any]]:
+        """
+        Get all connected accounts for user. Returns list of account dicts.
+
+        Args:
+            user_id: User identifier
+            include_tokens: If True, includes encrypted_access_token field (for internal use only)
+
+        Returns:
+            List of account dictionaries
+        """
         await self._ensure_initialized()
         async with self.session_factory() as session:
             stmt = select(ConnectedAccountModel).where(
@@ -421,7 +430,16 @@ class SQLiteUserStorage:
             ).order_by(ConnectedAccountModel.created_at)
             result = await session.execute(stmt)
             accounts = result.fetchall()
-            return [account[0].to_dict() for account in accounts]
+
+            if include_tokens:
+                # For internal use: include access tokens by adding them to the dict
+                return [
+                    {**account[0].to_dict(), 'encrypted_access_token': account[0].encrypted_access_token}
+                    for account in accounts
+                ]
+            else:
+                # For external use: exclude sensitive fields via to_dict()
+                return [account[0].to_dict() for account in accounts]
 
     async def get_connected_account_by_id(self, account_id: str) -> Optional[Dict[str, Any]]:
         """Get connected account by ID. Returns account dict or None if not found."""
@@ -910,9 +928,9 @@ class AsyncUserStorageWrapper:
         return self._run_async(self._async_storage.delete_personal_context(user_id))
 
     # ConnectedAccount operations (sync wrappers)
-    def get_connected_accounts(self, user_id: str) -> List[Dict[str, Any]]:
+    def get_connected_accounts(self, user_id: str, include_tokens: bool = False) -> List[Dict[str, Any]]:
         """Get all connected accounts for user."""
-        return self._run_async(self._async_storage.get_connected_accounts(user_id))
+        return self._run_async(self._async_storage.get_connected_accounts(user_id, include_tokens))
 
     def get_connected_account_by_id(self, account_id: str) -> Optional[Dict[str, Any]]:
         """Get connected account by ID."""

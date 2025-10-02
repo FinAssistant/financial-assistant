@@ -21,7 +21,7 @@ from app.utils.transaction_query_executor import execute_transaction_query
 from app.models.transaction_query_models import QueryIntent
 from langchain_core.messages import SystemMessage
 from app.ai.mcp_clients.plaid_client import get_plaid_client
-from app.core.database import SQLiteUserStorage
+from app.core.database import user_storage
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,9 @@ class SpendingAgent:
         self._plaid_client = get_plaid_client()  # Use shared Plaid MCP client
         self.test_transaction_limit = test_transaction_limit  # Hard limit for testing
 
-        # Initialize SQLite storage for both transactions and user context
-        self._storage = SQLiteUserStorage()
-        logger.info("SQLite storage initialized for SpendingAgent (transactions + user context)")
+        # Use global async storage instance for both transactions and user context
+        self._storage = user_storage._async_storage
+        logger.info("Using global SQLite storage for SpendingAgent (transactions + user context)")
 
         # Initialize LLM client for intelligent responses and analysis
         try:

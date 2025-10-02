@@ -384,8 +384,18 @@ Examples:
             # Normal case - content is a string
             destination = content.strip().upper()
 
-        # Validate that we got a proper routing decision
+        # Extract the first word only (some LLMs ignore "one word only" instruction)
         valid_routes = {"SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"}
+
+        # Try to find a valid route at the start of the response
+        for route in valid_routes:
+            if destination.startswith(route):
+                if destination != route:
+                    self.logger.warning(f"LLM returned extra text after route: '{destination}'. Extracted route: '{route}'")
+                destination = route
+                break
+
+        # Final validation
         if destination not in valid_routes:
             self.logger.warning(f"Invalid routing decision: '{destination}'. Defaulting to SMALLTALK for safety")
             # Default to small talk for graceful degradation

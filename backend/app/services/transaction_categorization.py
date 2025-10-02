@@ -55,8 +55,16 @@ class TransactionCategorizationService:
         # Use the more restrictive limit
         max_batch_size = min(max_by_input, max_by_completion)
 
-        # Cap at reasonable maximum to avoid very large batches
-        return min(max_batch_size, 25)  # Reduced from 50 to 25
+        # Cap at reasonable maximum based on model
+        # Gemini has issues with large structured outputs despite huge context window
+        model = getattr(self.llm, 'model', '').lower() if self.llm else ''
+        if 'gemini' in model or 'google' in model:
+            # Gemini structured output is slower and times out with large batches
+            logger.info(f"Using Gemini-optimized batch size (10) for model: {model}")
+            return min(max_batch_size, 10)  # Very conservative for Gemini
+        else:
+            # OpenAI and Anthropic handle larger batches better
+            return min(max_batch_size, 25)
     
     def _create_categorization_prompt(self, transactions: List[PlaidTransaction]) -> str:
         """Create the system prompt for transaction categorization."""
@@ -131,11 +139,12 @@ You will receive {len(transactions)} transactions to categorize. Provide structu
             )
     
     async def _categorize_batch(
-        self, 
+        self,
         transactions: List[PlaidTransaction],
         user_context: Optional[Dict[str, Any]] = None
     ) -> List[TransactionCategorization]:
         """Categorize a single batch of transactions."""
+        logger.info(f"Starting categorization of {len(transactions)} transactions")
         try:
             # Create transaction batch for structured input
             transaction_batch = TransactionBatch(transactions=transactions)
@@ -168,17 +177,24 @@ Provide categorization results in the required structured format."""
                 HumanMessage(content=input_content)
             ]
             
+            logger.debug(f"Calling structured LLM for {len(transactions)} transactions")
             result = await structured_llm.ainvoke(messages)
-            
+            logger.debug(f"LLM returned type: {type(result)}")
+
             # Validate and return categorizations
             if isinstance(result, TransactionCategorizationBatch):
+                logger.info(f"Successfully categorized {len(result.categorizations)} out of {len(transactions)} transactions")
                 return result.categorizations
-            else:
-                logger.error(f"Unexpected LLM response type: {type(result)}")
+            elif result is None:
+                logger.error(f"LLM returned None for {len(transactions)} transactions. Possible causes: structured output not supported, API failure, or context limit exceeded")
+                logger.error(f"Model: {getattr(self.llm, 'model_name', 'unknown')}, Batch size: {len(transactions)}")
                 return []
-                
+            else:
+                logger.error(f"Unexpected LLM response type: {type(result)}, value: {result}")
+                return []
+
         except Exception as e:
-            logger.error(f"Error in batch categorization: {e}")
+            logger.error(f"Error in batch categorization: {e}", exc_info=True)
             return []
     
     def _format_transaction_batch_for_llm(self, batch_dict: Dict[str, Any]) -> str:

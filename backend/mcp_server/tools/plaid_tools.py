@@ -11,12 +11,9 @@ from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token, AccessToken
 
 from app.services.plaid_service import PlaidService
-from app.core.database import SQLiteUserStorage
+from app.core.database import user_storage
 
 logger = logging.getLogger(__name__)
-
-# Initialize database storage for access tokens
-_storage = SQLiteUserStorage()
 
 
 def _get_user_access_tokens(user_id: str) -> List[str]:
@@ -30,8 +27,8 @@ def _get_user_access_tokens(user_id: str) -> List[str]:
         List of access tokens for the user's connected accounts
     """
     try:
-        # Get connected accounts from database (sync wrapper handles event loop)
-        accounts = _storage.get_connected_accounts(user_id)
+        # Get connected accounts from database with access tokens (using global singleton)
+        accounts = user_storage.get_connected_accounts(user_id, include_tokens=True)
 
         # Extract unique access tokens by plaid_item_id (multiple accounts share same access token)
         seen_items = set()
@@ -41,9 +38,15 @@ def _get_user_access_tokens(user_id: str) -> List[str]:
             item_id = account.get('plaid_item_id')
             access_token = account.get('encrypted_access_token')  # Field name is encrypted but value is plaintext
 
+            logger.debug(f"Account data: item_id={item_id}, has_token={bool(access_token)}, keys={list(account.keys())}")
+
             if item_id and access_token and item_id not in seen_items:
                 seen_items.add(item_id)
                 access_tokens.append(access_token)
+            elif not item_id:
+                logger.warning(f"Account missing plaid_item_id: {account.get('id')}")
+            elif not access_token:
+                logger.warning(f"Account {account.get('id')} missing access token")
 
         logger.info(f"Retrieved {len(access_tokens)} access tokens for user {user_id} from database ({len(accounts)} accounts)")
         return access_tokens
@@ -80,8 +83,8 @@ def _store_user_access_token(user_id: str, access_token: str, item_id: str = "te
             institution_id="test_ins"
         )
 
-        # Store in database
-        _storage.create_connected_account(user_id, account_data)
+        # Store in database (using global singleton)
+        user_storage.create_connected_account(user_id, account_data)
         logger.info(f"Stored access token as dummy account for user {user_id}, item {item_id}")
 
     except Exception as e:

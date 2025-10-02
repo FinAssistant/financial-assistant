@@ -119,18 +119,18 @@ class LLMFactory:
         """Create ChatGoogleGenerativeAI instance."""
         if not ChatGoogleGenerativeAI:
             raise LLMError("langchain_google_genai not installed")
-        
+
         if not settings.google_api_key:
             self.logger.warning("Google API key not configured - LLM calls will fail at runtime")
             # Return None to indicate LLM not available, handle gracefully in calling code
             return None
-        
+
         try:
             llm = ChatGoogleGenerativeAI(
                 model=settings.google_model,
                 google_api_key=settings.google_api_key,
                 temperature=settings.llm_temperature,
-                max_tokens=settings.llm_max_tokens,
+                max_output_tokens=settings.llm_max_tokens,  # Gemini uses max_output_tokens not max_tokens
                 timeout=settings.llm_request_timeout
             )
             self.logger.info(f"Created Google LLM with model: {settings.google_model}")
