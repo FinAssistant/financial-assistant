@@ -3,9 +3,8 @@ Shared utilities for formatting user context and managing LLM context limits acr
 """
 
 from datetime import datetime
-from typing import Dict, Any, List, Union, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal
 import logging
-from unicodedata import category
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +169,7 @@ def _format_item_by_type(item: Dict[str, Any], data_type: DataStructureType) -> 
 
         merchant = item.get('merchant_name')
 
-        text = f"📊 Spending Summary:\n"
+        text = "📊 Spending Summary:\n"
         text += f"  • Total Transactions: {count}\n"
         text += f"  • Total Amount: ${total:.2f}\n"
         text += f"  • Average per Transaction: ${avg:.2f}"

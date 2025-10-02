@@ -2,8 +2,6 @@
 Configuration for MCP Server.
 """
 
-import os
-from typing import Optional, List
 from pydantic_settings import BaseSettings
 from pydantic import Field, ConfigDict
 

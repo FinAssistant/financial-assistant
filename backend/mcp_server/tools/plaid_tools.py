@@ -4,47 +4,88 @@ Provides secure access to Plaid financial data through MCP tools using PlaidServ
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_access_token, AccessToken
 
 from app.services.plaid_service import PlaidService
+from app.core.database import SQLiteUserStorage
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage for user access tokens (replace with database in production)
-_user_access_tokens: Dict[str, List[str]] = {}
+# Initialize database storage for access tokens
+_storage = SQLiteUserStorage()
 
 
 def _get_user_access_tokens(user_id: str) -> List[str]:
     """
-    Get all access tokens for a user.
-    
+    Get all access tokens for a user from SQLite database.
+
     Args:
         user_id: User identifier
-        
+
     Returns:
-        List of access tokens for the user
+        List of access tokens for the user's connected accounts
     """
-    return _user_access_tokens.get(user_id, [])
+    try:
+        # Get connected accounts from database (sync wrapper handles event loop)
+        accounts = _storage.get_connected_accounts(user_id)
+
+        # Extract unique access tokens by plaid_item_id (multiple accounts share same access token)
+        seen_items = set()
+        access_tokens = []
+
+        for account in accounts:
+            item_id = account.get('plaid_item_id')
+            access_token = account.get('encrypted_access_token')  # Field name is encrypted but value is plaintext
+
+            if item_id and access_token and item_id not in seen_items:
+                seen_items.add(item_id)
+                access_tokens.append(access_token)
+
+        logger.info(f"Retrieved {len(access_tokens)} access tokens for user {user_id} from database ({len(accounts)} accounts)")
+        return access_tokens
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve access tokens for user {user_id}: {e}")
+        return []
 
 
-def _store_user_access_token(user_id: str, access_token: str) -> None:
+def _store_user_access_token(user_id: str, access_token: str, item_id: str = "test_item") -> None:
     """
-    Store an access token for a user.
-    
+    Store an access token for a user in the database (for testing/MCP exchange_public_token tool).
+
+    Creates a dummy ConnectedAccount record in SQLite for the access token.
+    In production, use the /plaid/exchange endpoint which properly stores real account data.
+
     Args:
         user_id: User identifier
         access_token: Plaid access token to store
+        item_id: Plaid item ID (defaults to "test_item" for testing)
     """
-    if user_id not in _user_access_tokens:
-        _user_access_tokens[user_id] = []
-    
-    if access_token not in _user_access_tokens[user_id]:
-        _user_access_tokens[user_id].append(access_token)
-        logger.info(f"Stored access token for user {user_id}")
+    try:
+        from app.core.sqlmodel_models import ConnectedAccountCreate
+
+        # Create a dummy connected account for this access token
+        account_data = ConnectedAccountCreate(
+            plaid_account_id=f"dummy_{item_id}_account",
+            plaid_item_id=item_id,
+            encrypted_access_token=access_token,  # Field name is encrypted but value is plaintext for now
+            account_name="Test Account (MCP)",
+            account_type="depository",
+            account_subtype="checking",
+            institution_name="Test Institution",
+            institution_id="test_ins"
+        )
+
+        # Store in database
+        _storage.create_connected_account(user_id, account_data)
+        logger.info(f"Stored access token as dummy account for user {user_id}, item {item_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to store access token for user {user_id}: {e}")
 
 
 def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
@@ -116,12 +157,13 @@ def register_plaid_tools(mcp: FastMCP, plaid_service: PlaidService):
             if result["status"] == "success":
                 # Store the access token for this user
                 access_token = result["access_token"]
-                _store_user_access_token(user_id, access_token)
-                
+                item_id = result.get("item_id", "unknown_item")
+                _store_user_access_token(user_id, access_token, item_id)
+
                 # Remove access token from response for security
                 del result["access_token"]
                 result["message"] = "Account successfully connected"
-                logger.info(f"Exchanged token and stored access token for user {user_id}")
+                logger.info(f"Exchanged token and stored access token for user {user_id}, item {item_id}")
             
             return result
             
