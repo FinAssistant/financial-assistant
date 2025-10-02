@@ -107,16 +107,17 @@ class TestSpendingAgent:
         result = self.agent._route_to_intent_node(empty_state)
         assert result == "general_spending"
     
-    def test_spending_analysis_node(self, mock_llm_factory):
+    @pytest.mark.asyncio
+    async def test_spending_analysis_node(self, mock_llm_factory):
         """Test _spending_analysis_node generates appropriate responses."""
         from app.ai.spending_agent import SpendingAgentState
-        
+
         # Mock the LLM to return a proper spending analysis response
         mock_llm_factory.invoke.return_value = AIMessage(
-            content="Based on your spending data, I can see you spent $3,250.00 this month. Your largest expense category is Food & Dining, which represents a significant portion of your budget. I'd recommend reviewing your dining expenses and consider meal planning to optimize costs.",
+            content="Based on your spending data, I can see you spent $0.00 this month. Please connect your bank accounts to start tracking your spending.",
             additional_kwargs={'refusal': None}
         )
-        
+
         test_state = SpendingAgentState(
             messages=[HumanMessage(content="Tell me about my spending")],
             user_id="test_user_123",
@@ -126,17 +127,24 @@ class TestSpendingAgent:
                 "financial_context": {"has_dependents": False}
             }
         )
-        
-        result = self.agent._spending_analysis_node(test_state)
+
+        config = {
+            "configurable": {
+                "user_id": "test_user_123"
+            }
+        }
+
+        result = await self.agent._spending_analysis_node(test_state, config)
         assert "messages" in result
         assert len(result["messages"]) == 1
-        
+
         ai_message = result["messages"][0]
         assert isinstance(ai_message, AIMessage)
         assert ai_message.additional_kwargs["agent"] == "spending_agent"
         assert ai_message.additional_kwargs["intent"] == "spending_analysis"
         assert ai_message.additional_kwargs["llm_powered"] is True
-        assert "spending" in ai_message.content.lower() or "expense" in ai_message.content.lower()
+        assert "insights_data" in ai_message.additional_kwargs  # Should include insights data
+        assert "spending" in ai_message.content.lower() or "connect" in ai_message.content.lower()
     
     @pytest.mark.asyncio
     async def test_specialized_intent_nodes(self):
@@ -145,13 +153,13 @@ class TestSpendingAgent:
 
         # Separate sync and async nodes
         sync_intent_nodes = [
-            ("spending_analysis", self.agent._spending_analysis_node),
             ("budget_planning", self.agent._budget_planning_node),
             ("optimization", self.agent._optimization_node),
             ("general_spending", self.agent._general_spending_node)
         ]
 
         async_intent_nodes = [
+            ("spending_analysis", self.agent._spending_analysis_node),  # Now async
             ("transaction_query", self.agent._transaction_query_node)
         ]
 

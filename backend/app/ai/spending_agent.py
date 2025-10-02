@@ -64,11 +64,19 @@ class SpendingAgent:
             else:
                 self.categorization_service = None
 
-
         except Exception as e:
             logger.error(f"Failed to initialize LLM client: {e}")
             self.llm = None
             self.categorization_service = None
+
+        # Initialize insights generator service
+        from app.services.insights_generator import InsightsGenerator
+        self.insights_generator = InsightsGenerator(
+            storage=self._storage,
+            graphiti_client=None  # TODO: Initialize Graphiti client when available
+        )
+        logger.info("Insights generator service initialized")
+
         self._setup_graph()
     
     def _setup_graph(self) -> None:
@@ -520,48 +528,86 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         else:
             return "general_spending"
     
-    def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+    async def _spending_analysis_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Specialized node for spending analysis intent.
-        Uses LLM to generate personalized spending analysis based on available data.
+        Uses InsightsGenerator to query real transaction data and LLM for personalized analysis.
+        Parses date ranges from user query (e.g., "last month", "Q3 2025", "September").
         """
-        
+        # Get user ID from config (consistent with other nodes)
+        user_id = config["configurable"]["user_id"]
+        logger.debug(f"💰 SPENDING_ANALYSIS_NODE: Starting with user_id: {user_id}")
+
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
-        
-        # FIXME:
-        # 1. Real processed insights from historical transaction analysis
-        # 2. Historical patterns and categorization data from SQLite
-        # 3. Budget vs actual spending comparisons
-        
-        # For now, use mock data structure to demonstrate LLM integration
-        mock_spending_data = {
-            "total_monthly_spending": 3250.00,
-            "top_categories": [
-                {"name": "Food & Dining", "amount": 850.00, "percentage": 26.2},
-                {"name": "Transportation", "amount": 650.00, "percentage": 20.0},
-                {"name": "Shopping", "amount": 420.00, "percentage": 12.9}
-            ],
-            "trends": {
-                "month_over_month_change": -5.2,
-                "unusual_spending": "Higher than usual restaurant spending detected"
+
+        # Parse date range from user's message
+        from app.utils.date_utils import parse_date_range
+        messages = state.get("messages", [])
+        user_message = ""
+        if messages:
+            last_msg = messages[-1]
+            if hasattr(last_msg, 'content'):
+                user_message = last_msg.content
+
+        # Parse date range with hybrid strategy (rule-based + LLM fallback)
+        date_range = parse_date_range(user_message, llm=self.llm)
+        logger.info(f"Parsed date range from '{user_message}': {date_range}")
+
+        # Generate real spending insights from transaction data with parsed dates
+        try:
+            spending_data = await self.insights_generator.generate_spending_insights(
+                user_id=user_id,
+                month=date_range.get("month"),
+                start_date=date_range.get("start_date"),
+                end_date=date_range.get("end_date")
+            )
+            logger.info(f"Generated spending insights for user {user_id}: {spending_data}")
+        except Exception as e:
+            logger.error(f"Failed to generate spending insights: {e}")
+            # Fallback to empty data structure
+            spending_data = {
+                "total_monthly_spending": 0.0,
+                "top_categories": [],
+                "trends": {
+                    "month_over_month_change": None,
+                    "unusual_spending": None
+                }
             }
-        }
-        
-        # Build comprehensive system prompt
+
+        # Build comprehensive system prompt with real data
+        total = spending_data.get("total_monthly_spending", 0)
+        categories = spending_data.get("top_categories", [])
+        trends = spending_data.get("trends", {})
+
+        # Format category breakdown
+        if categories:
+            category_lines = [
+                f"  * {cat['name']}: ${cat['amount']:.2f} ({cat['percentage']:.1f}%)"
+                for cat in categories[:5]
+            ]
+            category_text = "\n".join(category_lines)
+        else:
+            category_text = "  * No categorized spending data available yet"
+
+        # Format trend information
+        mom_change = trends.get("month_over_month_change")
+        mom_text = f"{mom_change:+.1f}%" if mom_change is not None else "N/A (no previous month data)"
+
+        unusual = trends.get("unusual_spending")
+        unusual_text = unusual if unusual else "No unusual patterns detected"
+
         system_prompt = f"""You are a professional financial advisor providing personalized spending analysis.
 
 USER CONTEXT:
 {user_context_str}
 
 SPENDING DATA ANALYSIS:
-- Total Monthly Spending: ${mock_spending_data['total_monthly_spending']:,.2f}
+- Total Monthly Spending: ${total:,.2f}
 - Top Spending Categories:
-  * {mock_spending_data['top_categories'][0]['name']}: ${mock_spending_data['top_categories'][0]['amount']:.2f} ({mock_spending_data['top_categories'][0]['percentage']:.1f}%)
-  * {mock_spending_data['top_categories'][1]['name']}: ${mock_spending_data['top_categories'][1]['amount']:.2f} ({mock_spending_data['top_categories'][1]['percentage']:.1f}%)
-  * {mock_spending_data['top_categories'][2]['name']}: ${mock_spending_data['top_categories'][2]['amount']:.2f} ({mock_spending_data['top_categories'][2]['percentage']:.1f}%)
-- Month-over-Month Change: {mock_spending_data['trends']['month_over_month_change']:+.1f}%
-- Notable Trend: {mock_spending_data['trends']['unusual_spending']}
+{category_text}
+- Month-over-Month Change: {mom_text}
+- Notable Trend: {unusual_text}
 
 INSTRUCTIONS:
 1. Provide a conversational, personalized analysis of their spending patterns
@@ -571,6 +617,7 @@ INSTRUCTIONS:
 5. Maintain a professional yet approachable tone
 6. Keep response concise but informative (3-4 paragraphs)
 7. Use specific numbers and percentages from the data
+8. If spending is $0 or no data, gently guide them to connect accounts
 
 Generate a comprehensive spending analysis response now."""
 
@@ -580,16 +627,17 @@ Generate a comprehensive spending analysis response now."""
             SystemMessage(content=system_prompt),
             HumanMessage(content=last_human_message or "Please analyze my spending patterns")
         ]
-        
+
         # Generate LLM response with fallback handling
         response_content = self._invoke_llm_with_fallback(llm_messages, "spending analysis")
-        
+
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
                 "intent": "spending_analysis",
-                "llm_powered": True
+                "llm_powered": True,
+                "insights_data": spending_data  # Include raw insights for debugging
             }
         )
         return {"messages": [response]}

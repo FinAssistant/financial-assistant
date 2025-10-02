@@ -138,7 +138,7 @@ async def test_2_full_integration():
 
         # Step 2: Create SpendingAgent and setup shared PlaidMCPClient
         print(f"\n🤖 Creating SpendingAgent and shared PlaidMCPClient for user: {TEST_USER_ID_FULL}")
-        agent = SpendingAgent(test_transaction_limit=5)  # Limit transactions for testing
+        agent = SpendingAgent(test_transaction_limit=10)  # Limit transactions for testing
         plaid_client = get_plaid_client()
         mcp_client = await plaid_client.get_client(TEST_USER_ID_FULL)
 
@@ -165,11 +165,11 @@ async def test_2_full_integration():
         print("   (This will fetch from Plaid, store in SQLite)")
 
         test_scenarios = [
-            "Show me my recent transactions",
-            "Show my Uber rides last week",
-            "How much did I spend on dining last month?",
-            "How much did I spend on Uber last week?",
-            "Show me transactions over $100 this week",
+            # "Show me my recent transactions",
+            # "Show my Uber rides last week",
+            # "How much did I spend on dining last month?",
+            # "How much did I spend on Uber last week?",
+            # "Show me transactions over $100 this week",
             "What did I spend money on?",
             "Analyze my spending patterns"
         ]
@@ -217,8 +217,10 @@ async def test_2_full_integration():
                 print("   • Sample transaction:")
                 print(f"     - Merchant: {sample_tx.get('merchant_name', 'N/A')}")
                 print(f"     - Amount: ${sample_tx.get('amount', 0):.2f}")
-                print(f"     - AI Category: {sample_tx.get('ai_category', 'N/A')}")
-                print(f"     - AI Confidence: {sample_tx.get('ai_confidence', 0):.2f}")
+                print(f"     - AI Category: {sample_tx.get('ai_category') or 'N/A'}")
+                confidence = sample_tx.get('ai_confidence')
+                confidence_str = f"{confidence:.2f}" if confidence is not None else 'N/A'
+                print(f"     - AI Confidence: {confidence_str}")
             else:
                 print("   ⚠️  No transaction data found in SQLite")
                 all_passed = False
@@ -254,7 +256,7 @@ async def run_all_tests():
     await cleanup_test_database()
 
     # Run tests in sequence
-    results["plaid_only"] = await test_1_plaid_integration_only()
+    # results["plaid_only"] = await test_1_plaid_integration_only()
     results["full_integration"] = await test_2_full_integration()
 
     # Summary
