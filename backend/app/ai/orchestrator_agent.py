@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.services.llm_service import llm_factory
 from app.core.database import user_storage
 from .onboarding import create_onboarding_node
+from .spending_agent import SpendingAgent
 
 class GlobalState(BaseModel):
     """
@@ -193,11 +194,12 @@ class OrchestratorAgent:
         self.checkpointer = checkpointer
         self.graph = None
         self.compiled_graph = None
-        
+
         self.onb_agent = create_onboarding_node()
+        self.spending_agent = SpendingAgent()
         self._setup_graph()
         self.llm = llm_factory.create_llm()
-        
+
         if self.llm is None:
             self.logger.warning("LLM not available - no API key configured. Graph will fail on LLM calls.")
     
@@ -215,7 +217,7 @@ class OrchestratorAgent:
         workflow.add_node("orchestrator", self._orchestrator_node)
         workflow.add_node("small_talk", self._small_talk_node) #TODO: wrap small_talk into orch llm call
         workflow.add_node("Investment_Agent", self._dummy_inv_agent) #TODO:replace with subgraph
-        workflow.add_node("Spending_Agent", self._dummy_spend_agent) #TODO:replace with subgraph
+        workflow.add_node("Spending_Agent", self.spending_agent.graph_compile())
         workflow.add_node("Onboarding_Agent", self.onb_agent.graph_compile())
 
         
@@ -368,27 +370,38 @@ Examples:
         last_message = state.messages[-1]
         self.logger.debug(f"Orchestrator: Last result from LLM : {last_message.content}")
 
-        # Set the last message content as the destination
-        destination = last_message.content.strip().upper()
-        
+        # Handle case where LLM returns a list instead of a string
+        content = last_message.content
+        if isinstance(content, list):
+            # If it's a list, take the first element which should be the route
+            if len(content) > 0:
+                destination = str(content[0]).strip().upper()
+                self.logger.warning(f"LLM returned list instead of string. Using first element: {destination}")
+            else:
+                self.logger.error("LLM returned empty list. Defaulting to SMALLTALK")
+                destination = "SMALLTALK"
+        else:
+            # Normal case - content is a string
+            destination = content.strip().upper()
+
         # Validate that we got a proper routing decision
         valid_routes = {"SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"}
         if destination not in valid_routes:
             self.logger.warning(f"Invalid routing decision: '{destination}'. Defaulting to SMALLTALK for safety")
             # Default to small talk for graceful degradation
             destination = "SMALLTALK"
-        
+
         return destination
     
     async def invoke_conversation(self, user_message: str, user_id: str, session_id: str) -> dict:
         """
         Process a user message through the conversation graph.
-        
+
         Args:
             user_message: The user's input message
             user_id: Unique identifier for the user
             session_id: Unique identifier for the conversation session
-            
+
         Returns:
             Dict containing the AI response and metadata
         """
@@ -538,7 +551,6 @@ async def cleanup_checkpointer() -> None:
         finally:
             _checkpointer = None
             _checkpointer_context = None
-
 
 def get_orchestrator_agent() -> OrchestratorAgent:
     """Get or create the global orchestrator agent instance."""

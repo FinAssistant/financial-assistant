@@ -37,14 +37,19 @@ class TestSpendingAgent:
         """Test _initialize_node returns mock user context."""
         initial_state = {
             "messages": [],
-            "user_id": "test_user_123",
             "session_id": "test_session_456"
         }
-        
-        result = self.agent._initialize_node(initial_state)
-        
+
+        # Create mock config with user_id
+        config = {
+            "configurable": {
+                "user_id": "test_user_123"
+            }
+        }
+
+        result = self.agent._initialize_node(initial_state, config)
+
         assert "user_context" in result
-        assert "spending_insights" in result
         assert result["user_context"]["user_id"] == "test_user_123"
         assert "demographics" in result["user_context"]
         assert "financial_context" in result["user_context"]
@@ -181,7 +186,14 @@ class TestSpendingAgent:
                 }
             )
 
-            result = await node_method(state)
+            # Create config for methods that require it
+            config = {
+                "configurable": {
+                    "user_id": "test_user_123"
+                }
+            }
+
+            result = await node_method(state, config)
             assert "messages" in result
             assert len(result["messages"]) == 1
 
@@ -189,16 +201,16 @@ class TestSpendingAgent:
             assert isinstance(ai_message, AIMessage)
             assert ai_message.additional_kwargs["agent"] == "spending_agent"
             assert ai_message.additional_kwargs["intent"] == intent
-    
+
     @pytest.mark.asyncio
     async def test_invoke_spending_conversation_success(self):
         """Test invoke_spending_conversation processes message successfully."""
         user_message = "How much did I spend on food this month?"
         user_id = "test_user_123"
         session_id = "test_session_456"
-        
+
         result = await self.agent.invoke_spending_conversation(user_message, user_id, session_id)
-        
+
         assert "content" in result
         assert "agent" in result
         assert "intent" in result
@@ -207,20 +219,20 @@ class TestSpendingAgent:
         assert result["session_id"] == session_id
         assert result["message_type"] == "ai_response"
         assert "error" not in result
-    
+
     @pytest.mark.asyncio
     async def test_invoke_spending_conversation_error_handling(self):
         """Test invoke_spending_conversation handles errors gracefully."""
         # Create agent with broken graph
         broken_agent = SpendingAgent()
         broken_agent.graph = None
-        
+
         result = await broken_agent.invoke_spending_conversation("test", "user", "session")
-        
+
         assert "error" in result
         assert result["agent"] == "spending_agent"
         assert "trouble processing" in result["content"]
-    
+
     def test_spending_agent_state_structure(self):
         """Test SpendingAgentState has required fields."""
         # Always provide 'messages' to ensure attribute exists
@@ -233,14 +245,12 @@ class TestSpendingAgent:
         state["user_id"] = "test_user"
         state["session_id"] = "test_session"
         state["user_context"] = {"test": "data"}
-        state["spending_insights"] = {"insights": "data"}
         state["found_in_graphiti"] = True
         state["transaction_insights"] = [{"transaction": "data"}]
 
         assert state["user_id"] == "test_user"
         assert state["session_id"] == "test_session"
         assert state["user_context"]["test"] == "data"
-        assert state["spending_insights"]["insights"] == "data"
         assert state["found_in_graphiti"] is True
         assert state["transaction_insights"][0]["transaction"] == "data"
     
@@ -278,11 +288,17 @@ class TestSpendingAgent:
         from app.ai.spending_agent import SpendingAgentState
         state = SpendingAgentState(
             messages=[HumanMessage(content="Show me my transactions")],
-            user_id="test_user_123",
             session_id="test_session"
         )
 
-        result = await self.agent._transaction_query_node(state)
+        # Create mock config with user_id
+        config = {
+            "configurable": {
+                "user_id": "test_user_123"
+            }
+        }
+
+        result = await self.agent._transaction_query_node(state, config)
         
         # Check basic response structure
         assert "messages" in result
@@ -316,11 +332,17 @@ class TestSpendingAgent:
         """Test _fetch_and_process_node with successful mock transaction fetch."""
         state = {
             "messages": [HumanMessage(content="Show me my transactions")],
-            "user_id": "test_user_123",
             "found_in_graphiti": False
         }
-        
-        result = await self.agent._fetch_and_process_node(state)
+
+        # Create mock config with user_id
+        config = {
+            "configurable": {
+                "user_id": "test_user_123"
+            }
+        }
+
+        result = await self.agent._fetch_and_process_node(state, config)
         
         # Validate response structure
         assert "messages" in result, "Result must contain 'messages' key"
@@ -358,11 +380,17 @@ class TestSpendingAgent:
                     additional_kwargs={"intent": "transaction_fetch_and_process"}
                 )
             ],
-            user_id="test_user_123",
             session_id="test_session"
         )
 
-        result = await self.agent._transaction_query_node(state)
+        # Create mock config with user_id
+        config = {
+            "configurable": {
+                "user_id": "test_user_123"
+            }
+        }
+
+        result = await self.agent._transaction_query_node(state, config)
 
         # Check basic response structure
         assert "messages" in result
@@ -405,8 +433,8 @@ class TestSpendingAgent:
         session_id = "test_session_789"
 
         result = await self.agent.invoke_spending_conversation(user_message, user_id, session_id)
-        
-        # The workflow should complete successfully 
+
+        # The workflow should complete successfully
         assert "content" in result
         assert "agent" in result
         assert "intent" in result
@@ -417,7 +445,7 @@ class TestSpendingAgent:
         assert result["session_id"] == session_id
         assert result["message_type"] == "ai_response"
         assert "error" not in result
-        
+
         # With mocked data, it should go through the fetch_and_process path and return final results
         # The exact content depends on whether it went through fetch path or not
 
@@ -563,13 +591,19 @@ class TestSpendingAgent:
         }
         
         state = {
-            "user_id": "test_user_mocked",
             "messages": [],
             "found_in_graphiti": False
         }
-        
+
+        # Create mock config with user_id
+        config = {
+            "configurable": {
+                "user_id": "test_user_mocked"
+            }
+        }
+
         with patch.object(self.agent, '_fetch_transactions', return_value=mock_fetch_result):
-            result = await self.agent._fetch_and_process_node(state)
+            result = await self.agent._fetch_and_process_node(state, config)
             
             # Validate successful processing
             assert len(result["messages"]) == 1
@@ -589,13 +623,19 @@ class TestSpendingAgent:
         }
         
         state = {
-            "user_id": "test_user_error",
             "messages": [],
             "found_in_graphiti": False
         }
-        
+
+        # Create mock config with user_id
+        config = {
+            "configurable": {
+                "user_id": "test_user_error"
+            }
+        }
+
         with patch.object(self.agent, '_fetch_transactions', return_value=mock_fetch_result):
-            result = await self.agent._fetch_and_process_node(state)
+            result = await self.agent._fetch_and_process_node(state, config)
             
             # Validate error handling
             assert len(result["messages"]) == 1
@@ -839,7 +879,6 @@ class TestSpendingAgentTransactionCategorization:
 
                 state = {
                     "messages": [HumanMessage(content="Fetch and analyze my recent transactions")],
-                    "user_id": "test_user_123",
                     "user_context": {
                         "demographics": {"age_range": "26_35", "occupation": "engineer"},
                         "financial_context": {"has_dependents": False}
@@ -847,7 +886,14 @@ class TestSpendingAgentTransactionCategorization:
                     "found_in_graphiti": False
                 }
 
-                result = await agent_with_categorization._fetch_and_process_node(state)
+                # Create mock config with user_id
+                config = {
+                    "configurable": {
+                        "user_id": "test_user_123"
+                    }
+                }
+
+                result = await agent_with_categorization._fetch_and_process_node(state, config)
 
                 # Verify basic response structure
                 assert "messages" in result

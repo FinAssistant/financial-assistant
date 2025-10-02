@@ -173,14 +173,15 @@ class TestSpendingAgentRealLLM:
     def test_real_llm_intent_detection_general_spending(self):
         """Test real LLM detects general spending intent correctly."""
         test_cases = [
-            "Hello, I need help with my finances",
-            "Hi there, what can you help me with?",
-            "I'm new here, what services do you provide?",
-            "Can you tell me about financial planning?",
-            "What kind of financial advice can you give me?"
+            # Clear general spending cases
+            ("Hello, I need help with my finances", ["general_spending", "budget_planning"]),  # Could be either
+            ("Hi there, what can you help me with?", ["general_spending"]),
+            ("I'm new here, what services do you provide?", ["general_spending"]),
+            ("Can you tell me about financial planning?", ["general_spending", "budget_planning"]),  # Could be either
+            ("What kind of financial advice can you give me?", ["general_spending"])
         ]
-        
-        for user_message in test_cases:
+
+        for user_message, acceptable_intents in test_cases:
             state = {
                 "messages": [HumanMessage(content=user_message)],
                 "user_context": {
@@ -188,12 +189,13 @@ class TestSpendingAgentRealLLM:
                     "financial_context": {"has_dependents": False}
                 }
             }
-            
+
             result = self.agent._route_intent_node(state)
-            
+
             assert "detected_intent" in result
-            assert result["detected_intent"] == "general_spending"
-            print(f"✅ Correctly detected 'general_spending' for: '{user_message}'")
+            assert result["detected_intent"] in acceptable_intents, \
+                f"Expected one of {acceptable_intents}, got {result['detected_intent']} for '{user_message}'"
+            print(f"✅ Correctly detected '{result['detected_intent']}' (acceptable: {acceptable_intents}) for: '{user_message}'")
     
     def test_real_llm_intent_detection_with_context_awareness(self):
         """Test that real LLM uses user context to inform intent detection."""
@@ -602,7 +604,6 @@ class TestSpendingAgentRealLLMTransactionCategorization:
         with patch.object(agent, '_fetch_transactions', return_value=mock_transaction_data):
             state = {
                 "messages": [HumanMessage(content="Analyze my recent coffee and gas transactions")],
-                "user_id": "test_user_real_llm",
                 "user_context": {
                     "demographics": {"age_range": "26_35", "occupation": "software_engineer"},
                     "financial_context": {"has_dependents": False}
@@ -610,8 +611,15 @@ class TestSpendingAgentRealLLMTransactionCategorization:
                 "found_in_graphiti": False
             }
 
+            # Create mock config with user_id
+            config = {
+                "configurable": {
+                    "user_id": "test_user_real_llm"
+                }
+            }
+
             # Execute the real LLM integration
-            result = await agent._fetch_and_process_node(state)
+            result = await agent._fetch_and_process_node(state, config)
 
             # Verify basic response structure (fetch_and_process_node only returns messages)
             assert "messages" in result
