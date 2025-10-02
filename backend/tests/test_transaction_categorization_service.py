@@ -47,7 +47,9 @@ def sample_transactions():
 @pytest.fixture
 def mock_llm():
     """Mock LLM instance for testing."""
-    return Mock()
+    llm = Mock()
+    llm.model = "gpt-4o"  # Default to non-Gemini model for standard batch size
+    return llm
 
 
 @pytest.fixture
