@@ -311,18 +311,21 @@ class SpendingAgent:
                 return msg.content
         return ""
 
-    def _invoke_llm_with_fallback(self, messages, intent_name: str, fallback_message: str = None) -> str:
+    def _invoke_llm_with_fallback(self, messages, intent_name: str, fallback_message: str = None, timeout: int = 30) -> str:
         """
-        Helper method to invoke LLM with consistent error handling and fallback.
+        Helper method to invoke LLM with consistent error handling, timeout, and fallback.
 
         Args:
             messages: List of messages for LLM
             intent_name: Name of the intent for error logging
             fallback_message: Custom fallback message (optional)
+            timeout: Timeout in seconds (default: 30)
 
         Returns:
             LLM response content or fallback message
         """
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
         if fallback_message is None:
             fallback_message = f"I apologize, but my {intent_name} service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
 
@@ -330,10 +333,21 @@ class SpendingAgent:
             return fallback_message
 
         try:
-            llm_response = self.llm.invoke(messages)
-            return llm_response.content
+            logger.info(f"🔄 Invoking LLM for {intent_name} (timeout: {timeout}s)")
+
+            # Use ThreadPoolExecutor to add timeout to synchronous LLM call
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self.llm.invoke, messages)
+                try:
+                    llm_response = future.result(timeout=timeout)
+                    logger.info(f"✅ LLM call succeeded for {intent_name}")
+                    return llm_response.content
+                except FuturesTimeoutError:
+                    logger.error(f"⏱️ LLM call timed out after {timeout}s for {intent_name}")
+                    return f"I apologize, but my {intent_name} service is taking longer than expected. Please try again in a moment."
+
         except Exception as e:
-            logger.error(f"LLM call failed in {intent_name}: {e}")
+            logger.error(f"❌ LLM call failed in {intent_name}: {e}")
             return fallback_message
 
     async def _fetch_transactions(self, user_id: str, timeout_seconds: int = 30) -> Dict[str, Any]:
@@ -482,13 +496,26 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
 
         try:
             if self.llm:
-                # Use LLM for intelligent intent detection - proper conversation format for all providers
+                # Use LLM for intelligent intent detection with timeout
                 llm_messages = [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_input)
                 ]
-                response = self.llm.invoke(llm_messages)
-                detected_intent = response.content.strip().lower()
+
+                # Call LLM with timeout (will raise exception on timeout/error)
+                logger.info(f"🔄 Invoking LLM for intent detection (timeout: 10s)")
+
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self.llm.invoke, llm_messages)
+                    try:
+                        response = future.result(timeout=10)
+                        logger.info(f"✅ LLM call succeeded for intent detection")
+                        detected_intent = response.content.strip().lower()
+                    except FuturesTimeoutError:
+                        logger.error(f"⏱️ LLM call timed out after 10s for intent detection")
+                        raise TimeoutError("Intent detection timed out")
+
                 logger.debug(f"🧠 INTENT_NODE: Raw LLM response: {repr(response.content)}")
                 logger.debug(f"🧠 INTENT_NODE: Processed intent: {repr(detected_intent)}")
 
@@ -504,7 +531,7 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
                 # Fallback to keyword-based detection if LLM unavailable
                 detected_intent = self._fallback_intent_detection(user_input)
                 logger.info(f"Fallback detected intent: {detected_intent}")
-                
+
         except Exception as e:
             logger.error(f"Error in LLM intent detection: {e}")
             detected_intent = self._fallback_intent_detection(user_input)
@@ -541,14 +568,9 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
 
-        # Parse date range from user's message
+        # Parse date range from user's message using existing utility
         from app.utils.date_utils import parse_date_range
-        messages = state.get("messages", [])
-        user_message = ""
-        if messages:
-            last_msg = messages[-1]
-            if hasattr(last_msg, 'content'):
-                user_message = last_msg.content
+        user_message = self._get_last_human_message(state)
 
         # Parse date range with hybrid strategy (rule-based + LLM fallback)
         date_range = parse_date_range(user_message, llm=self.llm)
@@ -567,7 +589,9 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
             logger.error(f"Failed to generate spending insights: {e}")
             # Fallback to empty data structure
             spending_data = {
-                "total_monthly_spending": 0.0,
+                "total_spending": 0.0,
+                "monthly_average": 0.0,
+                "period_months": 1,
                 "top_categories": [],
                 "trends": {
                     "month_over_month_change": None,
@@ -576,7 +600,9 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
             }
 
         # Build comprehensive system prompt with real data
-        total = spending_data.get("total_monthly_spending", 0)
+        total = spending_data.get("total_spending", 0)
+        monthly_avg = spending_data.get("monthly_average", 0)
+        period_months = spending_data.get("period_months", 1)
         categories = spending_data.get("top_categories", [])
         trends = spending_data.get("trends", {})
 
@@ -597,13 +623,25 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         unusual = trends.get("unusual_spending")
         unusual_text = unusual if unusual else "No unusual patterns detected"
 
+        # Build period description
+        if period_months == 1:
+            period_desc = "this month"
+        elif period_months == 3:
+            period_desc = "this quarter (3 months)"
+        elif period_months == 12:
+            period_desc = "this year (12 months)"
+        else:
+            period_desc = f"the past {period_months} months"
+
         system_prompt = f"""You are a professional financial advisor providing personalized spending analysis.
 
 USER CONTEXT:
 {user_context_str}
 
-SPENDING DATA ANALYSIS:
-- Total Monthly Spending: ${total:,.2f}
+SPENDING DATA ANALYSIS (for {period_desc}):
+- Total Spending: ${total:,.2f}
+- Monthly Average: ${monthly_avg:,.2f}
+- Analysis Period: {period_months} month(s)
 - Top Spending Categories:
 {category_text}
 - Month-over-Month Change: {mom_text}

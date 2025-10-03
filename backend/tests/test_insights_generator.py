@@ -305,12 +305,16 @@ class TestInsightsGeneratorOrchestration:
         insights = await insights_generator.generate_spending_insights(user_id, month="2025-01")
 
         # Verify structure
-        assert "total_monthly_spending" in insights
+        assert "total_spending" in insights
+        assert "monthly_average" in insights
+        assert "period_months" in insights
         assert "top_categories" in insights
         assert "trends" in insights
 
         # Verify data
-        assert insights["total_monthly_spending"] == 495.00
+        assert insights["total_spending"] == 495.00
+        assert insights["monthly_average"] == 495.00  # Same as total for 1 month
+        assert insights["period_months"] == 1
         assert len(insights["top_categories"]) > 0
         assert insights["top_categories"][0]["name"] == "Food & Dining"  # Highest spending
 
@@ -328,7 +332,9 @@ class TestInsightsGeneratorOrchestration:
         insights = await insights_generator.generate_spending_insights(user_id)
 
         # Should return data structure even if no data for current month
-        assert "total_monthly_spending" in insights
+        assert "total_spending" in insights
+        assert "monthly_average" in insights
+        assert "period_months" in insights
         assert "top_categories" in insights
         assert "trends" in insights
 
@@ -337,7 +343,9 @@ class TestInsightsGeneratorOrchestration:
         """Test insights generation with no transaction data."""
         insights = await insights_generator.generate_spending_insights("no_data_user", month="2025-01")
 
-        assert insights["total_monthly_spending"] == 0.0
+        assert insights["total_spending"] == 0.0
+        assert insights["monthly_average"] == 0.0
+        assert insights["period_months"] == 1
         assert insights["top_categories"] == []
         assert insights["trends"]["month_over_month_change"] is None
 
@@ -346,3 +354,30 @@ class TestInsightsGeneratorOrchestration:
         """Test error handling for invalid month format."""
         with pytest.raises(ValueError, match="Month must be in YYYY-MM format"):
             await insights_generator.generate_spending_insights("user", month="invalid")
+
+    @pytest.mark.asyncio
+    async def test_generate_spending_insights_custom_date_range(self, storage, sample_transactions):
+        """Test insights generation with custom date range (no month)."""
+        insights_generator = InsightsGenerator(storage)
+        user_id = "test_user_123"
+
+        # Create transactions with sample data (combine current and previous month)
+        all_transactions = sample_transactions['current_month'] + sample_transactions['previous_month']
+        await storage.batch_create_transactions(all_transactions)
+
+        # Use custom date range instead of month
+        insights = await insights_generator.generate_spending_insights(
+            user_id=user_id,
+            start_date="2025-01-01",
+            end_date="2025-01-31"
+        )
+
+        # Should have basic insights
+        assert insights["total_spending"] > 0
+        assert insights["monthly_average"] > 0
+        assert insights["period_months"] == 1  # January = 1 month
+        assert len(insights["top_categories"]) > 0
+
+        # Trends should be None for custom date ranges (no month-over-month)
+        assert insights["trends"]["month_over_month_change"] is None
+        assert insights["trends"]["unusual_spending"] is None

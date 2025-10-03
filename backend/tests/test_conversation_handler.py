@@ -36,14 +36,20 @@ class TestConversationHandler:
         assert isinstance(result["messages"], list)
         assert len(result["messages"]) > 0
 
-        # Check first message
+        # Check orchestrator routing message (first message)
         first_message = result["messages"][0]
-        assert first_message["agent"] == "small_talk"
+        assert first_message["agent"] == "orchestrator"
+        assert first_message["content"] in ["SMALLTALK", "ONBOARDING", "SPENDING", "INVESTMENT"]
+
+        # Check actual agent response (second message)
+        assert len(result["messages"]) >= 2
+        second_message = result["messages"][1]
+        assert second_message["agent"] in ["small_talk", "onboarding", "spending", "investment"]
         assert result["session_id"] == "test_session_456"
         assert result["user_id"] == "test_user_123"
-        assert first_message["message_type"] == "ai_response"
-        assert isinstance(first_message["content"], str)
-        assert len(first_message["content"]) > 0
+        assert second_message["message_type"] == "ai_response"
+        assert isinstance(second_message["content"], str)
+        assert len(second_message["content"]) > 0
 
     @pytest.mark.asyncio
     async def test_process_message_empty_input(self, conversation_handler):

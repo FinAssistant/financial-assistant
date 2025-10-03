@@ -975,11 +975,11 @@ class TestOnboardingAgentLifeChangeScenarios:
             completion_status="partial",
             user_response="I've updated your employment status. This change will affect your financial planning."
         )
-        
+
         mock_llm_factory.create_llm.return_value = mock_llm
         mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_structured_llm.invoke.return_value = mock_response
-        
+
         result = await agent._call_llm(state, config)
         
         # Should detect the job loss and update employment status
@@ -1012,11 +1012,11 @@ class TestOnboardingAgentLifeChangeScenarios:
             completion_status="partial",
             user_response="I've noted that your family will transition to single income. This is an important change for your financial planning."
         )
-        
+
         mock_llm_factory.create_llm.return_value = mock_llm
         mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_structured_llm.invoke.return_value = mock_response
-        
+
         result = await agent._call_llm(state, config)
         
         # Should detect family income structure change
@@ -1044,11 +1044,11 @@ class TestOnboardingAgentLifeChangeScenarios:
             completion_status="partial",
             user_response="I'd be happy to help with investment advice based on your current situation."
         )
-        
+
         mock_llm_factory.create_llm.return_value = mock_llm
         mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_structured_llm.invoke.return_value = mock_response
-        
+
         result = await agent._call_llm(state, config)
         
         # Should not extract new data or trigger update for general questions

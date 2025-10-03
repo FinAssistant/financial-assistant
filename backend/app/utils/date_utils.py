@@ -390,9 +390,13 @@ Convert the user's date expression into a JSON object with:
 - "end_date": ISO format (YYYY-MM-DD)
 - "month": ISO month (YYYY-MM) if single month, null otherwise
 
+IMPORTANT: If the user query does NOT contain any date/time information, return null for ALL fields.
+
 Examples:
 - "from January to March 2025" → {{"start_date": "2025-01-01", "end_date": "2025-03-31", "month": null}}
 - "first half of 2024" → {{"start_date": "2024-01-01", "end_date": "2024-06-30", "month": null}}
+- "What did I spend?" → {{"start_date": null, "end_date": null, "month": null}}
+- "Analyze my spending" → {{"start_date": null, "end_date": null, "month": null}}
 
 Respond ONLY with valid JSON, no other text."""
 
@@ -403,9 +407,28 @@ Respond ONLY with valid JSON, no other text."""
 
         response = llm.invoke(messages)
 
-        # Extract JSON from response
+        # Extract JSON from response - handle potential markdown code blocks
         import json
-        result = json.loads(response.content)
+        content = response.content.strip()
+
+        # Remove markdown code blocks if present
+        if content.startswith("```"):
+            # Extract JSON from code block
+            lines = content.split("\n")
+            content = "\n".join(lines[1:-1]) if len(lines) > 2 else content
+            content = content.replace("```json", "").replace("```", "").strip()
+
+        result = json.loads(content)
+
+        # Validate result has expected structure
+        if not isinstance(result, dict):
+            logger.warning(f"LLM returned non-dict result: {result}")
+            return None
+
+        # If all fields are null, return None (no date info in query)
+        if all(v is None for v in result.values()):
+            logger.debug(f"LLM found no date information in '{text}'")
+            return None
 
         logger.info(f"LLM parsed '{text}' -> {result}")
         return result

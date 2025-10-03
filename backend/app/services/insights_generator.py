@@ -103,9 +103,12 @@ class InsightsGenerator:
                 return []
 
             # Query: GROUP BY ai_category with SUM and COUNT
+            # Use COALESCE to group NULL categories as "Uncategorized"
+            category_column = func.coalesce(TransactionModel.ai_category, 'Uncategorized').label('category')
+
             stmt = (
                 select(
-                    TransactionModel.ai_category,
+                    category_column,
                     func.sum(TransactionModel.amount).label('total'),
                     func.count(TransactionModel.canonical_hash).label('count')
                 )
@@ -114,11 +117,10 @@ class InsightsGenerator:
                         TransactionModel.user_id == user_id,
                         TransactionModel.date >= start_date,
                         TransactionModel.date <= end_date,
-                        TransactionModel.amount > 0,  # Only debits
-                        TransactionModel.ai_category.isnot(None)  # Has AI category
+                        TransactionModel.amount > 0  # Only debits
                     )
                 )
-                .group_by(TransactionModel.ai_category)
+                .group_by(category_column)
                 .order_by(func.sum(TransactionModel.amount).desc())
                 .limit(limit)
             )
@@ -230,15 +232,17 @@ class InsightsGenerator:
             end_date: Optional custom end date (ISO format YYYY-MM-DD)
 
         Returns:
-            Structured insights matching mock_spending_data format:
+            Structured insights:
             {
-                "total_monthly_spending": 3250.00,
+                "total_spending": 3250.00,           # Total for the entire period
+                "monthly_average": 3250.00,          # Average per month (same as total for 1 month)
+                "period_months": 1,                  # Number of months in the period
                 "top_categories": [
-                    {"name": "Food & Dining", "amount": 850.00, "percentage": 26.2}
+                    {"name": "Food & Dining", "amount": 850.00, "percentage": 26.2, "transaction_count": 15}
                 ],
                 "trends": {
-                    "month_over_month_change": -5.2,
-                    "unusual_spending": "Higher than usual restaurant spending"
+                    "month_over_month_change": -5.2,  # Only for single-month queries
+                    "unusual_spending": "Higher than usual restaurant spending"  # Only for single-month
                 }
             }
         """
@@ -267,12 +271,28 @@ class InsightsGenerator:
         # Run all queries
         total_spending = await self.get_total_spending(user_id, start_date, end_date)
         top_categories = await self.get_category_breakdown(user_id, start_date, end_date, limit=5)
-        month_over_month = await self.get_month_over_month_trend(user_id, month)
-        unusual_spending = await self.detect_unusual_spending(user_id, month)
+
+        # Month-over-month trends only available for single-month queries
+        if month:
+            month_over_month = await self.get_month_over_month_trend(user_id, month)
+            unusual_spending = await self.detect_unusual_spending(user_id, month)
+        else:
+            # Custom date ranges don't have month-over-month comparison
+            month_over_month = None
+            unusual_spending = None
+
+        # Calculate number of months in the date range for monthly average
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        # Calculate months: difference in years * 12 + difference in months + 1 (inclusive)
+        months_in_range = (end.year - start.year) * 12 + end.month - start.month + 1
+        monthly_average = total_spending / months_in_range if months_in_range > 0 else total_spending
 
         # Build insights dictionary
         insights = {
-            "total_monthly_spending": round(total_spending, 2),
+            "total_spending": round(total_spending, 2),
+            "monthly_average": round(monthly_average, 2),
+            "period_months": months_in_range,
             "top_categories": top_categories,
             "trends": {
                 "month_over_month_change": month_over_month,
