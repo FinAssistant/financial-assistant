@@ -212,7 +212,8 @@ def _sql_spending_by_merchant(
         SELECT
             merchant_name as merchant,
             SUM(amount) as total_amount,
-            COUNT(*) as transaction_count
+            COUNT(*) as transaction_count,
+            AVG(amount) as average_amount
         FROM transactions
         WHERE user_id = :uid
     """

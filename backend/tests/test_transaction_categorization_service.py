@@ -5,7 +5,7 @@ Tests both mock LLM responses and integration with real LLM providers.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 from decimal import Decimal
 
 from app.services.transaction_categorization import TransactionCategorizationService

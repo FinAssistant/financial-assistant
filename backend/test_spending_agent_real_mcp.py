@@ -2,12 +2,11 @@
 """
 Test script for SpendingAgent integration testing.
 
-This script provides 3 separate test scenarios:
+This script provides 2 test scenarios:
 1. Plaid-only integration (transaction fetching)
-2. Graphiti-only integration (mock data storage and retrieval)
-3. Full integration (Plaid → Graphiti → SpendingAgent analysis)
+2. Full integration (Plaid → SpendingAgent → SQLite storage)
 
-Run this ONLY when MCP servers are running on localhost:8000 and localhost:8080.
+Run this ONLY when MCP Plaid server is running on localhost:8000.
 
 Usage:
     python test_spending_agent_real_mcp.py
@@ -15,116 +14,53 @@ Usage:
 
 import asyncio
 import logging
-from decimal import Decimal
 from app.ai.spending_agent import SpendingAgent
 from app.ai.mcp_clients.plaid_client import get_plaid_client
-from app.ai.mcp_clients.graphiti_client import get_graphiti_client
-from app.models.plaid_models import PlaidTransaction
+from app.core.database import SQLiteUserStorage
 from test_mcp_plaid import test_plaid_sandbox_setup, test_exchange_public_token
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging - INFO for everything, DEBUG only for our code
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s'
+)
+
+# Set DEBUG level only for our app modules
+logging.getLogger('app.ai.spending_agent').setLevel(logging.DEBUG)
+logging.getLogger('app.utils.context_formatting').setLevel(logging.DEBUG)
+logging.getLogger('app.utils.transaction_query_executor').setLevel(logging.DEBUG)
+logging.getLogger('app.utils.transaction_query_parser').setLevel(logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 # Consistent test user for all tests
 TEST_USER_ID_PLAID = "integration_test_user_plaid"
-TEST_USER_ID_GRAPHITI = "integration_test_user_graphiti"
 TEST_USER_ID_FULL = "integration_test_user_full"  # For full integration test
 
-async def get_connected_graphiti_client():
-    """Get connected Graphiti client or None if unavailable."""
+
+async def cleanup_test_database():
+    """Clean up test database before running tests."""
+    print("\n🧹 Cleaning up test database...")
+    storage = SQLiteUserStorage()
+
     try:
-        graphiti_client = await get_graphiti_client()
-        if graphiti_client and graphiti_client.is_connected():
-            return graphiti_client
+        # Delete all transactions for test users
+        await storage._ensure_initialized()
+        async with storage.session_factory() as session:
+            from sqlalchemy import text
+            # Delete transactions
+            await session.execute(
+                text("DELETE FROM transactions WHERE user_id IN (:uid1, :uid2)"),
+                {"uid1": TEST_USER_ID_PLAID, "uid2": TEST_USER_ID_FULL}
+            )
+            await session.commit()
+        print("✅ Test database cleaned")
     except Exception as e:
-        print(f"⚠️  Graphiti connection error: {e}")
-    return None
+        print(f"⚠️  Database cleanup warning: {e}")
 
-async def clear_graphiti_data():
-    """Clear test data from Graphiti before each test."""
-    graphiti_client = await get_connected_graphiti_client()
-    if graphiti_client:
-        try:
-            clear_tool = graphiti_client._get_tool("clear_graph")
-            await clear_tool.ainvoke({})
-            print("🧹 Cleared Graphiti test data")
-            return True
-        except Exception as e:
-            print(f"⚠️  Could not clear Graphiti data: {e}")
-    return False
-
-async def store_mock_transactions_in_graphiti(graphiti_client, user_id, transactions, show_results=True):
-    """Store mock transactions in Graphiti and optionally show results."""
-    storage_results = await graphiti_client.batch_store_transaction_episodes(
-        user_id=user_id,
-        transactions=transactions,
-        concurrency=2,
-        check_duplicates=True
-    )
-
-    if show_results:
-        successful_stores = [r for r in storage_results if not r.get('error') and not r.get('found')]
-        duplicates = [r for r in storage_results if r.get('found')]
-        errors = [r for r in storage_results if r.get('error')]
-
-        print(f"📊 Storage results:")
-        print(f"   • Stored: {len(successful_stores)}")
-        print(f"   • Duplicates: {len(duplicates)}")
-        print(f"   • Errors: {len(errors)}")
-
-        return len(errors) == 0
-    return True
-
-def create_mock_transactions():
-    """Create consistent mock transactions for testing."""
-    return [
-        PlaidTransaction(
-            transaction_id="test_starbucks_001",
-            account_id="test_checking_001",
-            amount=Decimal("4.25"),
-            date="2024-01-15",
-            name="Starbucks Coffee",
-            merchant_name="Starbucks",
-            category=["Food", "Coffee"],
-            pending=False,
-            ai_category="Food & Dining",
-            ai_subcategory="Coffee Shops",
-            ai_confidence=0.95,
-            ai_tags=["caffeine", "daily-habit"]
-        ),
-        PlaidTransaction(
-            transaction_id="test_grocery_001",
-            account_id="test_checking_001",
-            amount=Decimal("87.43"),
-            date="2024-01-14",
-            name="Whole Foods Market",
-            merchant_name="Whole Foods",
-            category=["Food", "Groceries"],
-            pending=False,
-            ai_category="Food & Dining",
-            ai_subcategory="Groceries",
-            ai_confidence=0.92,
-            ai_tags=["essentials", "weekly"]
-        ),
-        PlaidTransaction(
-            transaction_id="test_gas_001",
-            account_id="test_checking_001",
-            amount=Decimal("45.80"),
-            date="2024-01-13",
-            name="Shell Gas Station",
-            merchant_name="Shell",
-            category=["Transportation", "Gas"],
-            pending=False,
-            ai_category="Transportation",
-            ai_subcategory="Gas Stations",
-            ai_confidence=0.98,
-            ai_tags=["essential", "commute"]
-        )
-    ]
 
 async def test_1_plaid_integration_only():
-    """Test 1: Plaid integration only - fetch transactions, no Graphiti storage."""
+    """Test 1: Plaid integration only - fetch transactions, no SQLite storage."""
     print("\n" + "=" * 70)
     print("📝 TEST 1: Plaid Integration Only")
     print("=" * 70)
@@ -167,7 +103,7 @@ async def test_1_plaid_integration_only():
         print("\n📊 Fetching transactions via SpendingAgent...")
         transaction_result = await agent._fetch_transactions(TEST_USER_ID_PLAID)
 
-        print(f"📈 Transaction fetch result:")
+        print("📈 Transaction fetch result:")
         print(f"   • Status: {transaction_result['status']}")
         print(f"   • Total transactions: {transaction_result.get('total_transactions', 'N/A')}")
 
@@ -181,69 +117,15 @@ async def test_1_plaid_integration_only():
         print(f"❌ TEST 1 FAILED: {str(e)}")
         return False
 
-async def test_2_graphiti_integration_only():
-    """Test 2: Graphiti integration only - store and retrieve mock transactions."""
+
+async def test_2_full_integration():
+    """Test 2: Full integration - Real Plaid → SpendingAgent → SQLite workflow."""
     print("\n" + "=" * 70)
-    print("📝 TEST 2: Graphiti Integration Only")
+    print("📝 TEST 2: Full Integration (Real Plaid → SpendingAgent → SQLite)")
     print("=" * 70)
 
-    # Clear data before test
-    await clear_graphiti_data()
-
-    try:
-        # Test Graphiti connection
-        print("\n🧠 Connecting to Graphiti...")
-        graphiti_client = await get_connected_graphiti_client()
-
-        if not graphiti_client:
-            print("❌ Graphiti connection failed")
-            return False
-        print("✅ Graphiti connection successful")
-        print(f"   • Available tools: {graphiti_client.get_available_tools()}")
-
-        # Create mock transactions
-        print("\n📦 Creating mock transactions...")
-        mock_transactions = create_mock_transactions()
-        print(f"✅ Created {len(mock_transactions)} mock transactions")
-
-        # Store transactions in Graphiti
-        print("\n💾 Storing transactions in Graphiti...")
-        storage_success = await store_mock_transactions_in_graphiti(
-            graphiti_client, TEST_USER_ID_GRAPHITI, mock_transactions, show_results=True
-        )
-
-        if not storage_success:
-            print("❌ TEST 2 FAILED: Storage errors occurred")
-            return False
-
-        # Test search functionality
-        print("\n🔍 Testing search functionality...")
-        search_queries = ["coffee", "Starbucks", "food", "grocery"]
-
-        for query in search_queries:
-            search_results = await graphiti_client.search(
-                user_id=TEST_USER_ID_GRAPHITI,
-                query=query,
-                max_nodes=10
-            )
-            nodes_found = len(search_results.get("nodes", [])) if search_results else 0
-            print(f"   • Query '{query}': {nodes_found} nodes found")
-
-        print("✅ TEST 2 PASSED: Graphiti integration working")
-        return True
-
-    except Exception as e:
-        print(f"❌ TEST 2 FAILED: {str(e)}")
-        return False
-
-async def test_3_full_integration():
-    """Test 3: Full integration - Real Plaid → SpendingAgent → Graphiti workflow."""
-    print("\n" + "=" * 70)
-    print("📝 TEST 3: Full Integration (Real Plaid → SpendingAgent → Graphiti)")
-    print("=" * 70)
-
-    # Clear data before test for clean slate
-    await clear_graphiti_data()
+    # Initialize SQLite storage for verification
+    storage = SQLiteUserStorage()
 
     try:
         # Step 1: Setup Plaid sandbox account
@@ -278,12 +160,16 @@ async def test_3_full_integration():
         await asyncio.sleep(1)
 
         # Step 4: Test SpendingAgent workflow scenarios
-        # These should trigger: Plaid fetch → categorization → Graphiti storage → analysis
+        # These should trigger: Plaid fetch → categorization → SQLite storage
         print("\n🔄 Testing full SpendingAgent workflow scenarios...")
-        print("   (This will fetch from Plaid, store in Graphiti, and analyze)")
+        print("   (This will fetch from Plaid, store in SQLite)")
 
         test_scenarios = [
             "Show me my recent transactions",
+            "Show my Uber rides last week",
+            "How much did I spend on dining last month?",
+            "How much did I spend on Uber last week?",
+            "Show me transactions over $100 this week",
             "What did I spend money on?",
             "Analyze my spending patterns"
         ]
@@ -316,63 +202,67 @@ async def test_3_full_integration():
             # Small delay between scenarios
             await asyncio.sleep(2)
 
-        # Step 5: Verify data was stored in Graphiti
-        print("\n🔍 Verifying data was stored in Graphiti...")
-        graphiti_client = await get_connected_graphiti_client()
-        if graphiti_client:
-            search_results = await graphiti_client.search(
-                user_id=TEST_USER_ID_FULL,
-                query="transaction",
-                max_nodes=5
-            )
-            nodes_found = len(search_results.get("nodes", [])) if search_results else 0
-            print(f"   • Found {nodes_found} transaction-related nodes in Graphiti")
+        # Step 5: Verify data was stored in SQLite
+        print("\n🔍 Verifying data was stored in SQLite...")
+        try:
+            stored_transactions = await storage.get_transactions_for_user(TEST_USER_ID_FULL, limit=10)
+            transactions_count = len(stored_transactions)
+            print(f"   • Found {transactions_count} transactions in SQLite")
 
-            if nodes_found > 0:
-                print("   ✅ Data successfully stored in Graphiti via SpendingAgent workflow")
+            if transactions_count > 0:
+                print("   ✅ Data successfully stored in SQLite via SpendingAgent workflow")
+
+                # Show sample transaction details
+                sample_tx = stored_transactions[0]
+                print("   • Sample transaction:")
+                print(f"     - Merchant: {sample_tx.get('merchant_name', 'N/A')}")
+                print(f"     - Amount: ${sample_tx.get('amount', 0):.2f}")
+                print(f"     - AI Category: {sample_tx.get('ai_category', 'N/A')}")
+                print(f"     - AI Confidence: {sample_tx.get('ai_confidence', 0):.2f}")
             else:
-                print("   ⚠️  No transaction data found in Graphiti")
+                print("   ⚠️  No transaction data found in SQLite")
                 all_passed = False
-        else:
-            print("   ⚠️  Could not verify Graphiti storage")
+        except Exception as e:
+            print(f"   ⚠️  Could not verify SQLite storage: {e}")
+            all_passed = False
 
         if all_passed:
-            print("\n✅ TEST 3 PASSED: Full integration workflow working")
-            print("   🎉 Plaid → SpendingAgent → Graphiti pipeline functional!")
+            print("\n✅ TEST 2 PASSED: Full integration workflow working")
+            print("   🎉 Plaid → SpendingAgent → SQLite pipeline functional!")
             return True
         else:
-            print("\n❌ TEST 3 FAILED: Some parts of the workflow failed")
+            print("\n❌ TEST 2 FAILED: Some parts of the workflow failed")
             return False
 
     except Exception as e:
-        print(f"❌ TEST 3 FAILED: {str(e)}")
+        print(f"❌ TEST 2 FAILED: {str(e)}")
         return False
 
 async def run_all_tests():
     """Run all integration tests in sequence."""
     print("🚀 SpendingAgent Integration Test Suite")
     print("=" * 70)
-    print("Testing: Plaid → Graphiti → SpendingAgent Integration")
+    print("Testing: Plaid → SpendingAgent → SQLite Integration")
     print("=" * 70)
 
     results = {
         "plaid_only": False,
-        "graphiti_only": False,
         "full_integration": False
     }
 
+    # Clean up database before running tests
+    await cleanup_test_database()
+
     # Run tests in sequence
     results["plaid_only"] = await test_1_plaid_integration_only()
-    results["graphiti_only"] = await test_2_graphiti_integration_only()
-    results["full_integration"] = await test_3_full_integration()
+    results["full_integration"] = await test_2_full_integration()
 
     # Summary
     print("\n" + "=" * 70)
     print("📊 TEST RESULTS SUMMARY")
     print("=" * 70)
     print(f"✅ Test 1 - Plaid Only:        {'PASSED' if results['plaid_only'] else 'FAILED'}")
-    print(f"✅ Test 2 - Graphiti Only:     {'PASSED' if results['graphiti_only'] else 'FAILED'}")
-    print(f"✅ Test 3 - Full Integration:  {'PASSED' if results['full_integration'] else 'FAILED'}")
+    print(f"✅ Test 2 - Full Integration:  {'PASSED' if results['full_integration'] else 'FAILED'}")
 
     all_passed = all(results.values())
     status = "🎉 ALL TESTS PASSED" if all_passed else "⚠️  SOME TESTS FAILED"
@@ -380,10 +270,10 @@ async def run_all_tests():
 
     if not all_passed:
         print("\n💡 Debugging tips:")
-        print("   • Ensure MCP server is running: uvicorn app.main:app --reload")
-        print("   • Ensure Graphiti server is running on localhost:8080")
+        print("   • Ensure MCP Plaid server is running: uvicorn app.main:app --reload")
         print("   • Check Plaid credentials are configured")
         print("   • Check server logs for detailed error information")
+        print("   • Ensure SQLite database is accessible")
 
 if __name__ == "__main__":
     asyncio.run(run_all_tests())

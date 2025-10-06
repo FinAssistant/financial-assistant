@@ -74,7 +74,6 @@ from tests.fixtures.transaction_fixtures import (
     mock_transactions_with_amazon
 )
 
-
 # Print test environment info
 def pytest_configure(config):
     """Print test configuration on startup."""

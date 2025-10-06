@@ -1,5 +1,4 @@
 import pytest
-import pytest_asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from app.ai.conversation_handler import ConversationHandler
 from app.ai.orchestrator_agent import OrchestratorAgent

@@ -1,7 +1,10 @@
 import pytest
 import threading
+import tempfile
+import os
 
 from app.core.database import AsyncUserStorageWrapper
+from app.core.sqlmodel_models import PersonalContextCreate, AgeRange, LifeStage, MaritalStatus
 # For testing, we'll use the new SQLite storage
 
 
@@ -11,7 +14,6 @@ class TestSQLiteUserStorage:
     def setup_method(self):
         """Set up test fixtures."""
         # Use test database to avoid conflicts
-        import tempfile
         import os
         self.test_db_path = os.path.join(tempfile.gettempdir(), "test_financial_assistant.db")
         self.storage = AsyncUserStorageWrapper()
@@ -31,7 +33,6 @@ class TestSQLiteUserStorage:
     
     def teardown_method(self):
         """Clean up test fixtures."""
-        import os
         # Clean up test database
         if os.path.exists(self.test_db_path):
             os.remove(self.test_db_path)
@@ -294,3 +295,82 @@ class TestSQLiteUserStorage:
         # Verify no duplicate emails
         emails = [user['email'] for user in all_users]
         assert len(emails) == len(set(emails))  # All emails should be unique
+
+    def test_get_user_context(self):
+        """Test getting complete user context including demographics."""
+        # Create user
+        self.storage.create_user(self.test_user_data)
+
+        # Get user context
+        context = self.storage.get_user_context('user123')
+
+        # Verify basic structure
+        assert context['user_id'] == 'user123'
+        assert context['name'] == 'Test User'
+        assert context['email'] == 'test@example.com'
+        assert context['profile_complete'] is False
+        assert 'demographics' in context
+        assert 'financial_context' in context
+
+        # Without personal context, these should be empty
+        assert context['demographics'] == {}
+        assert context['financial_context'] == {}
+
+    def test_get_user_context_nonexistent(self):
+        """Test getting context for non-existent user."""
+        context = self.storage.get_user_context('nonexistent')
+        assert context == {}
+
+    def test_get_user_context_with_personal_demographics(self):
+        """Test getting user context including personal demographics."""
+        # Create user
+        self.storage.create_user(self.test_user_data)
+
+        # Create personal context
+        personal_data = PersonalContextCreate(
+            age_range=AgeRange.RANGE_26_35,
+            life_stage=LifeStage.EARLY_CAREER,
+            marital_status=MaritalStatus.SINGLE,
+            total_dependents_count=0,
+            children_count=0,
+            occupation_type="Software Engineer",
+            location_context="California, USA"
+        )
+        self.storage.create_personal_context("user123", personal_data)
+
+        # Get user context
+        context = self.storage.get_user_context('user123')
+
+        # Verify complete context
+        assert context['user_id'] == 'user123'
+        assert context['name'] == 'Test User'
+        assert context['demographics']['age_range'] == '26_35'
+        assert context['demographics']['life_stage'] == 'early_career'
+        assert context['demographics']['marital_status'] == 'single'
+        assert context['demographics']['occupation_type'] == 'Software Engineer'
+        assert context['demographics']['location'] == 'California, USA'
+        assert not context['financial_context']['has_dependents']
+        assert context['financial_context']['dependent_count'] == 0
+        assert context['financial_context']['children_count'] == 0
+
+    def test_get_personal_context_only(self):
+        """Test getting personal context without full user context."""
+        # Create user
+        self.storage.create_user(self.test_user_data)
+
+        # Create personal context
+        personal_data = PersonalContextCreate(
+            age_range=AgeRange.RANGE_26_35,
+            life_stage=LifeStage.EARLY_CAREER,
+            marital_status=MaritalStatus.SINGLE
+        )
+        self.storage.create_personal_context("user123", personal_data)
+
+        # Get personal context only
+        context = self.storage.get_personal_context('user123')
+
+        assert context is not None
+        assert context['user_id'] == 'user123'
+        assert context['age_range'] == '26_35'
+        assert context['life_stage'] == 'early_career'
+        assert context['marital_status'] == 'single'

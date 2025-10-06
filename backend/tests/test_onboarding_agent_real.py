@@ -170,7 +170,6 @@ import pytest
 import os
 from unittest.mock import patch, AsyncMock
 from app.ai.onboarding import OnboardingAgent, OnboardingState
-from app.services.llm_service import llm_factory
 from langchain_core.messages import HumanMessage, AIMessage
 
 
