@@ -322,7 +322,7 @@ async def test_2_full_integration():
             )
 
             if search_results:
-                print(f"   ✅ Graphiti search successful - found historical context")
+                print("   ✅ Graphiti search successful - found historical context")
                 print(f"   • Search results preview: {str(search_results)[:200]}...")
 
                 # Verify tags are present in results

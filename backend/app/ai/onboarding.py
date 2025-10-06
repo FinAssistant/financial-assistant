@@ -362,7 +362,7 @@ class OnboardingAgent:
             # TODO: Remove User.profile_complete field entirely - PersonalContext.is_complete is the single source of truth
             if state.onboarding_complete:
                 user_storage.update_user(user_id, {"profile_complete": True})
-                self.logger.info(f"DEPRECATED: Updated User.profile_complete for backward compatibility")
+                self.logger.info("DEPRECATED: Updated User.profile_complete for backward compatibility")
             
             return {"needs_database_update": False}
             

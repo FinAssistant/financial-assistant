@@ -68,3 +68,8 @@ exclude_lines = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13.3",
+]

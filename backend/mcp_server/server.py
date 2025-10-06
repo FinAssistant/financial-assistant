@@ -132,7 +132,7 @@ async def whoami() -> Dict[str, Any]:
             "debug": "token_found"
         }
 
-        logger.info(f"🐛 Returning authenticated result")
+        logger.info("🐛 Returning authenticated result")
         return result
 
     except Exception as e:

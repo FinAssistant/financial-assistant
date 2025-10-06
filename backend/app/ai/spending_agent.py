@@ -504,17 +504,17 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
                 ]
 
                 # Call LLM with timeout (will raise exception on timeout/error)
-                logger.info(f"🔄 Invoking LLM for intent detection (timeout: 10s)")
+                logger.info("🔄 Invoking LLM for intent detection (timeout: 10s)")
 
                 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(self.llm.invoke, llm_messages)
                     try:
                         response = future.result(timeout=10)
-                        logger.info(f"✅ LLM call succeeded for intent detection")
+                        logger.info("✅ LLM call succeeded for intent detection")
                         detected_intent = response.content.strip().lower()
                     except FuturesTimeoutError:
-                        logger.error(f"⏱️ LLM call timed out after 10s for intent detection")
+                        logger.error("⏱️ LLM call timed out after 10s for intent detection")
                         raise TimeoutError("Intent detection timed out")
 
                 logger.debug(f"🧠 INTENT_NODE: Raw LLM response: {repr(response.content)}")
