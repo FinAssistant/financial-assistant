@@ -310,11 +310,13 @@ class TestInsightsGeneratorOrchestration:
         assert "period_months" in insights
         assert "top_categories" in insights
         assert "trends" in insights
+        assert "normalized_month" in insights
 
         # Verify data
         assert insights["total_spending"] == 495.00
         assert insights["monthly_average"] == 495.00  # Same as total for 1 month
         assert insights["period_months"] == 1
+        assert insights["normalized_month"] == "2025-01"  # Should match input month
         assert len(insights["top_categories"]) > 0
         assert insights["top_categories"][0]["name"] == "Food & Dining"  # Highest spending
 
@@ -337,6 +339,8 @@ class TestInsightsGeneratorOrchestration:
         assert "period_months" in insights
         assert "top_categories" in insights
         assert "trends" in insights
+        assert "normalized_month" in insights
+        assert insights["normalized_month"] is not None  # Should have defaulted to current month
 
     @pytest.mark.asyncio
     async def test_generate_spending_insights_no_data(self, insights_generator):
@@ -346,6 +350,7 @@ class TestInsightsGeneratorOrchestration:
         assert insights["total_spending"] == 0.0
         assert insights["monthly_average"] == 0.0
         assert insights["period_months"] == 1
+        assert insights["normalized_month"] == "2025-01"
         assert insights["top_categories"] == []
         assert insights["trends"]["month_over_month_change"] is None
 
@@ -376,8 +381,11 @@ class TestInsightsGeneratorOrchestration:
         assert insights["total_spending"] > 0
         assert insights["monthly_average"] > 0
         assert insights["period_months"] == 1  # January = 1 month
+        # normalized_month is None because month parameter wasn't provided
+        # Even though date range matches January, we don't auto-detect that
+        assert insights["normalized_month"] is None
         assert len(insights["top_categories"]) > 0
 
-        # Trends should be None for custom date ranges (no month-over-month)
+        # Trends should be None for custom date ranges (no month parameter provided)
         assert insights["trends"]["month_over_month_change"] is None
         assert insights["trends"]["unusual_spending"] is None

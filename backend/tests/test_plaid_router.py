@@ -89,7 +89,6 @@ class TestPlaidRouterMultipleAccounts:
 
             # Verify the calls were made with correct account IDs
             get_calls = mock_user_storage.get_connected_account_by_plaid_id.call_args_list
-            create_calls = mock_user_storage.create_connected_account.call_args_list
 
             assert get_calls[0][0] == ("test_user_123", "account_1")
             assert get_calls[1][0] == ("test_user_123", "account_2")

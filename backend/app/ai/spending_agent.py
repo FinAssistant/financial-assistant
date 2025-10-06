@@ -18,6 +18,7 @@ from app.services.transaction_categorization import TransactionCategorizationSer
 from app.utils.context_formatting import build_user_context_string, format_transaction_insights_for_llm_context
 from app.utils.transaction_query_parser import parse_user_query_to_intent
 from app.utils.transaction_query_executor import execute_transaction_query
+from app.ai.mcp_clients.graphiti_client import get_graphiti_client
 from app.models.transaction_query_models import QueryIntent
 from langchain_core.messages import SystemMessage
 from app.ai.mcp_clients.plaid_client import get_plaid_client
@@ -69,11 +70,11 @@ class SpendingAgent:
             self.llm = None
             self.categorization_service = None
 
-        # Initialize insights generator service
+        # Initialize insights generator service (Graphiti will be initialized lazily on first use)
         from app.services.insights_generator import InsightsGenerator
         self.insights_generator = InsightsGenerator(
             storage=self._storage,
-            graphiti_client=None  # TODO: Initialize Graphiti client when available
+            graphiti_client=None  # Initialized lazily in _spending_analysis_node
         )
         logger.info("Insights generator service initialized")
 
@@ -576,6 +577,14 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         date_range = parse_date_range(user_message, llm=self.llm)
         logger.info(f"Parsed date range from '{user_message}': {date_range}")
 
+        # Initialize Graphiti client lazily on first use
+        if self.insights_generator.graphiti is None:
+            try:
+                self.insights_generator.graphiti = await get_graphiti_client()
+                logger.info("Graphiti client initialized for insights storage")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Graphiti client: {e}")
+
         # Generate real spending insights from transaction data with parsed dates
         try:
             spending_data = await self.insights_generator.generate_spending_insights(
@@ -587,7 +596,7 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
             logger.info(f"Generated spending insights for user {user_id}: {spending_data}")
         except Exception as e:
             logger.error(f"Failed to generate spending insights: {e}")
-            # Fallback to empty data structure
+            # Fallback to empty data structure with normalized month from parsed date range
             spending_data = {
                 "total_spending": 0.0,
                 "monthly_average": 0.0,
@@ -596,7 +605,8 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
                 "trends": {
                     "month_over_month_change": None,
                     "unusual_spending": None
-                }
+                },
+                "normalized_month": date_range.get("month")  # Use parsed month for consistency
             }
 
         # Build comprehensive system prompt with real data
@@ -623,6 +633,37 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         unusual = trends.get("unusual_spending")
         unusual_text = unusual if unusual else "No unusual patterns detected"
 
+        # Search Graphiti for historical spending context using tags
+        graphiti_context = ""
+        if self.insights_generator.graphiti:
+            try:
+                # Build search query using the same tags format we use for storage
+                # Use the normalized month from spending_data to match exactly what was stored
+                # This ensures we match the exact tag structure: [TAGS: user:{user_id}, spending_insight, month:{month}]
+                normalized_month = spending_data.get('normalized_month')
+                tags = self.insights_generator.build_tags(user_id, normalized_month)
+
+                # Combine tags with natural language query for better semantic search
+                search_query = f"{tags} spending patterns trends insights previous analysis"
+                logger.info(f"🔍 Searching Graphiti with query: {search_query}")
+                logger.info(f"🏷️  Using normalized month: {normalized_month}")
+
+                search_results = await self.insights_generator.graphiti.search(
+                    user_id=user_id,
+                    query=search_query,
+                    max_nodes=5
+                )
+
+                logger.info(f"📊 Graphiti search results: {search_results}")
+
+                if search_results:
+                    graphiti_context = f"\n\nHISTORICAL CONTEXT FROM MEMORY:\n{search_results}\n"
+                    logger.info(f"✅ Retrieved Graphiti context for user {user_id} ({len(str(search_results))} chars)")
+                else:
+                    logger.info(f"⚠️  No Graphiti context found for user {user_id}")
+            except Exception as e:
+                logger.warning(f"❌ Failed to retrieve Graphiti context: {e}")
+
         # Build period description
         if period_months == 1:
             period_desc = "this month"
@@ -637,7 +678,7 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
 
 USER CONTEXT:
 {user_context_str}
-
+{graphiti_context}
 SPENDING DATA ANALYSIS (for {period_desc}):
 - Total Spending: ${total:,.2f}
 - Monthly Average: ${monthly_avg:,.2f}
@@ -658,6 +699,12 @@ INSTRUCTIONS:
 8. If spending is $0 or no data, gently guide them to connect accounts
 
 Generate a comprehensive spending analysis response now."""
+
+        # Debug logging for system prompt
+        logger.debug(f"💬 SPENDING_ANALYSIS System Prompt ({len(system_prompt)} chars):")
+        logger.debug(f"{'='*80}")
+        logger.debug(system_prompt)
+        logger.debug(f"{'='*80}")
 
         # Create messages for LLM
         last_human_message = self._get_last_human_message(state)

@@ -249,8 +249,23 @@ class InsightsGenerator:
         # Priority: custom date range > month > current month
         if start_date and end_date:
             # Use custom date range
-            month = None  # Don't use month-based logic for trends
-            self.logger.info(f"Using custom date range: {start_date} to {end_date}")
+            # If month is provided AND matches the date range, keep it for trend calculations
+            if month:
+                # Verify the month matches the date range
+                try:
+                    month_start, month_end = get_month_range(datetime.strptime(month, "%Y-%m"))
+                    if month_start == start_date and month_end == end_date:
+                        # Date range matches the month exactly - keep month for trends
+                        self.logger.info(f"Using month {month} with matching date range: {start_date} to {end_date}")
+                    else:
+                        # Date range doesn't match month - it's a custom range
+                        month = None
+                        self.logger.info(f"Using custom date range: {start_date} to {end_date}")
+                except (ValueError, TypeError):
+                    month = None
+                    self.logger.info(f"Using custom date range: {start_date} to {end_date}")
+            else:
+                self.logger.info(f"Using custom date range: {start_date} to {end_date}")
         elif month:
             # Calculate date range from month using shared utility
             try:
@@ -297,7 +312,8 @@ class InsightsGenerator:
             "trends": {
                 "month_over_month_change": month_over_month,
                 "unusual_spending": unusual_spending
-            }
+            },
+            "normalized_month": month  # Include normalized month for Graphiti search matching
         }
 
         # Store to Graphiti (non-blocking)
@@ -309,62 +325,75 @@ class InsightsGenerator:
                 # Don't fail the whole operation if Graphiti storage fails
 
         return insights
+    
+    def build_tags(self, user_id: str, month: str | None = None) -> str:
+        """
+        Build a well-formed [TAGS: ...] string for Graphiti episodes.
+        Ensures closing bracket and conditional fields.
+        """
+        tags = [f"user:{user_id}", "spending_insight"]
+        if month:
+            tags.append(f"month:{month}")
+        return "[TAGS: " + ", ".join(tags) + "]"
 
     async def store_insights_to_graphiti(
-        self, user_id: str, insights: Dict[str, Any], month: str
+        self, user_id: str, insights: Dict[str, Any], month: Optional[str] = None
     ) -> bool:
         """
-        Store spending insights as a Graphiti episode.
+        Store structured spending insights as a plain-text Graphiti episode.
 
-        Creates a structured episode that Graphiti can use to build
-        relationships between insights over time.
-
-        Args:
-            user_id: User identifier
-            insights: Structured insights dictionary
-            month: Month for the insights (ISO format YYYY-MM)
-
-        Returns:
-            True if storage successful, False otherwise
+        Includes inline tags for keyword search. No JSON escaping issues.
         """
+
         if not self.graphiti:
             self.logger.warning("Graphiti client not available, skipping insight storage")
             return False
 
         try:
-            # Build structured episode content
-            total = insights.get("total_monthly_spending", 0)
+            total = insights.get("total_spending", 0)
+            monthly_avg = insights.get("monthly_average", 0)
+            period_months = insights.get("period_months", 1)
             categories = insights.get("top_categories", [])
             trends = insights.get("trends", {})
 
-            # Format top categories
+            # Build category breakdown lines safely
             category_lines = []
-            for cat in categories[:5]:  # Top 5
+            for cat in categories[:5]:
                 category_lines.append(
-                    f"- {cat['name']}: ${cat['amount']:.2f} ({cat['percentage']:.1f}%)"
+                    f"- {cat['name']}: ${cat['amount']:.2f} "
+                    f"({cat['percentage']:.1f}%, {cat['transaction_count']} tx) "
+                    f"[category:{cat['name'].replace(' ', '_').lower()}]"
                 )
 
-            content = f"""SPENDING INSIGHTS FOR {month}
+            # Build final lines
+            lines = [
+                "SPENDING INSIGHTS",
+                self.build_tags(user_id, month),
+                "",
+                f"Period: {period_months} month(s)",
+                f"Total Spending: ${total:,.2f}",
+                f"Monthly Average: ${monthly_avg:,.2f}",
+                "",
+                "Top Spending Categories:",
+            ]
+            lines.extend(category_lines if category_lines else ["- No categorized spending data"])
+            lines.extend([
+                "",
+                "Trends:",
+                f"- Month-over-month change: {trends.get('month_over_month_change', 'N/A')}%",
+                f"- Unusual activity: {trends.get('unusual_spending') or 'No unusual patterns detected'}"
+            ])
 
-Total Spending: ${total:,.2f}
+            content = "\n".join(lines)
 
-Top Spending Categories:
-{chr(10).join(category_lines) if category_lines else '- No categorized spending data'}
-
-Trends:
-- Month-over-month change: {trends.get('month_over_month_change') or 'N/A'}%
-- Unusual activity: {trends.get('unusual_spending') or 'No unusual patterns detected'}
-"""
-
-            # Store as Graphiti episode
             await self.graphiti.add_episode(
                 user_id=user_id,
                 content=content,
-                name=f"Monthly Spending Insights - {month}",
+                name=f"Spending Insights - {month or 'custom period'}",
                 source_description="spending_insights_generator"
             )
 
-            self.logger.info(f"Stored spending insights to Graphiti for user {user_id}, month {month}")
+            self.logger.info(f"Stored spending insights to Graphiti for user {user_id}, month {month or 'custom period'}")
             return True
 
         except Exception as e:

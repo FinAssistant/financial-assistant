@@ -280,10 +280,34 @@ class OnboardingAgent:
             try:
                 graphiti_client = await get_graphiti_client()
                 self.logger.info(f"Storing onboarding memory for user {user_id}: {human_message}")
+
+                # FIXME: extract as method for reuse in OnboardingAgent
+                # Build enhanced episode content with extraction guidance
+                lines = [
+                    "FINANCIAL CONVERSATION CONTEXT:",
+                    f"User Message: {human_message}",
+                    "",
+                    "EXTRACTION PRIORITIES:",
+                    "- Financial goals (saving, investing, debt payoff, retirement)",
+                    "- Risk tolerance and concerns",
+                    "- Dollar amounts and timeframes",
+                    "- Family situation affecting finances",
+                    "- Values and priorities expressed",
+                    "- Constraints or limitations mentioned",
+                    "- Personal info: income range, net worth, major assets/liabilities",
+                    "- Geographic context: city/state, cost of living",
+                    "- Demographic context: age range, life stage, occupation type",
+                    "- Any other details relevant to financial planning",
+                    "",
+                    "ADDITIONAL CONTEXT:",
+                    f"{ {'assistant_response': ai_response} }"
+                ]
+
+                enhanced_content = "\n".join(lines)
+
                 await graphiti_client.add_episode(
                     user_id=user_id,
-                    content=human_message,
-                    context={"assistant_response": ai_response}, 
+                    content=enhanced_content,
                     name="Onboarding Conversation",
                     source_description="onboarding_agent"
                 )

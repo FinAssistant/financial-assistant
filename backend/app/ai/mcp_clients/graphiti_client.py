@@ -114,7 +114,6 @@ class GraphitiMCPClient:
         self,
         user_id: str,
         content: str,
-        context: Optional[Dict[str, Any]] = None,
         name: str = "Financial Conversation",
         source_description: str = "agent_conversation",
     ) -> Dict[str, Any]:
@@ -134,36 +133,12 @@ class GraphitiMCPClient:
         """
         add_memory_tool = self._get_tool("add_memory")
 
-        # Build enhanced episode content with extraction guidance
-        enhanced_content = f"""
-            FINANCIAL CONVERSATION CONTEXT:
-            User Message: {content}
-
-            EXTRACTION PRIORITIES:
-            - Financial goals (saving, investing, debt payoff, retirement)
-            - Risk tolerance and concerns
-            - Dollar amounts and timeframes
-            - Family situation affecting finances
-            - Values and priorities expressed
-            - Constraints or limitations mentioned
-            - Personal info: income range, net worth, major assets/liabilities
-            - Geographic context: city/state, cost of living
-            - Demographic context: age range, life stage, occupation type
-            - Any other details relevant to financial planning
-            """
-
-        if context:
-            enhanced_content += f"""
-            ADDITIONAL CONTEXT:
-            {context if context else "None"}
-            """
-
         try:
             response = await _call_tool_with_retries(
                 add_memory_tool,
                 {
                     "name": name,
-                    "episode_body": enhanced_content,
+                    "episode_body": content,
                     "source": "text",  # Let Graphiti handle content type classification
                     "source_description": source_description,
                     "group_id": user_id,  # CRITICAL: user_id = group_id for data isolation

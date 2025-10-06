@@ -688,7 +688,7 @@ class TestOnboardingAgentIntegration:
         )
 
         # Since completion status changed, need to update database again
-        final_db_update = agent._update_db(updated_state, config)
+        agent._update_db(updated_state, config)
 
         # Check completion routing
         route = agent._route_completion(updated_state)
@@ -742,10 +742,39 @@ class TestOnboardingAgentGraphitiIntegration:
                 "thread_id": "test_thread_789"
             }
         }
+
+    @pytest.fixture
+    def sample_successful_storage(self):
+        """Create sample content for testing."""
+        human_message = "I have left my job in mid July, my wife is taking a leave of absence starting in October"
+        ai_response = "Thank you for updating me on these important changes. Being between jobs and having your wife take leave will significantly impact your financial planning."
+
+        lines = [
+            "FINANCIAL CONVERSATION CONTEXT:",
+            f"User Message: {human_message}",
+            "",
+            "EXTRACTION PRIORITIES:",
+            "- Financial goals (saving, investing, debt payoff, retirement)",
+            "- Risk tolerance and concerns",
+            "- Dollar amounts and timeframes",
+            "- Family situation affecting finances",
+            "- Values and priorities expressed",
+            "- Constraints or limitations mentioned",
+            "- Personal info: income range, net worth, major assets/liabilities",
+            "- Geographic context: city/state, cost of living",
+            "- Demographic context: age range, life stage, occupation type",
+            "- Any other details relevant to financial planning",
+            "",
+            "ADDITIONAL CONTEXT:",
+            f"{ {'assistant_response': ai_response} }"
+        ]
+
+        enhanced_content = "\n".join(lines)
+        return enhanced_content
     
     @patch('app.ai.onboarding.get_graphiti_client')
     @pytest.mark.asyncio
-    async def test_store_memory_successful_storage(self, mock_get_graphiti_client, agent, sample_state_with_messages, sample_config):
+    async def test_store_memory_successful_storage(self, mock_get_graphiti_client, agent, sample_state_with_messages, sample_config, sample_successful_storage):
         """Test _store_memory successfully stores conversation in Graphiti."""
         # Mock Graphiti client
         mock_graphiti_client = AsyncMock()
@@ -760,8 +789,7 @@ class TestOnboardingAgentGraphitiIntegration:
         mock_get_graphiti_client.assert_called_once()
         mock_graphiti_client.add_episode.assert_called_once_with(
             user_id="test_user_456",
-            content="I have left my job in mid July, my wife is taking a leave of absence starting in October",
-            context={"assistant_response": "Thank you for updating me on these important changes. Being between jobs and having your wife take leave will significantly impact your financial planning."},
+            content=sample_successful_storage,
             name="Onboarding Conversation",
             source_description="onboarding_agent"
         )
@@ -805,9 +833,38 @@ class TestOnboardingAgentGraphitiIntegration:
         # Should not attempt to store in Graphiti
         mock_graphiti_client.add_episode.assert_not_called()
     
+    @pytest.fixture
+    def sample_extracts_latest_messages(self):
+        """Create sample content for testing."""
+        human_message = "Second user message"
+        ai_response = "Latest AI response"
+
+        lines = [
+            "FINANCIAL CONVERSATION CONTEXT:",
+            f"User Message: {human_message}",
+            "",
+            "EXTRACTION PRIORITIES:",
+            "- Financial goals (saving, investing, debt payoff, retirement)",
+            "- Risk tolerance and concerns",
+            "- Dollar amounts and timeframes",
+            "- Family situation affecting finances",
+            "- Values and priorities expressed",
+            "- Constraints or limitations mentioned",
+            "- Personal info: income range, net worth, major assets/liabilities",
+            "- Geographic context: city/state, cost of living",
+            "- Demographic context: age range, life stage, occupation type",
+            "- Any other details relevant to financial planning",
+            "",
+            "ADDITIONAL CONTEXT:",
+            f"{ {'assistant_response': ai_response} }"
+        ]
+
+        enhanced_content = "\n".join(lines)
+        return enhanced_content
+
     @patch('app.ai.onboarding.get_graphiti_client')  
     @pytest.mark.asyncio
-    async def test_store_memory_extracts_latest_messages(self, mock_get_graphiti_client, agent, sample_config):
+    async def test_store_memory_extracts_latest_messages(self, mock_get_graphiti_client, agent, sample_config, sample_extracts_latest_messages):
         """Test _store_memory correctly extracts latest human and AI messages."""
         # State with multiple messages - should get the latest pair
         multi_message_state = OnboardingState(
@@ -822,14 +879,13 @@ class TestOnboardingAgentGraphitiIntegration:
         
         mock_graphiti_client = AsyncMock()
         mock_get_graphiti_client.return_value = mock_graphiti_client
-        
-        result = await agent._store_memory(multi_message_state, sample_config)
-        
+
+        await agent._store_memory(multi_message_state, sample_config)
+
         # Should extract the latest human and AI messages
         mock_graphiti_client.add_episode.assert_called_once_with(
             user_id="test_user_456",
-            content="Second user message",
-            context={"assistant_response": "Latest AI response"},
+            content=sample_extracts_latest_messages,
             name="Onboarding Conversation", 
             source_description="onboarding_agent"
         )

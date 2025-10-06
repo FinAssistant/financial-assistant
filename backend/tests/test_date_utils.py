@@ -4,7 +4,7 @@ Tests for date utility functions and NLP date range parsing.
 
 import pytest
 from datetime import datetime
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from app.utils.date_utils import (
     get_month_range,
     get_quarter_range,

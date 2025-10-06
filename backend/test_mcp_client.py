@@ -9,8 +9,6 @@ This script tests:
 
 import asyncio
 import json
-import httpx
-from typing import Any, Dict, List, Optional
 
 try:
     from langchain_mcp_adapters.client import MultiServerMCPClient

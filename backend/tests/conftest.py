@@ -67,8 +67,8 @@ def test_session_id():
     return "test_session_123"
 
 
-# Import shared transaction fixtures
-from tests.fixtures.transaction_fixtures import (
+# Import shared transaction fixtures (these are used by pytest, not directly in this file)
+from tests.fixtures.transaction_fixtures import (  # noqa: F401
     sample_transactions,
     clear_transactions_for_llm,
     mock_transactions_with_amazon
