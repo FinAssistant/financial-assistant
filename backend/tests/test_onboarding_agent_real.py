@@ -244,7 +244,7 @@ class TestRealOnboardingAgent:
             # Call the real agent's LLM method
             result = await agent._call_llm(state, config)
 
-            print(f"✅ LLM Response received")
+            print("✅ LLM Response received")
             print(f"Data extraction completed: {len(result.get('collected_data', {}))} fields")
 
             # Verify response structure
@@ -574,7 +574,7 @@ class TestRealOnboardingAgent:
             # Test the _guide_account_connection method directly
             result = await agent._guide_account_connection(state, config)
 
-            print(f"\n=== GUIDANCE RESULT ===")
+            print("\n=== GUIDANCE RESULT ===")
             print(f"Keys returned: {list(result.keys())}")
             print(f"Messages count: {len(result.get('messages', []))}")
 
@@ -601,7 +601,7 @@ class TestRealOnboardingAgent:
 
                 # Check if this is the guidance message (AIMessage from onboarding agent)
                 if hasattr(msg, 'additional_kwargs') and msg.additional_kwargs.get("agent") == "onboarding":
-                    print(f"✓ Found guidance message from onboarding agent")
+                    print("✓ Found guidance message from onboarding agent")
                     guidance_message_found = True
                     # Verify it mentions account connection
                     content_lower = msg.content.lower()
@@ -610,7 +610,7 @@ class TestRealOnboardingAgent:
 
                 # Check if this is a tool response (contains link_token)
                 elif hasattr(msg, 'content') and "link_token" in msg.content:
-                    print(f"✓ Found tool response message")
+                    print("✓ Found tool response message")
                     tool_response_found = True
 
             # Verify we found both expected message types

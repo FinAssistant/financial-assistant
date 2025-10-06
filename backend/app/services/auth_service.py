@@ -136,10 +136,10 @@ class AuthService:
         # Check if user already exists
         if user_exists_func(data.email):
             return AuthResult(success=False, error_message="Email already registered")
-        
-        # Hash password
-        hashed_password = self._hash_password(data.password)
-        
+
+        # TODO: Hash and store password - currently not persisted
+        # hashed_password = self._hash_password(data.password)
+
         # Generate user ID
         import uuid
         user_id = str(uuid.uuid4())

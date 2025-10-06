@@ -330,9 +330,39 @@ Examples:
 
         self.logger.info(f"Orchestrator: LLM response for routing decision: {response.content}")
 
-        # Update state with new message
+        # Extract just the routing decision (first word)
+        content = response.content
+        if isinstance(content, list):
+            route_decision = str(content[0]).strip().upper() if len(content) > 0 else "SMALLTALK"
+        else:
+            route_decision = content.strip().upper()
+
+        # Extract only the first valid route word
+        valid_routes = {"SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"}
+        matched_route = None
+        for route in valid_routes:
+            if route_decision.startswith(route):
+                matched_route = route
+                if route_decision != route:
+                    self.logger.warning(f"LLM returned extra text after route: '{route_decision}'. Extracted route: '{route}'")
+                break
+
+        # Final validation - default to SMALLTALK if no valid route found
+        if matched_route is None:
+            self.logger.warning(f"Invalid routing decision: '{route_decision}'. Defaulting to SMALLTALK for safety")
+            route_decision = "SMALLTALK"
+        else:
+            route_decision = matched_route
+
+        # Create a clean message with just the routing decision
+        clean_response = AIMessage(
+            content=route_decision,
+            additional_kwargs={"agent": "orchestrator"}
+        )
+
+        # Update state with clean routing decision only
         return {
-            "messages": [response]
+            "messages": [clean_response]
         }
 
     def _small_talk_node(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
@@ -376,38 +406,20 @@ Examples:
         return {"messages": [response]}
 
     def find_route(self, state: GlobalState):
+        """
+        Determine which agent to route to based on the orchestrator's routing decision.
+        The orchestrator node has already cleaned and validated the routing decision.
+        """
         last_message = state.messages[-1]
-        self.logger.debug(f"Orchestrator: Last result from LLM : {last_message.content}")
+        destination = last_message.content.strip().upper()
 
-        # Handle case where LLM returns a list instead of a string
-        content = last_message.content
-        if isinstance(content, list):
-            # If it's a list, take the first element which should be the route
-            if len(content) > 0:
-                destination = str(content[0]).strip().upper()
-                self.logger.warning(f"LLM returned list instead of string. Using first element: {destination}")
-            else:
-                self.logger.error("LLM returned empty list. Defaulting to SMALLTALK")
-                destination = "SMALLTALK"
-        else:
-            # Normal case - content is a string
-            destination = content.strip().upper()
+        self.logger.debug(f"Orchestrator: Routing to {destination}")
 
-        # Extract the first word only (some LLMs ignore "one word only" instruction)
+        # The orchestrator node already validated and cleaned the route,
+        # but we do a final safety check here
         valid_routes = {"SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"}
-
-        # Try to find a valid route at the start of the response
-        for route in valid_routes:
-            if destination.startswith(route):
-                if destination != route:
-                    self.logger.warning(f"LLM returned extra text after route: '{destination}'. Extracted route: '{route}'")
-                destination = route
-                break
-
-        # Final validation
         if destination not in valid_routes:
             self.logger.warning(f"Invalid routing decision: '{destination}'. Defaulting to SMALLTALK for safety")
-            # Default to small talk for graceful degradation
             destination = "SMALLTALK"
 
         return destination

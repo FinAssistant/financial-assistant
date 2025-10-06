@@ -167,18 +167,18 @@ def _format_item_by_type(item: Dict[str, Any], data_type: DataStructureType) -> 
 
         category = item.get('category')
 
-        merchant = item.get('merchant_name')
+        merchant = item.get('merchant')
 
         text = "📊 Spending Summary:\n"
         text += f"  • Total Transactions: {count}\n"
         text += f"  • Total Amount: ${total:.2f}\n"
-        text += f"  • Average per Transaction: ${avg:.2f}"
+        text += f"  • Average per Transaction: ${avg:.2f}\n"
 
         if category:
-            text += f"  • Category: {category}"
+            text += f"  • Category: {category}\n"
 
         if merchant:
-            text += f"  • Merchant: {merchant}"
+            text += f"  • Merchant: {merchant}\n"
 
         if min_amt is not None and max_amt is not None:
             text += f"\n  • Range: ${min_amt:.2f} - ${max_amt:.2f}"

@@ -9,8 +9,6 @@ This script tests:
 
 import asyncio
 import json
-import httpx
-from typing import Any, Dict, List, Optional
 
 try:
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -121,7 +119,7 @@ async def test_whoami(jwt_token: str):
         # Parse JSON response
         if isinstance(result, str):
             parsed = json.loads(result)
-            print(f"📊 User info:")
+            print("📊 User info:")
             print(f"   • User ID: {parsed.get('sub')}")
             print(f"   • Expires At: {parsed.get('exp')}")
             print(f"   • Issued At: {parsed.get('iat')}")
@@ -194,7 +192,7 @@ async def test_all_tools(jwt_token: str):
         print("📤 Input: (no arguments)")
         if isinstance(result, str):
             result = json.loads(result)
-        print(f"📥 Output:")
+        print("📥 Output:")
         print(f"   • Status: {result.get('status')}")
         print(f"   • Server: {result.get('server')}")
         print(f"   • Version: {result.get('version')}")

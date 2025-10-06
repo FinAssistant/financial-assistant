@@ -18,6 +18,7 @@ from app.services.transaction_categorization import TransactionCategorizationSer
 from app.utils.context_formatting import build_user_context_string, format_transaction_insights_for_llm_context
 from app.utils.transaction_query_parser import parse_user_query_to_intent
 from app.utils.transaction_query_executor import execute_transaction_query
+from app.ai.mcp_clients.graphiti_client import get_graphiti_client
 from app.models.transaction_query_models import QueryIntent
 from langchain_core.messages import SystemMessage
 from app.ai.mcp_clients.plaid_client import get_plaid_client
@@ -64,11 +65,19 @@ class SpendingAgent:
             else:
                 self.categorization_service = None
 
-
         except Exception as e:
             logger.error(f"Failed to initialize LLM client: {e}")
             self.llm = None
             self.categorization_service = None
+
+        # Initialize insights generator service (Graphiti will be initialized lazily on first use)
+        from app.services.insights_generator import InsightsGenerator
+        self.insights_generator = InsightsGenerator(
+            storage=self._storage,
+            graphiti_client=None  # Initialized lazily in _spending_analysis_node
+        )
+        logger.info("Insights generator service initialized")
+
         self._setup_graph()
     
     def _setup_graph(self) -> None:
@@ -303,18 +312,21 @@ class SpendingAgent:
                 return msg.content
         return ""
 
-    def _invoke_llm_with_fallback(self, messages, intent_name: str, fallback_message: str = None) -> str:
+    def _invoke_llm_with_fallback(self, messages, intent_name: str, fallback_message: str = None, timeout: int = 30) -> str:
         """
-        Helper method to invoke LLM with consistent error handling and fallback.
+        Helper method to invoke LLM with consistent error handling, timeout, and fallback.
 
         Args:
             messages: List of messages for LLM
             intent_name: Name of the intent for error logging
             fallback_message: Custom fallback message (optional)
+            timeout: Timeout in seconds (default: 30)
 
         Returns:
             LLM response content or fallback message
         """
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
         if fallback_message is None:
             fallback_message = f"I apologize, but my {intent_name} service is temporarily unavailable. Please try again in a few moments, or feel free to ask me about other aspects of your finances."
 
@@ -322,10 +334,21 @@ class SpendingAgent:
             return fallback_message
 
         try:
-            llm_response = self.llm.invoke(messages)
-            return llm_response.content
+            logger.info(f"🔄 Invoking LLM for {intent_name} (timeout: {timeout}s)")
+
+            # Use ThreadPoolExecutor to add timeout to synchronous LLM call
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self.llm.invoke, messages)
+                try:
+                    llm_response = future.result(timeout=timeout)
+                    logger.info(f"✅ LLM call succeeded for {intent_name}")
+                    return llm_response.content
+                except FuturesTimeoutError:
+                    logger.error(f"⏱️ LLM call timed out after {timeout}s for {intent_name}")
+                    return f"I apologize, but my {intent_name} service is taking longer than expected. Please try again in a moment."
+
         except Exception as e:
-            logger.error(f"LLM call failed in {intent_name}: {e}")
+            logger.error(f"❌ LLM call failed in {intent_name}: {e}")
             return fallback_message
 
     async def _fetch_transactions(self, user_id: str, timeout_seconds: int = 30) -> Dict[str, Any]:
@@ -474,13 +497,26 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
 
         try:
             if self.llm:
-                # Use LLM for intelligent intent detection - proper conversation format for all providers
+                # Use LLM for intelligent intent detection with timeout
                 llm_messages = [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_input)
                 ]
-                response = self.llm.invoke(llm_messages)
-                detected_intent = response.content.strip().lower()
+
+                # Call LLM with timeout (will raise exception on timeout/error)
+                logger.info("🔄 Invoking LLM for intent detection (timeout: 10s)")
+
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self.llm.invoke, llm_messages)
+                    try:
+                        response = future.result(timeout=10)
+                        logger.info("✅ LLM call succeeded for intent detection")
+                        detected_intent = response.content.strip().lower()
+                    except FuturesTimeoutError:
+                        logger.error("⏱️ LLM call timed out after 10s for intent detection")
+                        raise TimeoutError("Intent detection timed out")
+
                 logger.debug(f"🧠 INTENT_NODE: Raw LLM response: {repr(response.content)}")
                 logger.debug(f"🧠 INTENT_NODE: Processed intent: {repr(detected_intent)}")
 
@@ -496,7 +532,7 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
                 # Fallback to keyword-based detection if LLM unavailable
                 detected_intent = self._fallback_intent_detection(user_input)
                 logger.info(f"Fallback detected intent: {detected_intent}")
-                
+
         except Exception as e:
             logger.error(f"Error in LLM intent detection: {e}")
             detected_intent = self._fallback_intent_detection(user_input)
@@ -520,48 +556,137 @@ Respond with exactly ONE word: spending_analysis, budget_planning, optimization,
         else:
             return "general_spending"
     
-    def _spending_analysis_node(self, state: SpendingAgentState) -> Dict[str, Any]:
+    async def _spending_analysis_node(self, state: SpendingAgentState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Specialized node for spending analysis intent.
-        Uses LLM to generate personalized spending analysis based on available data.
+        Uses InsightsGenerator to query real transaction data and LLM for personalized analysis.
+        Parses date ranges from user query (e.g., "last month", "Q3 2025", "September").
         """
-        
+        # Get user ID from config (consistent with other nodes)
+        user_id = config["configurable"]["user_id"]
+        logger.debug(f"💰 SPENDING_ANALYSIS_NODE: Starting with user_id: {user_id}")
+
         # Build user context string from state
         user_context_str = build_user_context_string(state.get("user_context", {}))
-        
-        # FIXME:
-        # 1. Real processed insights from historical transaction analysis
-        # 2. Historical patterns and categorization data from SQLite
-        # 3. Budget vs actual spending comparisons
-        
-        # For now, use mock data structure to demonstrate LLM integration
-        mock_spending_data = {
-            "total_monthly_spending": 3250.00,
-            "top_categories": [
-                {"name": "Food & Dining", "amount": 850.00, "percentage": 26.2},
-                {"name": "Transportation", "amount": 650.00, "percentage": 20.0},
-                {"name": "Shopping", "amount": 420.00, "percentage": 12.9}
-            ],
-            "trends": {
-                "month_over_month_change": -5.2,
-                "unusual_spending": "Higher than usual restaurant spending detected"
+
+        # Parse date range from user's message using existing utility
+        from app.utils.date_utils import parse_date_range
+        user_message = self._get_last_human_message(state)
+
+        # Parse date range with hybrid strategy (rule-based + LLM fallback)
+        date_range = parse_date_range(user_message, llm=self.llm)
+        logger.info(f"Parsed date range from '{user_message}': {date_range}")
+
+        # Initialize Graphiti client lazily on first use
+        if self.insights_generator.graphiti is None:
+            try:
+                self.insights_generator.graphiti = await get_graphiti_client()
+                logger.info("Graphiti client initialized for insights storage")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Graphiti client: {e}")
+
+        # Generate real spending insights from transaction data with parsed dates
+        try:
+            spending_data = await self.insights_generator.generate_spending_insights(
+                user_id=user_id,
+                month=date_range.get("month"),
+                start_date=date_range.get("start_date"),
+                end_date=date_range.get("end_date")
+            )
+            logger.info(f"Generated spending insights for user {user_id}: {spending_data}")
+        except Exception as e:
+            logger.error(f"Failed to generate spending insights: {e}")
+            # Fallback to empty data structure with normalized month from parsed date range
+            spending_data = {
+                "total_spending": 0.0,
+                "monthly_average": 0.0,
+                "period_months": 1,
+                "top_categories": [],
+                "trends": {
+                    "month_over_month_change": None,
+                    "unusual_spending": None
+                },
+                "normalized_month": date_range.get("month")  # Use parsed month for consistency
             }
-        }
-        
-        # Build comprehensive system prompt
+
+        # Build comprehensive system prompt with real data
+        total = spending_data.get("total_spending", 0)
+        monthly_avg = spending_data.get("monthly_average", 0)
+        period_months = spending_data.get("period_months", 1)
+        categories = spending_data.get("top_categories", [])
+        trends = spending_data.get("trends", {})
+
+        # Format category breakdown
+        if categories:
+            category_lines = [
+                f"  * {cat['name']}: ${cat['amount']:.2f} ({cat['percentage']:.1f}%)"
+                for cat in categories[:5]
+            ]
+            category_text = "\n".join(category_lines)
+        else:
+            category_text = "  * No categorized spending data available yet"
+
+        # Format trend information
+        mom_change = trends.get("month_over_month_change")
+        mom_text = f"{mom_change:+.1f}%" if mom_change is not None else "N/A (no previous month data)"
+
+        unusual = trends.get("unusual_spending")
+        unusual_text = unusual if unusual else "No unusual patterns detected"
+
+        # Search Graphiti for historical spending context using tags
+        graphiti_context = ""
+        if self.insights_generator.graphiti:
+            try:
+                # Build search query using the same tags format we use for storage
+                # Use the normalized month from spending_data to match exactly what was stored
+                # This ensures we match the exact tag structure: [TAGS: user:{user_id}, spending_insight, month:{month}]
+                normalized_month = spending_data.get('normalized_month')
+                tags = self.insights_generator.build_tags(user_id, normalized_month)
+
+                # Combine tags with natural language query for better semantic search
+                search_query = f"{tags} spending patterns trends insights previous analysis"
+                logger.info(f"🔍 Searching Graphiti with query: {search_query}")
+                logger.info(f"🏷️  Using normalized month: {normalized_month}")
+
+                search_results = await self.insights_generator.graphiti.search(
+                    user_id=user_id,
+                    query=search_query,
+                    max_nodes=5
+                )
+
+                logger.info(f"📊 Graphiti search results: {search_results}")
+
+                if search_results:
+                    graphiti_context = f"\n\nHISTORICAL CONTEXT FROM MEMORY:\n{search_results}\n"
+                    logger.info(f"✅ Retrieved Graphiti context for user {user_id} ({len(str(search_results))} chars)")
+                else:
+                    logger.info(f"⚠️  No Graphiti context found for user {user_id}")
+            except Exception as e:
+                logger.warning(f"❌ Failed to retrieve Graphiti context: {e}")
+
+        # Build period description
+        if period_months == 1:
+            period_desc = "this month"
+        elif period_months == 3:
+            period_desc = "this quarter (3 months)"
+        elif period_months == 12:
+            period_desc = "this year (12 months)"
+        else:
+            period_desc = f"the past {period_months} months"
+
         system_prompt = f"""You are a professional financial advisor providing personalized spending analysis.
 
 USER CONTEXT:
 {user_context_str}
-
-SPENDING DATA ANALYSIS:
-- Total Monthly Spending: ${mock_spending_data['total_monthly_spending']:,.2f}
+{graphiti_context}
+SPENDING DATA ANALYSIS (for {period_desc}):
+- Total Spending: ${total:,.2f}
+- Monthly Average: ${monthly_avg:,.2f}
+- Analysis Period: {period_months} month(s)
 - Top Spending Categories:
-  * {mock_spending_data['top_categories'][0]['name']}: ${mock_spending_data['top_categories'][0]['amount']:.2f} ({mock_spending_data['top_categories'][0]['percentage']:.1f}%)
-  * {mock_spending_data['top_categories'][1]['name']}: ${mock_spending_data['top_categories'][1]['amount']:.2f} ({mock_spending_data['top_categories'][1]['percentage']:.1f}%)
-  * {mock_spending_data['top_categories'][2]['name']}: ${mock_spending_data['top_categories'][2]['amount']:.2f} ({mock_spending_data['top_categories'][2]['percentage']:.1f}%)
-- Month-over-Month Change: {mock_spending_data['trends']['month_over_month_change']:+.1f}%
-- Notable Trend: {mock_spending_data['trends']['unusual_spending']}
+{category_text}
+- Month-over-Month Change: {mom_text}
+- Notable Trend: {unusual_text}
 
 INSTRUCTIONS:
 1. Provide a conversational, personalized analysis of their spending patterns
@@ -571,8 +696,15 @@ INSTRUCTIONS:
 5. Maintain a professional yet approachable tone
 6. Keep response concise but informative (3-4 paragraphs)
 7. Use specific numbers and percentages from the data
+8. If spending is $0 or no data, gently guide them to connect accounts
 
 Generate a comprehensive spending analysis response now."""
+
+        # Debug logging for system prompt
+        logger.debug(f"💬 SPENDING_ANALYSIS System Prompt ({len(system_prompt)} chars):")
+        logger.debug(f"{'='*80}")
+        logger.debug(system_prompt)
+        logger.debug(f"{'='*80}")
 
         # Create messages for LLM
         last_human_message = self._get_last_human_message(state)
@@ -580,16 +712,17 @@ Generate a comprehensive spending analysis response now."""
             SystemMessage(content=system_prompt),
             HumanMessage(content=last_human_message or "Please analyze my spending patterns")
         ]
-        
+
         # Generate LLM response with fallback handling
         response_content = self._invoke_llm_with_fallback(llm_messages, "spending analysis")
-        
+
         response = AIMessage(
             content=response_content,
             additional_kwargs={
                 "agent": "spending_agent",
                 "intent": "spending_analysis",
-                "llm_powered": True
+                "llm_powered": True,
+                "insights_data": spending_data  # Include raw insights for debugging
             }
         )
         return {"messages": [response]}

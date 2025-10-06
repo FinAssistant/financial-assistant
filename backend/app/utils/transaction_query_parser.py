@@ -5,6 +5,8 @@ Strategy:
 1. Prompt LLM to fill TransactionQueryIntent model using structured output
 2. Map intent to parameterized SQL queries (no SQL injection risk)
 3. Log unknown queries for analysis
+
+Also includes NLP date range parsing for natural language time expressions.
 """
 
 import logging
@@ -12,6 +14,7 @@ from datetime import timedelta, date
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.models.transaction_query_models import TransactionQueryIntent, QueryIntent
+from app.utils.date_utils import get_month_range
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +27,12 @@ def build_intent_extraction_prompt() -> str:
     """
     # Get current date for relative time calculations
     today = date.today()
-    last_month_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-    last_month_end = today.replace(day=1) - timedelta(days=1)
+    # Use shared date utility for consistent month calculations
+    from datetime import datetime
+    last_month_date = today.replace(day=1) - timedelta(days=1)
+    last_month_start_str, last_month_end_str = get_month_range(datetime.combine(last_month_date, datetime.min.time()))
+    last_month_start = last_month_start_str
+    last_month_end = last_month_end_str
 
     return f"""You convert user transaction queries into structured intent.
 

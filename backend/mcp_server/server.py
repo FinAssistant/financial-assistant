@@ -4,9 +4,8 @@ Core MCP Server implementation using FastMCP for AI Financial Assistant.
 
 from fastmcp import FastMCP
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import logging
-import os
 
 from .config import config
 from .tools.plaid_tools import register_plaid_tools
@@ -133,7 +132,7 @@ async def whoami() -> Dict[str, Any]:
             "debug": "token_found"
         }
 
-        logger.info(f"🐛 Returning authenticated result")
+        logger.info("🐛 Returning authenticated result")
         return result
 
     except Exception as e:

@@ -59,12 +59,12 @@ async def dump_checkpoints():
                         # Fallback - show truncated raw message
                         cleaned_messages.append(f"[Unknown] {msg_str[:100]}...")
 
-            print(f"Messages:")
+            print("Messages:")
             for i, msg in enumerate(cleaned_messages):
                 print(f"  {i}. {msg}")
 
             # Show other state information
-            print(f"\nGraph State:")
+            print("\nGraph State:")
             for key, value in channel_values.items():
                 if key != "messages":
                     print(f"  {key}: {json.dumps(value, indent=4, default=str)}")

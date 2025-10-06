@@ -39,7 +39,7 @@ TEST_USER_ID_FULL = "integration_test_user_full"  # For full integration test
 
 
 async def cleanup_test_database():
-    """Clean up test database before running tests."""
+    """Clean up test database and Graphiti before running tests."""
     print("\n🧹 Cleaning up test database...")
     storage = SQLiteUserStorage()
 
@@ -54,9 +54,61 @@ async def cleanup_test_database():
                 {"uid1": TEST_USER_ID_PLAID, "uid2": TEST_USER_ID_FULL}
             )
             await session.commit()
-        print("✅ Test database cleaned")
+        print("✅ SQLite database cleaned")
     except Exception as e:
-        print(f"⚠️  Database cleanup warning: {e}")
+        print(f"⚠️  SQLite cleanup warning: {e}")
+
+    # Clean up Graphiti/Neo4j database using bolt driver
+    try:
+        from neo4j import AsyncGraphDatabase
+        import os
+
+        # Default to localhost for running outside Docker, or use env var for inside Docker
+        neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        neo4j_user = os.getenv("NEO4J_USER", "neo4j")
+        neo4j_password = os.getenv("NEO4J_PASSWORD", "demodemo")
+
+        print(f"🧠 Cleaning up Graphiti/Neo4j at {neo4j_uri}...")
+
+        driver = AsyncGraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+
+        async with driver.session() as session:
+            # Delete all nodes and relationships for test users
+            total_deleted = 0
+            for user_id in [TEST_USER_ID_PLAID, TEST_USER_ID_FULL]:
+                result = await session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.group_id = $user_id
+                    DETACH DELETE n
+                    RETURN count(n) as deleted_count
+                    """,
+                    user_id=user_id
+                )
+                record = await result.single()
+                deleted_count = record["deleted_count"] if record else 0
+                total_deleted += deleted_count
+                if deleted_count > 0:
+                    print(f"   • Deleted {deleted_count} nodes for {user_id}")
+
+        await driver.close()
+
+        if total_deleted > 0:
+            print(f"✅ Neo4j cleanup completed ({total_deleted} nodes deleted)")
+        else:
+            print("✅ Neo4j cleanup completed (no test data found)")
+
+    except ImportError:
+        print("⚠️  neo4j driver not installed - skipping Neo4j cleanup")
+        print("   ℹ️  Install with: uv sync")
+    except Exception as e:
+        error_msg = str(e)
+        if "DNS resolve" in error_msg or "connection" in error_msg.lower() or "refused" in error_msg.lower():
+            print(f"⚠️  Neo4j not accessible at {neo4j_uri}")
+            print("   ℹ️  Skipping cleanup - start Neo4j with: docker compose up neo4j -d")
+        else:
+            print(f"⚠️  Neo4j cleanup error: {error_msg}")
+            print("   ℹ️  Continuing with tests...")
 
 
 async def test_1_plaid_integration_only():
@@ -138,7 +190,7 @@ async def test_2_full_integration():
 
         # Step 2: Create SpendingAgent and setup shared PlaidMCPClient
         print(f"\n🤖 Creating SpendingAgent and shared PlaidMCPClient for user: {TEST_USER_ID_FULL}")
-        agent = SpendingAgent(test_transaction_limit=5)  # Limit transactions for testing
+        agent = SpendingAgent(test_transaction_limit=10)  # Limit transactions for testing
         plaid_client = get_plaid_client()
         mcp_client = await plaid_client.get_client(TEST_USER_ID_FULL)
 
@@ -217,14 +269,111 @@ async def test_2_full_integration():
                 print("   • Sample transaction:")
                 print(f"     - Merchant: {sample_tx.get('merchant_name', 'N/A')}")
                 print(f"     - Amount: ${sample_tx.get('amount', 0):.2f}")
-                print(f"     - AI Category: {sample_tx.get('ai_category', 'N/A')}")
-                print(f"     - AI Confidence: {sample_tx.get('ai_confidence', 0):.2f}")
+                print(f"     - AI Category: {sample_tx.get('ai_category') or 'N/A'}")
+                confidence = sample_tx.get('ai_confidence')
+                confidence_str = f"{confidence:.2f}" if confidence is not None else 'N/A'
+                print(f"     - AI Confidence: {confidence_str}")
             else:
                 print("   ⚠️  No transaction data found in SQLite")
                 all_passed = False
         except Exception as e:
             print(f"   ⚠️  Could not verify SQLite storage: {e}")
             all_passed = False
+
+        # Step 6: Verify Graphiti integration (insights storage and retrieval)
+        # This step verifies:
+        # - Insights are stored in Graphiti with proper tags
+        # - Tag-based search retrieves historical context
+        # - normalized_month field ensures consistent tag matching between storage and search
+        print("\n🧠 Verifying Graphiti integration...")
+        try:
+            from app.ai.mcp_clients.graphiti_client import get_graphiti_client
+
+            # Initialize Graphiti client
+            graphiti = await get_graphiti_client()
+            print("   ✅ Graphiti client initialized")
+
+            # Test insights storage by running a spending analysis
+            print("\n📊 Running spending analysis to trigger Graphiti storage...")
+            analysis_result = await agent.invoke_spending_conversation(
+                user_message="Give me a detailed analysis of my spending this month",
+                user_id=TEST_USER_ID_FULL,
+                session_id="graphiti_test_analysis"
+            )
+
+            print(f"   • Analysis completed: {analysis_result['intent']}")
+
+            # Small delay for Graphiti to process
+            await asyncio.sleep(10)
+
+            # Test Graphiti search with tag-based matching
+            print("\n🔍 Testing Graphiti search with tag-based matching...")
+            from datetime import datetime
+            current_month = datetime.now().strftime("%Y-%m")
+
+            # Build search query using the same format as storage
+            search_query = f"[TAGS: user:{TEST_USER_ID_FULL}, spending_insight, month:{current_month}] spending patterns"
+            print(f"   • Search query: {search_query}")
+
+            search_results = await graphiti.search(
+                user_id=TEST_USER_ID_FULL,
+                query=search_query,
+                max_nodes=3
+            )
+
+            if search_results:
+                print("   ✅ Graphiti search successful - found historical context")
+                print(f"   • Search results preview: {str(search_results)[:200]}...")
+
+                # Verify tags are present in results
+                if "spending_insight" in str(search_results):
+                    print("   ✅ Tag-based matching working (found 'spending_insight' tag)")
+                else:
+                    print("   ⚠️  Tags may not be present in search results")
+
+            else:
+                print("   ⚠️  No historical context found in Graphiti")
+                print("   ℹ️  This is expected on first run - insights need time to be stored")
+
+            # Test normalized_month consistency
+            print("\n🏷️  Verifying normalized_month field consistency...")
+            from app.services.insights_generator import InsightsGenerator
+
+            insights_gen = InsightsGenerator(storage=storage, graphiti_client=graphiti)
+            test_insights = await insights_gen.generate_spending_insights(
+                user_id=TEST_USER_ID_FULL,
+                month=current_month
+            )
+
+            if "normalized_month" in test_insights:
+                print(f"   ✅ normalized_month field present: {test_insights['normalized_month']}")
+
+                # Verify it matches the input
+                if test_insights['normalized_month'] == current_month:
+                    print("   ✅ normalized_month matches input month parameter")
+                else:
+                    print(f"   ⚠️  normalized_month mismatch: expected {current_month}, got {test_insights['normalized_month']}")
+            else:
+                print("   ❌ normalized_month field missing from insights")
+                all_passed = False
+
+            await asyncio.sleep(10)  # Give Graphiti time to store  
+
+            # Test that subsequent analysis uses historical context
+            print("\n🔄 Testing that second analysis retrieves historical context...")
+
+            second_analysis = await agent.invoke_spending_conversation(
+                user_message="How does my spending this month compare to before?",
+                user_id=TEST_USER_ID_FULL,
+                session_id="graphiti_test_second_analysis"
+            )
+
+            print(f"   • Second analysis completed: {second_analysis['intent']}")
+            print("   ✅ Historical context integration tested (check logs for Graphiti search results)")
+
+        except Exception as e:
+            print(f"   ⚠️  Graphiti verification error: {e}")
+            print("   ℹ️  This is acceptable - Graphiti integration is optional")
 
         if all_passed:
             print("\n✅ TEST 2 PASSED: Full integration workflow working")

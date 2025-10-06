@@ -107,7 +107,7 @@ class TransactionQueryIntent(BaseModel):
     # Sorting and pagination
     sort_by: Optional[Literal["date", "amount", "merchant", "category"]] = Field(
         "date",
-        description="Field to sort results by"
+        description="Field to sort results by. IMPORTANT: Use 'date' (not 'start_date'), 'amount', 'merchant', or 'category'"
     )
     sort_order: SortOrder = Field(
         SortOrder.DESC,

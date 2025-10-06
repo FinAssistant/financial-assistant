@@ -213,7 +213,7 @@ async def main():
         return False
     
     # Show timing summary
-    print(f"\n=== Episode Creation & Readiness Timing Summary ===")
+    print("\n=== Episode Creation & Readiness Timing Summary ===")
     total_ready_time = sum(time_to_ready for _, time_to_ready, found in timing_results if found)
     successful_episodes = sum(1 for _, _, found in timing_results if found)
     
@@ -253,7 +253,7 @@ async def main():
         assert node_count > 0, f"Query '{query}' should return results but found {node_count} nodes"
     
     # Summary of test results
-    print(f"\n=== Test Summary ===")
+    print("\n=== Test Summary ===")
     print(f"Total episodes created: {len(episode_data)}")
     print(f"Total queries tested: {len(test_results)}")
     
@@ -264,7 +264,7 @@ async def main():
         status = "✅" if success else "❌"
         print(f"{status} '{query}': {count} nodes found")
     
-    print(f"\n🎉 All tests passed! Graphiti successfully stored and retrieved financial context.")
+    print("\n🎉 All tests passed! Graphiti successfully stored and retrieved financial context.")
     return True
 
 if __name__ == "__main__":

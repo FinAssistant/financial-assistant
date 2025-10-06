@@ -2,8 +2,11 @@ import pytest
 from app.core.config import Settings
 
 
-def test_default_settings():
-    """Test default configuration values."""
+def test_default_settings(monkeypatch):
+    """Test default configuration values without environment variables."""
+    # Clear environment variables that might override defaults (like DEBUG=1 in local dev)
+    monkeypatch.delenv("DEBUG", raising=False)
+
     settings = Settings(_env_file=None)
     
     assert settings.app_name == "AI Financial Assistant"
