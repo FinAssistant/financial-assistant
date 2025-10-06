@@ -1,17 +1,26 @@
-from typing import Dict, Any, Optional, List, Annotated
-from pydantic import BaseModel, Field
 import logging
 from datetime import datetime
+from typing import Annotated, Any, Dict, List, Optional
 
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END, START, add_messages
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.graph import END, START, StateGraph, add_messages
+from pydantic import BaseModel, Field
+
 from app.core.config import settings
-from app.services.llm_service import llm_factory
 from app.core.database import user_storage
+from app.services.llm_service import llm_factory
+
 from .onboarding import create_onboarding_node
 from .spending_agent import SpendingAgent
+
 
 class GlobalState(BaseModel):
     """
@@ -20,19 +29,19 @@ class GlobalState(BaseModel):
     Contains conversation history and shared data for agent coordination.
     User/session context is passed via config, not stored in state.
     """
-    
+
     # Messages (LangGraph standard pattern)
     messages: Annotated[list[AnyMessage], add_messages] = Field(
         default_factory=list,
         description="Conversation messages with automatic LangGraph management"
     )
-    
+
     # Shared Data (lightweight references for conversation context)
     connected_account_ids: List[str] = Field(
         default_factory=list,
         description="List of connected account IDs for conversation context"
     )
-    
+
     # Profile context (lazy-loaded and cached)
     profile_context: Optional[str] = Field(
         default=None,
@@ -46,8 +55,8 @@ class GlobalState(BaseModel):
         default=False,
         description="Whether the user has completed their profile setup"
     )
-    
-    
+
+
     def get_profile_context(self, user_id: str) -> str:
         """
         Get profile context string, building it if empty or stale.
@@ -57,7 +66,7 @@ class GlobalState(BaseModel):
         if self.profile_context is None:
             self._build_profile_context(user_id)
         return self.profile_context or "User profile not available."
-    
+
     def _build_profile_context(self, user_id: str) -> None:
         """
         Build profile context string from database and cache it.
@@ -78,31 +87,31 @@ class GlobalState(BaseModel):
             if personal_context:
                 # Build context from PersonalContextModel
                 context_parts = []
-                
+
                 if personal_context.get("age_range"):
                     context_parts.append(f"Age range: {personal_context['age_range']}")
-                
+
                 if personal_context.get("life_stage"):
                     context_parts.append(f"Life stage: {personal_context['life_stage']}")
-                
+
                 if personal_context.get("occupation_type"):
                     context_parts.append(f"Occupation: {personal_context['occupation_type']}")
-                
+
                 if personal_context.get("location_context"):
                     context_parts.append(f"Location: {personal_context['location_context']}")
-                
+
                 if personal_context.get("family_structure"):
                     context_parts.append(f"Family structure: {personal_context['family_structure']}")
-                
+
                 if personal_context.get("marital_status"):
                     context_parts.append(f"Marital status: {personal_context['marital_status']}")
-                
+
                 if personal_context.get("total_dependents_count", 0) > 0:
                     context_parts.append(f"Has {personal_context['total_dependents_count']} dependents")
-                
+
                 if personal_context.get("caregiving_responsibilities") and personal_context["caregiving_responsibilities"] != "none":
                     context_parts.append(f"Caregiving: {personal_context['caregiving_responsibilities']}")
-                
+
                 # Build final context string
                 if context_parts:
                     self.profile_context = f"User profile: {'; '.join(context_parts)}."
@@ -111,14 +120,14 @@ class GlobalState(BaseModel):
             else:
                 # No PersonalContext exists yet
                 self.profile_context = "User profile is incomplete. Provide general financial guidance."
-                
+
             self.profile_context_timestamp = datetime.now()
-                
+
         except Exception:
             # Log error but don't break the conversation flow
             self.profile_context = "Unable to load user profile. Provide general financial guidance."
             self.profile_context_timestamp = datetime.now()
-    
+
     def check_and_refresh_profile_context(self, user_id: str) -> bool:
         """
         Check if profile context needs refresh based on database changes.
@@ -187,7 +196,7 @@ class OrchestratorAgent:
     Contains the actual routing logic and manages the LangGraph workflow
     using GlobalState for cross-agent data sharing.
     """
-    
+
     def __init__(self, checkpointer: Optional[AsyncSqliteSaver] = None):
         """Initialize LangGraph configuration."""
         self.logger = logging.getLogger(__name__)
@@ -202,9 +211,9 @@ class OrchestratorAgent:
 
         if self.llm is None:
             self.logger.warning("LLM not available - no API key configured. Graph will fail on LLM calls.")
-    
-    
-    
+
+
+
     def _setup_graph(self) -> None:
         """
         Create and configure the conversation graph with GlobalState.
@@ -212,7 +221,7 @@ class OrchestratorAgent:
         TODO: requires a message summarization element 
         """
         workflow = StateGraph(GlobalState)
-        
+
         # Add the nodes
         workflow.add_node("orchestrator", self._orchestrator_node)
         workflow.add_node("small_talk", self._small_talk_node) #TODO: wrap small_talk into orch llm call
@@ -220,19 +229,19 @@ class OrchestratorAgent:
         workflow.add_node("Spending_Agent", self.spending_agent.graph_compile())
         workflow.add_node("Onboarding_Agent", self.onb_agent.graph_compile())
 
-        
+
         # Define the graph flow
         workflow.add_edge(START, "orchestrator")
-        
+
         workflow.add_conditional_edges(
             "orchestrator",
             self.find_route,
-            {"SMALLTALK": "small_talk", 
+            {"SMALLTALK": "small_talk",
              "INVESTMENT" : "Investment_Agent",
              "SPENDING" : "Spending_Agent",
              "ONBOARDING": "Onboarding_Agent" }
         )
-        
+
         workflow.add_edge("small_talk", END)
         workflow.add_edge("Investment_Agent", END)
         workflow.add_edge("Spending_Agent", END)
@@ -250,7 +259,7 @@ class OrchestratorAgent:
         except Exception as e:
             self.logger.error(f"Failed to compile graph: {e}")
             raise
-    
+
     def _orchestrator_node(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """
         Orchestrator that uses user profile context from config.
@@ -316,16 +325,16 @@ Examples:
         if self.llm is None:
             from app.services.llm_service import LLMError
             raise LLMError("LLM not available - API key not configured")
-            
+
         response = self.llm.invoke(messages)
 
         self.logger.info(f"Orchestrator: LLM response for routing decision: {response.content}")
-        
+
         # Update state with new message
         return {
             "messages": [response]
         }
-    
+
     def _small_talk_node(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """LLM-powered small talk agent for casual conversation."""
 
@@ -339,17 +348,17 @@ Examples:
 
         # Use existing messages from state and add system prompt at the beginning
         messages = [SystemMessage(content=system_prompt)] + state.messages
-        
+
         # Call LLM and add agent metadata
         if self.llm is None:
             from app.services.llm_service import LLMError
             raise LLMError("LLM not available - API key not configured")
-            
+
         response = self.llm.invoke(messages)
         response.additional_kwargs["agent"] = "small_talk"
-        
+
         return {"messages": [response]}
-    
+
     def _dummy_inv_agent(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """Dummy investment agent - placeholder implementation."""
         response = AIMessage(
@@ -357,7 +366,7 @@ Examples:
             additional_kwargs={"agent": "investment"}
         )
         return {"messages": [response]}
-    
+
     def _dummy_spend_agent(self, state: GlobalState, config: RunnableConfig) -> Dict[str, Any]:
         """Dummy spending agent - placeholder implementation."""
         response = AIMessage(
@@ -365,7 +374,7 @@ Examples:
             additional_kwargs={"agent": "spending"}
         )
         return {"messages": [response]}
-    
+
     def find_route(self, state: GlobalState):
         last_message = state.messages[-1]
         self.logger.debug(f"Orchestrator: Last result from LLM : {last_message.content}")
@@ -384,15 +393,25 @@ Examples:
             # Normal case - content is a string
             destination = content.strip().upper()
 
-        # Validate that we got a proper routing decision
+        # Extract the first word only (some LLMs ignore "one word only" instruction)
         valid_routes = {"SMALLTALK", "SPENDING", "INVESTMENT", "ONBOARDING"}
+
+        # Try to find a valid route at the start of the response
+        for route in valid_routes:
+            if destination.startswith(route):
+                if destination != route:
+                    self.logger.warning(f"LLM returned extra text after route: '{destination}'. Extracted route: '{route}'")
+                destination = route
+                break
+
+        # Final validation
         if destination not in valid_routes:
             self.logger.warning(f"Invalid routing decision: '{destination}'. Defaulting to SMALLTALK for safety")
             # Default to small talk for graceful degradation
             destination = "SMALLTALK"
 
         return destination
-    
+
     async def invoke_conversation(self, user_message: str, user_id: str, session_id: str) -> dict:
         """
         Process a user message through the conversation graph.
@@ -407,7 +426,7 @@ Examples:
         """
         if not self.graph:
             raise RuntimeError("Graph not initialized")
-        
+
         # Prepare config with user context (standard LangGraph pattern)
         config = {
             "configurable": {
@@ -415,7 +434,7 @@ Examples:
                 "user_id": user_id
             }
         }
-        
+
         # Input data - just the new message (LangGraph + checkpointer handle state)
         input_data = {
             "messages": [HumanMessage(content=user_message)]
@@ -425,7 +444,7 @@ Examples:
 
         # Process through graph - checkpointer automatically manages state persistence
         result = await self.graph.ainvoke(input_data, config)
-        
+
         # Extract AI messages that were generated after the last user message
         all_messages = result["messages"]
 
@@ -458,7 +477,7 @@ Examples:
             "session_id": session_id,
             "user_id": user_id
         }
-    
+
     def stream_conversation(self, user_message: str, user_id: str, session_id: str):
         """
         Stream a conversation through the graph for real-time responses.
@@ -473,8 +492,8 @@ Examples:
         """
         if not self.graph:
             raise RuntimeError("Graph not initialized")
-        
-        
+
+
         # Prepare config with user context (standard LangGraph pattern)
         config = {
             "configurable": {
@@ -482,30 +501,30 @@ Examples:
                 "user_id": user_id
             }
         }
-        
+
         # Input data - just the new message (LangGraph + checkpointer handle state)
         input_data = {
             "messages": [HumanMessage(content=user_message)]
         }
-        
+
         # Stream through graph - checkpointer automatically manages state persistence
         for chunk in self.graph.stream(input_data, config):
             yield chunk
-    
+
     def validate_configuration(self) -> bool:
         """Validate LangGraph configuration."""
         try:
             # Check if LLM factory is working
             if not llm_factory.validate_configuration():
                 return False
-            
+
             # Check if graph is compiled
             if not self.graph:
                 return False
-            
+
             self.logger.info("LangGraph configuration validated successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"LangGraph configuration validation failed: {e}")
             return False
@@ -520,7 +539,7 @@ _checkpointer_context = None
 async def setup_checkpointer() -> Optional[AsyncSqliteSaver]:
     """Setup AsyncSqliteSaver during FastAPI startup."""
     global _checkpointer, _checkpointer_context
-    
+
     if settings.langgraph_memory_type == "sqlite":
         try:
             # Create AsyncSqliteSaver from connection string and enter context

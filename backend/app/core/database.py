@@ -5,19 +5,26 @@ Clean replacement for in-memory storage with persistent data.
 
 import asyncio
 import logging
-from typing import Dict, Optional, List, Any
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.future import select
 from sqlmodel import SQLModel
 
 from .config import settings
 from .sqlmodel_models import (
-    UserModel, PersonalContextModel, PersonalContextCreate, PersonalContextUpdate,
-    ConnectedAccountModel, ConnectedAccountCreate, ConnectedAccountUpdate,
-    TransactionModel, TransactionCreate, TransactionUpdate
+    ConnectedAccountCreate,
+    ConnectedAccountModel,
+    ConnectedAccountUpdate,
+    PersonalContextCreate,
+    PersonalContextModel,
+    PersonalContextUpdate,
+    TransactionCreate,
+    TransactionModel,
+    TransactionUpdate,
+    UserModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +34,7 @@ class SQLiteUserStorage:
     SQLite-based user storage with persistent data.
     Maintains identical interface to previous in-memory implementation.
     """
-    
+
     def __init__(self, database_url: str = None):
         self.database_url = database_url or settings.database_url
         self.engine = create_async_engine(
@@ -42,14 +49,14 @@ class SQLiteUserStorage:
             expire_on_commit=False
         )
         self._initialized = False
-    
+
     async def _ensure_initialized(self):
         """Ensure database is initialized."""
         if not self._initialized:
             async with self.engine.begin() as conn:
                 await conn.run_sync(SQLModel.metadata.create_all)
             self._initialized = True
-    
+
     async def user_exists(self, email: str) -> bool:
         """Check if user with given email exists."""
         await self._ensure_initialized()
@@ -57,7 +64,7 @@ class SQLiteUserStorage:
             stmt = select(UserModel).where(UserModel.email == email.lower())
             result = await session.execute(stmt)
             return result.first() is not None
-    
+
     async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user by ID. Returns user dict or None if not found."""
         await self._ensure_initialized()
@@ -66,7 +73,7 @@ class SQLiteUserStorage:
             result = await session.execute(stmt)
             user = result.first()
             return user[0].to_dict() if user else None
-    
+
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Get user by email. Returns user dict or None if not found."""
         await self._ensure_initialized()
@@ -75,7 +82,7 @@ class SQLiteUserStorage:
             result = await session.execute(stmt)
             user = result.first()
             return user[0].to_dict() if user else None
-    
+
     async def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a new user in storage.
@@ -89,14 +96,14 @@ class SQLiteUserStorage:
             raise ValueError("User data must include 'email' field")
         if 'password_hash' not in user_data:
             raise ValueError("User data must include 'password_hash' field")
-        
+
         # Normalize and set defaults
         user_data_copy = user_data.copy()
         user_data_copy['email'] = user_data_copy['email'].lower()
         user_data_copy.setdefault('created_at', datetime.now(timezone.utc))
         user_data_copy.setdefault('profile_complete', False)
         user_data_copy.setdefault('name', '')
-        
+
         await self._ensure_initialized()
         async with self.session_factory() as session:
             try:
@@ -108,7 +115,7 @@ class SQLiteUserStorage:
             except IntegrityError:
                 await session.rollback()
                 raise ValueError(f"User with email {user_data['email']} already exists")
-    
+
     async def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Update user data.
@@ -119,23 +126,23 @@ class SQLiteUserStorage:
         forbidden_fields = {'id', 'email', 'password_hash'}
         if any(field in updates for field in forbidden_fields):
             raise ValueError(f"Cannot update fields: {', '.join(forbidden_fields)}")
-        
+
         await self._ensure_initialized()
         async with self.session_factory() as session:
             stmt = select(UserModel).where(UserModel.id == user_id)
             result = await session.execute(stmt)
             user = result.first()
-            
+
             if not user:
                 return None
-            
+
             user_model = user[0]
             user_model.update_from_dict(updates)
-            
+
             await session.commit()
             await session.refresh(user_model)
             return user_model.to_dict()
-    
+
     async def delete_user(self, user_id: str) -> bool:
         """
         Delete user by ID.
@@ -146,14 +153,14 @@ class SQLiteUserStorage:
             stmt = select(UserModel).where(UserModel.id == user_id)
             result = await session.execute(stmt)
             user = result.first()
-            
+
             if not user:
                 return False
-            
+
             await session.delete(user[0])
             await session.commit()
             return True
-    
+
     async def list_all_users(self) -> List[Dict[str, Any]]:
         """Get all users. Returns list of user dictionaries."""
         await self._ensure_initialized()
@@ -162,7 +169,7 @@ class SQLiteUserStorage:
             result = await session.execute(stmt)
             users = result.fetchall()
             return [user[0].to_dict() for user in users]
-    
+
     async def get_user_count(self) -> int:
         """Get total number of users."""
         await self._ensure_initialized()
@@ -170,17 +177,17 @@ class SQLiteUserStorage:
             stmt = select(UserModel)
             result = await session.execute(stmt)
             return len(result.fetchall())
-    
+
     async def clear_all_users(self) -> None:
         """Clear all users from storage and all related data. Use with caution."""
         await self._ensure_initialized()
         async with self.session_factory() as session:
             # Import all related models
             from .sqlmodel_models import (
+                ConnectedAccountModel,
+                DependentModel,
                 PersonalContextModel,
                 SpouseBasicInfoModel,
-                DependentModel,
-                ConnectedAccountModel
             )
 
             # Clear all user-related tables in dependency order (children first)
@@ -220,7 +227,7 @@ class SQLiteUserStorage:
                 await session.delete(user[0])
 
             await session.commit()
-    
+
     async def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Create or update user profile information.
@@ -229,9 +236,9 @@ class SQLiteUserStorage:
         """
         profile_updates = profile_data.copy()
         profile_updates['profile_complete'] = True
-        
+
         return await self.update_user(user_id, profile_updates)
-    
+
     async def search_users_by_name(self, name_query: str) -> List[Dict[str, Any]]:
         """
         Search users by name (case-insensitive partial match).
@@ -246,7 +253,7 @@ class SQLiteUserStorage:
                 # For non-empty query, search in names (including empty names if they match)
                 name_pattern = f"%{name_query.lower()}%"
                 stmt = select(UserModel).where(UserModel.name.ilike(name_pattern))
-            
+
             result = await session.execute(stmt)
             users = result.fetchall()
             return [user[0].to_dict() for user in users]
@@ -329,7 +336,7 @@ class SQLiteUserStorage:
             result = await session.execute(stmt)
             context = result.first()
             return context[0].to_dict() if context else None
-    
+
     async def create_personal_context(self, user_id: str, context_data: PersonalContextCreate) -> Dict[str, Any]:
         """
         Create personal context for user.
@@ -347,7 +354,7 @@ class SQLiteUserStorage:
             except IntegrityError:
                 await session.rollback()
                 raise ValueError(f"Personal context for user {user_id} already exists")
-    
+
     async def update_personal_context(self, user_id: str, updates: PersonalContextUpdate) -> Optional[Dict[str, Any]]:
         """
         Update personal context data.
@@ -358,23 +365,23 @@ class SQLiteUserStorage:
             stmt = select(PersonalContextModel).where(PersonalContextModel.user_id == user_id)
             result = await session.execute(stmt)
             context = result.first()
-            
+
             if not context:
                 return None
-            
+
             context_model = context[0]
-            
+
             # Update fields from PersonalContextUpdate
             update_data = updates.model_dump(exclude_unset=True)
             for field, value in update_data.items():
                 setattr(context_model, field, value)
-            
+
             context_model.updated_at = datetime.now(timezone.utc)
-            
+
             await session.commit()
             await session.refresh(context_model)
             return context_model.to_dict()
-    
+
     async def create_or_update_personal_context(self, user_id: str, context_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create or update personal context data.
@@ -382,7 +389,7 @@ class SQLiteUserStorage:
         """
         # Try to get existing context
         existing = await self.get_personal_context(user_id)
-        
+
         if existing:
             # Update existing context
             update_obj = PersonalContextUpdate(**context_data)
@@ -391,7 +398,7 @@ class SQLiteUserStorage:
             # Create new context
             create_obj = PersonalContextCreate(**context_data)
             return await self.create_personal_context(user_id, create_obj)
-    
+
     async def delete_personal_context(self, user_id: str) -> bool:
         """
         Delete personal context by user ID.
@@ -411,8 +418,20 @@ class SQLiteUserStorage:
             return True
 
     # ConnectedAccount operations
-    async def get_connected_accounts(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all connected accounts for user. Returns list of account dicts."""
+    async def get_connected_accounts(
+        self, user_id: str, include_tokens: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all connected accounts for user. Returns list of account dicts.
+
+        Args:
+            user_id: User identifier
+            include_tokens: If True, includes encrypted_access_token field
+                (for internal use only)
+
+        Returns:
+            List of account dictionaries
+        """
         await self._ensure_initialized()
         async with self.session_factory() as session:
             stmt = select(ConnectedAccountModel).where(
@@ -421,7 +440,16 @@ class SQLiteUserStorage:
             ).order_by(ConnectedAccountModel.created_at)
             result = await session.execute(stmt)
             accounts = result.fetchall()
-            return [account[0].to_dict() for account in accounts]
+
+            if include_tokens:
+                # For internal use: include access tokens by adding them to the dict
+                return [
+                    {**account[0].to_dict(), 'encrypted_access_token': account[0].encrypted_access_token}
+                    for account in accounts
+                ]
+            else:
+                # For external use: exclude sensitive fields via to_dict()
+                return [account[0].to_dict() for account in accounts]
 
     async def get_connected_account_by_id(self, account_id: str) -> Optional[Dict[str, Any]]:
         """Get connected account by ID. Returns account dict or None if not found."""
@@ -803,11 +831,11 @@ class SQLiteUserStorage:
 # Async-to-sync wrapper for compatibility with existing sync code
 class AsyncUserStorageWrapper:
     """Wrapper to make async SQLite storage work with sync code."""
-    
+
     def __init__(self):
         self._async_storage = SQLiteUserStorage()
         self._loop = None
-    
+
     def _get_or_create_loop(self):
         """Get current event loop or create a new one."""
         try:
@@ -818,14 +846,14 @@ class AsyncUserStorageWrapper:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop
-    
+
     def _run_async(self, coro):
         """Run async function in sync context."""
         loop = self._get_or_create_loop()
         if loop.is_running():
             # If we're in an async context, create a new thread
             import concurrent.futures
-            
+
             def run_in_thread():
                 new_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(new_loop)
@@ -833,37 +861,37 @@ class AsyncUserStorageWrapper:
                     return new_loop.run_until_complete(coro)
                 finally:
                     new_loop.close()
-            
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_in_thread)
                 return future.result()
         else:
             return loop.run_until_complete(coro)
-    
+
     def user_exists(self, email: str) -> bool:
         """Check if user with given email exists."""
         return self._run_async(self._async_storage.user_exists(email))
-    
+
     def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user by ID. Returns user dict or None if not found."""
         return self._run_async(self._async_storage.get_user_by_id(user_id))
-    
+
     def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Get user by email. Returns user dict or None if not found."""
         return self._run_async(self._async_storage.get_user_by_email(email))
-    
+
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new user in storage."""
         return self._run_async(self._async_storage.create_user(user_data))
-    
+
     def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update user data."""
         return self._run_async(self._async_storage.update_user(user_id, updates))
-    
+
     def delete_user(self, user_id: str) -> bool:
         """Delete user by ID."""
         return self._run_async(self._async_storage.delete_user(user_id))
-    
+
     def list_all_users(self) -> List[Dict[str, Any]]:
         """Get all users."""
         return self._run_async(self._async_storage.list_all_users())
@@ -875,44 +903,44 @@ class AsyncUserStorageWrapper:
     def get_user_count(self) -> int:
         """Get total number of users."""
         return self._run_async(self._async_storage.get_user_count())
-    
+
     def clear_all_users(self) -> None:
         """Clear all users from storage."""
         return self._run_async(self._async_storage.clear_all_users())
-    
+
     def create_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Create or update user profile information."""
         return self._run_async(self._async_storage.create_user_profile(user_id, profile_data))
-    
+
     def search_users_by_name(self, name_query: str) -> List[Dict[str, Any]]:
         """Search users by name."""
         return self._run_async(self._async_storage.search_users_by_name(name_query))
-    
+
     # PersonalContext operations (sync wrappers)
     def get_personal_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get personal context data for user."""
         return self._run_async(self._async_storage.get_personal_context(user_id))
-    
+
     def create_personal_context(self, user_id: str, context_data) -> Dict[str, Any]:
         """Create personal context for user."""
         return self._run_async(self._async_storage.create_personal_context(user_id, context_data))
-    
+
     def update_personal_context(self, user_id: str, updates) -> Optional[Dict[str, Any]]:
         """Update personal context data."""
         return self._run_async(self._async_storage.update_personal_context(user_id, updates))
-    
+
     def create_or_update_personal_context(self, user_id: str, context_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create or update personal context data."""
         return self._run_async(self._async_storage.create_or_update_personal_context(user_id, context_data))
-    
+
     def delete_personal_context(self, user_id: str) -> bool:
         """Delete personal context by user ID."""
         return self._run_async(self._async_storage.delete_personal_context(user_id))
 
     # ConnectedAccount operations (sync wrappers)
-    def get_connected_accounts(self, user_id: str) -> List[Dict[str, Any]]:
+    def get_connected_accounts(self, user_id: str, include_tokens: bool = False) -> List[Dict[str, Any]]:
         """Get all connected accounts for user."""
-        return self._run_async(self._async_storage.get_connected_accounts(user_id))
+        return self._run_async(self._async_storage.get_connected_accounts(user_id, include_tokens))
 
     def get_connected_account_by_id(self, account_id: str) -> Optional[Dict[str, Any]]:
         """Get connected account by ID."""
